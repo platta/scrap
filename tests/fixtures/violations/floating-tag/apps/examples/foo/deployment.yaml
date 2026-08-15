@@ -1,0 +1,18 @@
+# VIOLATION: unpinned image (no tag at all -- an implicit :latest).
+# check_image_pinning.py must catch this.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foo
+  namespace: foo
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: foo }
+  template:
+    metadata:
+      labels: { app: foo }
+    spec:
+      containers:
+        - name: foo
+          image: nginx

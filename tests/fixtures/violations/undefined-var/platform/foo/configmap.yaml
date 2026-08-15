@@ -1,0 +1,9 @@
+# VIOLATION: ${UNDEFINED_VAR} is not defined in any
+# clusters/*/instance-config.yaml (this fixture has no clusters/ directory
+# at all). check_instance_literals.py must catch this.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: foo
+data:
+  bar: "${UNDEFINED_VAR}"

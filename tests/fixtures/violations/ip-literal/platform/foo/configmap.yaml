@@ -1,0 +1,8 @@
+# VIOLATION: a literal IP address outside clusters/. check_instance_literals.py
+# must catch this.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: foo
+data:
+  upstream: "10.20.30.40"

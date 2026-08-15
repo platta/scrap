@@ -1,0 +1,14 @@
+# VIOLATION: a LoadBalancer Service claiming a port not in
+# platform/ingress/reserved-ports.yaml (this fixture has no such file at
+# all, so any claimed port is unreserved). check_reserved_ports.py must
+# catch this.
+apiVersion: v1
+kind: Service
+metadata:
+  name: foo
+  namespace: foo
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 9999
+      protocol: TCP

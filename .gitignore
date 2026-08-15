@@ -1,0 +1,24 @@
+# Never commit decrypted secret material.
+*.dec.yaml
+*.dec.yml
+*.dec.env
+.decrypted~*
+
+# Age keys — must never live in this repository, generated locally per install.
+*.agekey
+age-keys.txt
+
+# Local editor/OS cruft
+.DS_Store
+*.swp
+*~
+
+# Python (tests/assertions/)
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local kubeconfigs a contributor might drop in while testing
+kubeconfig
+kubeconfig.*
+*.kubeconfig

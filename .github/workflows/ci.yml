@@ -1,0 +1,37 @@
+name: CI
+
+# Structural assertions only, for now -- fast, static, no cluster required.
+# Dynamic acceptance profiles (tests/profiles/) land in a later milestone;
+# see the repository root README.md roadmap.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  structural-assertions:
+    name: Structural assertions (T1/T2 and the application contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history: check_app_addition_boundary diffs against the PR base
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.4"
+
+      - name: pip install pyyaml
+        run: python3 -m pip install --disable-pip-version-check pyyaml
+
+      - name: Self-test the assertions (prove each one catches its fixture)
+        run: python3 tests/assertions/self_test.py
+
+      - name: Run all structural assertions against the real repository
+        run: bash tests/assertions/run_all.sh

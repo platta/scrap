@@ -1,0 +1,10 @@
+# VIOLATION (paired with b.yaml): a -> b -> a. check_kustomization_dag.py
+# must catch this cycle.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: a
+spec:
+  path: ./platform/a
+  dependsOn:
+    - name: b

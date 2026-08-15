@@ -1,0 +1,18 @@
+# The single source of truth for every host port SCRAP is allowed to claim,
+# via a LoadBalancer Service or a container hostPort. Checked by
+# tests/assertions/check_reserved_ports.py on every pull request.
+#
+# Adding a raw TCP/UDP application (pattern P4, docs/patterns/) means adding
+# its port here, in the same pull request that adds the application -- one
+# reviewable, diffable change, not a live surprise. This is the direct,
+# structural fix for a real incident: an ingress controller's default
+# LoadBalancer Service silently claiming a host's real production ports.
+reservedPorts:
+  - port: 80
+    protocol: TCP
+    owner: platform-ingress
+    note: "Traefik Gateway -- plain HTTP, used for ACME HTTP-01 challenges when public-tls is enabled via that mechanism"
+  - port: 443
+    protocol: TCP
+    owner: platform-ingress
+    note: "Traefik Gateway -- HTTPS, terminates the platform wildcard certificate"

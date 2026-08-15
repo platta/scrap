@@ -1,0 +1,6 @@
+# VIOLATION: platform/ referencing apps/ -- a lower tier depending on a
+# higher one. check_core_boundary.py must catch this.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../apps/examples/whoami

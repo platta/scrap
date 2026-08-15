@@ -1,0 +1,12 @@
+# VIOLATION: a Certificate (and an issuerRef) under apps/ -- applications
+# must never declare TLS at all. check_no_cert_in_apps.py must catch this.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: foo
+  namespace: foo
+spec:
+  secretName: foo-tls
+  issuerRef:
+    name: some-issuer
+    kind: ClusterIssuer
