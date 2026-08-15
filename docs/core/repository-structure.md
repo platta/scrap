@@ -13,6 +13,11 @@ docs/            organized by CORE / SUPPORTED / EXTENSION / OUT OF SCOPE, plus 
 tests/           structural CI assertions, DR rehearsals, acceptance profiles
 ```
 
+This layout describes **what SCRAP provides**, not where an operator's own installation must live.
+Running SCRAP does not require forking this repository — see `docs/decisions/0009-repository-topology.md`
+for the fully-supported alternative: a separate operator repository containing only `clusters/`,
+`apps/`, and `secrets/`, pinned to a released version of everything else here.
+
 ## The tier model
 
 ```

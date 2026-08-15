@@ -7,7 +7,20 @@ pull request (`tests/assertions/`).
 
 One directory per SCRAP instance. `clusters/example/` is the reference instance: a real,
 documented, working `instance-config.yaml` schema and an empty `capabilities/` (nothing enabled —
-the `minimal` profile). Copy it to start a real installation.
+the `minimal` profile).
+
+## You do not need to fork this repository to run SCRAP
+
+Copying `clusters/example/` into a fork/clone of this repository (**Topology A**) is the simplest
+way to start, and is what this repository's own CI and scratch validation exercise end to end. But
+it is not the only supported way: an operator can instead maintain a **separate repository**
+containing only their `clusters/<name>/`, `apps/`, and `secrets/`, pinned to a specific released
+version of `platform/`/`capabilities/`/`components/` here via a second Flux `GitRepository` source
+(**Topology B**) — no fork, no merging against upstream changes just to add an application. Every
+`Kustomization` in `clusters/example/` already names its source explicitly
+(`sourceRef.name: scrap`); adopting Topology B is a one-line change to that field, repeated per
+file. Full mechanism, a worked example, and why this needs no SCRAP-specific abstraction:
+`docs/decisions/0009-repository-topology.md`.
 
 ## How instance values reach manifests
 
