@@ -4,7 +4,7 @@
 
 ```
 bootstrap/       tier 0 — outside the cluster: preflight, k3s install, age seed, flux bootstrap
-platform/        tier 1-2 — CRDs, cert-manager, ingress, storage, observability, backup
+platform/        tier 1-2 — CRDs, cert-manager(+config), ingress, storage, observability, backup
 capabilities/    tier 3 — optional, fully supported: grafana, logs, identity, public-tls, ...
 apps/            tier 4 — example applications and a small optional catalog
 clusters/        instance values and capability selection — the ONLY place they live
@@ -18,7 +18,8 @@ tests/           structural CI assertions, DR rehearsals, acceptance profiles
 ```
 tier 0  bootstrap        outside the cluster entirely
 tier 1  platform/crds    Gateway API, cert-manager, Prometheus Operator CRDs — no dependencies
-tier 2  platform/*       cert-manager+issuer, Traefik+Gateway, storage, observability, backup
+tier 2  platform/*       cert-manager, cert-manager-config (separate Kustomization, see below),
+                        Traefik+Gateway, storage, observability, backup
 tier 3  capabilities/*   grafana, logs, identity, public-tls, public-ingress, offsite-backup, ...
 tier 4  apps/*           examples and real workloads
 ```
@@ -27,6 +28,17 @@ Each tier may depend on any lower tier. **No tier may depend on a higher one.** 
 CI-enforced (`tests/assertions/`), is what makes T1 (delete every application, the platform
 survives) and the identity-capability-must-not-be-a-platform-dependency rule structurally true
 rather than merely documented.
+
+**Why `cert-manager-config` is a separate directory and Flux `Kustomization` from `cert-manager`,
+found empirically, not designed in advance:** a Flux `Kustomization` dry-runs and applies all of
+its resources together. A `HelmRelease` that installs a CRD, and a raw manifest of that CRD's kind,
+cannot safely share one Kustomization — creating the `HelmRelease` object only queues the chart
+install for a separate controller to process asynchronously; it does not mean the CRD exists yet at
+apply time. Confirmed directly while validating this repository's own `platform/` manifests against
+a from-zero cluster: the private CA's `ClusterIssuer` failed its dry-run with "no matches for kind
+ClusterIssuer," at a moment independently confirmed to have zero cert-manager CRDs installed. Every
+tier-2 component that mixes a Helm-installed CRD with a raw manifest of that kind needs the same
+split, `dependsOn` + `wait: true` on the Helm-installing Kustomization.
 
 ## Two hard rules
 

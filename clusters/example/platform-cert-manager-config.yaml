@@ -1,0 +1,21 @@
+# dependsOn platform-cert-manager with wait: true -- Flux waits for the
+# HelmRelease itself to report Ready (chart installed, CRDs present)
+# before this Kustomization's ClusterIssuer/Certificate are even
+# dry-run applied. See platform/cert-manager-config/kustomization.yaml
+# for the real ordering bug this structure exists to prevent.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-cert-manager-config
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./platform/cert-manager-config
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: scrap
+  dependsOn:
+    - name: platform-cert-manager
+  wait: true
+  timeout: 5m0s

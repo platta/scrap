@@ -1,0 +1,27 @@
+# SEPARATE from platform/cert-manager/ on purpose -- a real, empirically-
+# confirmed ordering bug, not a style choice.
+#
+# A Flux Kustomization dry-runs and applies ALL of its resources in one
+# batch. If a HelmRelease that installs a CRD (cert-manager's own
+# ClusterIssuer/Certificate types) and a raw manifest USING that CRD are in
+# the SAME Kustomization, the raw manifest's dry-run fails: the HelmRelease
+# object being created here only queues the chart install for the
+# separate helm-controller to process asynchronously -- it does not mean
+# the CRD exists yet. There is no intra-Kustomization ordering primitive
+# that fixes this; `dependsOn` only orders Kustomizations against each
+# other. Reproduced directly on a from-zero cluster while validating this
+# milestone: `ClusterIssuer/scrap-ca dry-run failed: no matches for kind
+# "ClusterIssuer" in version "cert-manager.io/v1"`, with the CRD count at
+# that moment confirmed to be genuinely zero, not a status-reporting lag.
+#
+# Fix: this directory is its own Kustomization
+# (clusters/example/platform-cert-manager-config.yaml), with
+# `dependsOn: [platform-cert-manager]` and `wait: true` on that
+# dependency -- Flux's wait/health-check logic recognizes HelmRelease as a
+# health-checkable type, so "dependency ready" here genuinely means "the
+# chart, and therefore its CRDs, are installed," not just "the HelmRelease
+# object was created."
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - private-ca.yaml

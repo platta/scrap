@@ -13,8 +13,9 @@ CI enforces this on every pull request — see [`tests/assertions/`](../tests/as
 | Directory | Tier | Provides |
 |---|---|---|
 | [`crds/`](crds/) | 1 | Gateway API CRDs, cert-manager CRDs, Prometheus operator CRDs — no dependencies |
-| [`cert-manager/`](cert-manager/) | 2 | Certificate lifecycle: cert-manager itself, the private CA `ClusterIssuer`, the one wildcard `Certificate` on the Gateway |
-| [`ingress/`](ingress/) | 2 | Traefik as the Gateway API controller; hostname routing and raw TCP/UDP exposure |
+| [`cert-manager/`](cert-manager/) | 2 | cert-manager itself (the chart, and its own CRDs) |
+| [`cert-manager-config/`](cert-manager-config/) | 2 | The private CA `ClusterIssuer` (`scrap-ca`) — a **separate** Kustomization from `cert-manager/`, `dependsOn` it with `wait: true`; installing a HelmRelease and a raw manifest using the CRD it provides in the *same* Kustomization dry-run-fails, confirmed empirically, not merely suspected |
+| [`ingress/`](ingress/) | 2 | Traefik as the Gateway API controller; the one wildcard `Certificate` (referencing `scrap-ca`, colocated with the `Gateway`/namespace that consumes its Secret); hostname routing and raw TCP/UDP exposure |
 | [`storage/`](storage/) | 2 | The `local-path` StorageClass contract — no distributed storage in core |
 | [`observability/`](observability/) | 2 | Prometheus, Alertmanager, kube-state-metrics, node-exporter, and the operator CRDs that form the application metrics/alerting contract |
 | [`backup/`](backup/) | 2 | The restic-based backup engine: credentials, schedule policy, retention, prune, integrity check — owned once, platform-wide |

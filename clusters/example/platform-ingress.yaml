@@ -1,6 +1,7 @@
-# dependsOn platform-cert-manager: this Kustomization applies a Certificate
-# (wildcard-certificate.yaml) referencing the scrap-ca ClusterIssuer that
-# platform-cert-manager owns. tests/assertions/check_kustomization_dag.py
+# dependsOn platform-cert-manager-config (not platform-cert-manager
+# directly): this Kustomization applies a Certificate
+# (wildcard-certificate.yaml) referencing the scrap-ca ClusterIssuer, which
+# platform-cert-manager-config owns. tests/assertions/check_kustomization_dag.py
 # proves this dependency is actually declared, not merely convenient --
 # the direct fix for a real class of bug where a Certificate was applied
 # before its issuer was guaranteed to exist.
@@ -18,7 +19,7 @@ spec:
     name: scrap
   dependsOn:
     - name: platform-crds
-    - name: platform-cert-manager
+    - name: platform-cert-manager-config
   postBuild:
     substituteFrom:
       - kind: ConfigMap
