@@ -1,0 +1,20 @@
+# dependsOn platform-observability with wait: true -- the Prometheus
+# Operator CRDs (PodMonitor, PrometheusRule) this Kustomization's manifests
+# use are installed by that HelmRelease. See
+# platform/observability-config/kustomization.yaml.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-observability-config
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./platform/observability-config
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: scrap
+  dependsOn:
+    - name: platform-observability
+  wait: true
+  timeout: 3m0s

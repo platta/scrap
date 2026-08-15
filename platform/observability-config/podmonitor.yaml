@@ -1,0 +1,24 @@
+# ONE cluster-wide PodMonitor, not one per application. An application
+# opts into metrics scraping with two lines in its own manifest -- no
+# PodMonitor object of its own required:
+#   1. label its pod template  observability.scrap.io/scrape: "true"
+#   2. name its metrics container port  metrics
+# components/metrics/ is the Kustomize component that applies label #1
+# automatically; #2 is on the application, since only it knows its own
+# container spec.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: golden-path-scrape
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      observability.scrap.io/scrape: "true"
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s

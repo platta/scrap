@@ -1,0 +1,23 @@
+# cert-manager's controller does not opt into the golden-path PodMonitor's
+# label convention -- checked directly against the chart's rendered output:
+# its metrics port is named "http-metrics", not "metrics". A dedicated
+# PodMonitor is the honest fix, rather than special-casing the port name in
+# the generic golden-path selector. This is what gives baseline-alerts.yaml's
+# CertificateExpiringSoon/CertificateNotReady rules real data to evaluate.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cert-manager
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames: ["cert-manager"]
+  selector:
+    matchLabels:
+      app: cert-manager
+      app.kubernetes.io/component: controller
+  podMetricsEndpoints:
+    - port: http-metrics
+      interval: 30s

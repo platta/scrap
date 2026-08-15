@@ -1,0 +1,13 @@
+# SEPARATE from platform/observability/ on purpose -- same real ordering
+# bug as platform/cert-manager-config/ vs platform/cert-manager/ (see that
+# directory's kustomization.yaml for the full explanation). These manifests
+# use monitoring.coreos.com/v1 CRDs (PodMonitor, PrometheusRule) that the
+# kube-prometheus-stack HelmRelease in platform/observability/ installs;
+# putting them in the same Kustomization as that HelmRelease would dry-run
+# fail on a from-zero cluster for the identical reason cert-manager's did.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - podmonitor.yaml
+  - cert-manager-podmonitor.yaml
+  - baseline-alerts.yaml

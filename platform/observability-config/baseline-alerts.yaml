@@ -1,0 +1,65 @@
+# Baseline, cluster-wide alert rules -- zero per-application configuration
+# required. An application only ships its own PrometheusRule (auto-
+# discovered, no extra wiring -- see helmrelease.yaml's *SelectorNilUsesHelmValues
+# settings) if it needs something beyond this baseline.
+#
+# NOTE: no BackupJobFailed rule yet -- platform/backup/ (the restic engine)
+# is a later milestone; that rule is added alongside it, not speculatively
+# here. See docs/core/recovery-model.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: golden-path-baseline
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: golden-path.pods
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total[15m]) > 3
+          for: 5m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} is crash-looping"
+        - alert: PodNotReady
+          expr: |
+            sum by (namespace, pod) (kube_pod_status_ready{condition="false"}) > 0
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} has not been Ready for 15m"
+
+    - name: golden-path.node
+      rules:
+        - alert: NodeDown
+          expr: up{job="kube-prometheus-stack-prometheus-node-exporter"} == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "node-exporter on {{ $labels.instance }} is unreachable -- node may be down"
+        - alert: NodeDiskAlmostFull
+          expr: |
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} < 0.10
+          for: 15m
+          labels: { severity: warning }
+          annotations:
+            summary: "{{ $labels.instance }} filesystem {{ $labels.mountpoint }} below 10% free"
+
+    - name: golden-path.certs
+      rules:
+        - alert: CertificateExpiringSoon
+          expr: |
+            certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "cert-manager certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 7 days"
+        - alert: CertificateNotReady
+          expr: certmanager_certificate_ready_status{condition="True"} == 0
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "cert-manager certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready"

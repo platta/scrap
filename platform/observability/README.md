@@ -3,7 +3,13 @@
 **Tier 2.** Depends on `platform/crds/` only.
 
 Provides: Prometheus, Alertmanager, kube-state-metrics, node-exporter, and the Prometheus Operator
-CRDs (`PodMonitor`, `PrometheusRule`) that form the actual application metrics/alerting contract.
+CRDs (`PodMonitor`, `PrometheusRule`) that form the actual application metrics/alerting contract —
+this directory is the `HelmRelease` only. The golden-path `PodMonitor` and baseline
+`PrometheusRule` that actually *use* those CRDs live in the separate
+`platform/observability-config/` Kustomization, `dependsOn` this one with `wait: true` — the same
+real ordering bug documented in `platform/cert-manager-config/kustomization.yaml`: a Flux
+Kustomization dry-runs all its resources together, so a raw manifest of a CRD kind cannot safely
+share a Kustomization with the `HelmRelease` that installs that CRD.
 
 ## Why this is CORE and not an optional capability
 

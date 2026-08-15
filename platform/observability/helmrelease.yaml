@@ -1,0 +1,111 @@
+# Prometheus + Alertmanager + kube-state-metrics + node-exporter + the
+# Prometheus Operator CRDs (PodMonitor, ServiceMonitor, PrometheusRule) --
+# the application metrics/alerting contract. See platform/observability/README.md
+# for why this is CORE and Grafana/logs are not.
+#
+# Grafana is deliberately disabled here: it's capabilities/grafana/'s job,
+# not core's. The golden-path PodMonitor + baseline PrometheusRule that
+# consume the CRDs this chart installs live in the SEPARATE
+# platform/observability-config/ Kustomization -- same reason
+# platform/cert-manager-config/ is separate from platform/cert-manager/
+# (a HelmRelease and a raw manifest using the CRD it installs cannot
+# safely share one Flux Kustomization; see that directory's kustomization.yaml).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "88.3.0"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: monitoring
+  install:
+    crds: CreateReplace
+    timeout: 10m
+  upgrade:
+    crds: CreateReplace
+    timeout: 10m
+  values:
+    # k3s bundles the control plane into a single binary -- there is no
+    # separate kube-apiserver/controller-manager/scheduler/proxy/etcd to
+    # scrape as distinct targets the way a kubeadm cluster would have.
+    kubeApiServer: { enabled: false }
+    kubeControllerManager: { enabled: false }
+    kubeScheduler: { enabled: false }
+    kubeProxy: { enabled: false }
+    kubeEtcd: { enabled: false }
+
+    # Not core -- capabilities/grafana/ owns Grafana entirely.
+    grafana:
+      enabled: false
+
+    prometheus:
+      prometheusSpec:
+        retention: 14d
+        # Cluster-wide discovery: ANY PodMonitor/ServiceMonitor/PrometheusRule
+        # is picked up, not just ones carrying this release's own label. This
+        # is what makes the golden-path metrics contract "label your pod and
+        # you're scraped" rather than "label your pod AND remember a
+        # release-name label too."
+        serviceMonitorSelectorNilUsesHelmValues: false
+        serviceMonitorSelector: {}
+        serviceMonitorNamespaceSelector: {}
+        podMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelector: {}
+        podMonitorNamespaceSelector: {}
+        ruleSelectorNilUsesHelmValues: false
+        ruleSelector: {}
+        ruleNamespaceSelector: {}
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 8Gi
+        resources:
+          requests: { cpu: 50m, memory: 256Mi }
+          limits: { memory: 768Mi }
+
+    alertmanager:
+      alertmanagerSpec:
+        storage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 512Mi
+        resources:
+          requests: { cpu: 10m, memory: 32Mi }
+          limits: { memory: 128Mi }
+      # DELIBERATELY left at the chart's own default: route -> receiver
+      # 'null', receivers: [{name: 'null'}] -- i.e. no receiver configured.
+      # This is not a placeholder that silently ships broken; it is a
+      # documented, honest state -- see platform/observability/README.md
+      # and docs/core/bootstrap-lifecycle.md's postflight step, which
+      # reports this explicitly rather than letting it go unnoticed.
+      # config: {} (chart default)
+
+    kubeStateMetrics:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { memory: 64Mi }
+
+    nodeExporter:
+      resources:
+        requests: { cpu: 10m, memory: 16Mi }
+        limits: { memory: 32Mi }
+
+    prometheusOperator:
+      resources:
+        requests: { cpu: 20m, memory: 64Mi }
+        limits: { memory: 128Mi }

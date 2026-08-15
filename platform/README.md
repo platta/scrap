@@ -18,6 +18,7 @@ CI enforces this on every pull request — see [`tests/assertions/`](../tests/as
 | [`ingress/`](ingress/) | 2 | Traefik as the Gateway API controller; the one wildcard `Certificate` (referencing `scrap-ca`, colocated with the `Gateway`/namespace that consumes its Secret); hostname routing and raw TCP/UDP exposure |
 | [`storage/`](storage/) | 2 | The `local-path` StorageClass contract — no distributed storage in core |
 | [`observability/`](observability/) | 2 | Prometheus, Alertmanager, kube-state-metrics, node-exporter, and the operator CRDs that form the application metrics/alerting contract |
+| [`observability-config/`](observability-config/) | 2 | The golden-path `PodMonitor` and baseline `PrometheusRule` — a **separate** Kustomization from `observability/`, same reason as `cert-manager-config/` |
 | [`backup/`](backup/) | 2 | The restic-based backup engine: credentials, schedule policy, retention, prune, integrity check — owned once, platform-wide |
 
 Tier 1 has no dependencies. Tier 2 may depend only on tier 1 and other tier 2 components — never on
