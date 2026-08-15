@@ -14,3 +14,15 @@ likely to silently rot.
 | **T-F — Upgrade** | pre-release | Previous release → current; data intact; rollback works |
 
 Implementation tracked in the repository root `README.md` roadmap.
+
+## A gap this design already found, before T-A exists
+
+Validating `platform/ingress/`, `tests/assertions/check_helm_strict.py` was found to genuinely be
+unable to catch the reference implementation's own historical bug — a HelmRelease value set at the
+wrong path (`service.type` instead of the chart's actual `service.spec.type`), silently ignored,
+`helm template` exiting 0. Reproduced directly against a current chart version, not assumed.
+
+Static Helm validation cannot generically prove an override reached the field it was meant to.
+**T-A must include a live check** of every load-bearing value SCRAP's own manifests set — for
+`platform/ingress/`, concretely: `kubectl get svc -n traefik traefik -o jsonpath='{.spec.type}'`
+actually equals `LoadBalancer`, not merely that Helm accepted the values without error.

@@ -1,0 +1,44 @@
+# The CORE, minimum-path TLS issuer: a private certificate authority, entirely
+# self-contained -- no domain, no public DNS, no internet required at runtime.
+# See docs/decisions/0006-tls-wildcard-and-issuer-independence.md.
+#
+# Three objects, chained: a bootstrap self-signed issuer creates the CA's own
+# certificate; the CA's certificate becomes a second ClusterIssuer that signs
+# everything else. `scrap-ca` is the name every other manifest in this
+# repository may reference as an issuerRef -- it is the one name that stays
+# stable if this issuer is ever swapped for capabilities/public-tls/'s ACME
+# issuer (same name, different backing implementation).
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: scrap-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: scrap-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: SCRAP Root CA
+  secretName: scrap-ca-key-pair
+  duration: 87600h # 10 years
+  renewBefore: 8760h # 1 year
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: scrap-selfsigned
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: scrap-ca
+spec:
+  ca:
+    secretName: scrap-ca-key-pair

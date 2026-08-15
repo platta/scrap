@@ -1,0 +1,69 @@
+# Traefik as the cluster's Gateway API controller -- Flux-managed, not k3s's
+# own bundled Traefik (k3s is installed with --disable=traefik so there is
+# exactly one reconciler for platform infrastructure). See
+# platform/ingress/README.md.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: traefik
+  namespace: traefik
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: traefik
+      version: "41.2.0"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+        namespace: traefik
+  install:
+    crds: CreateReplace
+    timeout: 5m
+  upgrade:
+    crds: CreateReplace
+    timeout: 5m
+  values:
+    deployment:
+      replicas: 1
+      podLabels:
+        # The golden-path metrics contract (platform/observability/):
+        # Traefik opts itself in the same way any application would.
+        observability.scrap.io/scrape: "true"
+    resources:
+      requests: { cpu: 20m, memory: 64Mi }
+      limits: { memory: 128Mi }
+    providers:
+      # Gateway API is the primary, portable routing mechanism.
+      kubernetesGateway:
+        enabled: true
+      kubernetesIngress:
+        enabled: false
+      # Left enabled deliberately: Gateway API has no standard auth
+      # primitive, so gateway-level forward-auth (components/forward-auth/,
+      # consumed only once capabilities/identity/ is enabled) needs a
+      # Traefik Middleware attached via HTTPRoute ExtensionRef. This is the
+      # one documented place SCRAP's routing layer is not fully
+      # implementation-portable -- see docs/extensions/README.md.
+      kubernetesCRD:
+        enabled: true
+    gateway:
+      enabled: true
+      name: scrap-gateway
+      listeners:
+        web:
+          namespacePolicy:
+            from: All
+        websecure:
+          port: 8443
+          protocol: HTTPS
+          namespacePolicy:
+            from: All
+          certificateRefs:
+            - name: scrap-wildcard-tls
+          mode: Terminate
+    gatewayClass:
+      enabled: true
+    service:
+      spec:
+        type: LoadBalancer

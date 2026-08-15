@@ -1,15 +1,35 @@
 #!/usr/bin/env python3
 """
-For every Flux HelmRelease found repository-wide, render its chart with
-`helm template --strict` using the release's own inline values. `--strict`
-fails on values that don't match the chart's schema -- the direct fix for a
-real bug where a wrong values path (`service.type` instead of the chart's
-actual `service.spec.type`) was silently accepted by Helm and never took
-effect, while the upgrade itself reported success.
+For every Flux HelmRelease found repository-wide, render its chart with its
+own inline values and lint it with warnings-as-errors.
 
-No-ops cleanly, and without needing network access, when no HelmRelease
-exists yet -- true for most of this repository's early implementation
-milestones. Requires the `helm` binary once there's something to check.
+REAL FINDING, from actually running this against Helm 3.17: `helm template`
+has no `--strict` flag at all -- it was removed/never existed on that
+subcommand; `--strict` only exists on `helm lint`. This script originally
+assumed otherwise. Worse, verified directly: `helm template` with a
+deliberately wrong values path one level deep (`service.type` instead of
+the traefik chart's actual `service.spec.type`) renders successfully with
+exit 0 and the override silently dropped -- reproducing the exact historical
+bug (docs/decisions/, the reference implementation's real incident) on a
+current chart, today. A chart's values.schema.json only rejects an unknown
+key at the specific nesting level its authors annotated
+`additionalProperties: false` -- proven here to reject a bogus top-level
+key but NOT a misplaced key one level into an existing object.
+
+What this script actually does, honestly:
+  1. `helm template` -- must render without error (catches missing
+     required values, malformed values, broken chart references).
+  2. `helm lint --strict` -- catches whatever schema-level violations the
+     chart itself defines (real, but partial -- see above).
+
+What this script does NOT do, and cannot do generically: prove that a
+specific override value actually reached the specific manifest field SCRAP
+intended. That guarantee comes from live, post-deploy verification against
+a running cluster (e.g. `kubectl get svc -n traefik traefik -o
+jsonpath='{.spec.type}'`) -- the dynamic acceptance profiles in
+tests/profiles/ are where that check belongs, not a static, offline one.
+
+No-ops cleanly, without network access, when no HelmRelease exists yet.
 """
 from __future__ import annotations
 
@@ -71,29 +91,44 @@ def run(root: Path) -> list[str]:
         with tempfile.TemporaryDirectory() as tmp:
             values_file = Path(tmp) / "values.yaml"
             values_file.write_text(yaml.safe_dump(values or {}))
-            result = subprocess.run(
-                [
-                    "helm", "template", chart,
-                    "--repo", repo_url,
-                    "--version", version,
-                    "-f", str(values_file),
-                    "--strict",
-                ],
+
+            template = subprocess.run(
+                ["helm", "template", chart, "--repo", repo_url, "--version", version, "-f", str(values_file)],
                 capture_output=True, text=True,
             )
-            if result.returncode != 0:
-                violations.append(
-                    f"{rel(root, path)}: `helm template --strict` failed:\n{result.stderr.strip()}"
-                )
+            if template.returncode != 0:
+                violations.append(f"{rel(root, path)}: `helm template` failed:\n{template.stderr.strip()}")
+                continue  # linting a chart that doesn't even render isn't useful
+
+            # `helm lint` -- unlike template/pull/install -- takes a local chart
+            # PATH, not a --repo/--version reference. Pull it first.
+            pull = subprocess.run(
+                ["helm", "pull", chart, "--repo", repo_url, "--version", version, "--untar", "--destination", tmp],
+                capture_output=True, text=True,
+            )
+            if pull.returncode != 0:
+                violations.append(f"{rel(root, path)}: `helm pull` failed:\n{pull.stderr.strip()}")
+                continue
+            chart_dir = Path(tmp) / chart
+
+            lint = subprocess.run(
+                ["helm", "lint", "--strict", str(chart_dir), "-f", str(values_file)],
+                capture_output=True, text=True,
+            )
+            if lint.returncode != 0:
+                violations.append(f"{rel(root, path)}: `helm lint --strict` failed:\n{lint.stdout.strip()}")
+
     return violations
 
 
 if __name__ == "__main__":
     root = find_repo_root()
+    n = len(_find_helmreleases(root))
     violations = run(root)
     if violations:
         print("FAIL: check_helm_strict")
         for v in violations:
             print(f"  - {v}")
         sys.exit(1)
-    print("PASS: check_helm_strict (nothing to check yet)")
+    suffix = f"validated {n} HelmRelease(s)" if n else "no HelmReleases exist yet"
+    print(f"PASS: check_helm_strict ({suffix})")

@@ -1,7 +1,7 @@
 # platform/ingress/
 
-**Tier 2.** Depends on `platform/crds/` (Gateway API) and `platform/cert-manager/` (the wildcard
-`Certificate` this Gateway's `websecure` listener references).
+**Tier 2.** Depends on `platform/crds/` (Gateway API) and `platform/cert-manager/` (the `scrap-ca`
+`ClusterIssuer` this directory's own wildcard `Certificate` references).
 
 Traefik, installed as a plain Flux `HelmRelease` — not k3s's own bundled Traefik, and not k3s's
 built-in Helm controller. k3s is installed with `--disable=traefik` specifically so there is exactly
@@ -9,9 +9,14 @@ one reconciler for platform infrastructure (Flux), not two running in parallel.
 
 Provides:
 
-- One shared `Gateway` with two listeners: `web` (plain HTTP, used only for ACME HTTP-01 challenges
-  when that capability is enabled) and `websecure` (HTTPS, terminating the platform wildcard
-  certificate).
+- One shared `Gateway` (`scrap-gateway`) with two listeners: `web` (plain HTTP, used only for ACME
+  HTTP-01 challenges when that capability is enabled) and `websecure` (HTTPS, terminating the
+  platform wildcard certificate).
+- **The one wildcard `Certificate`** (`wildcard-certificate.yaml`) — owned here, not in
+  `platform/cert-manager/`, because its Secret must live in this directory's own `traefik`
+  namespace, the same one the `Gateway` resolving it lives in. It references the `scrap-ca`
+  `ClusterIssuer` that `platform/cert-manager/` owns — the reason this Kustomization `dependsOn`
+  that one.
 - The Gateway API `kubernetesGateway` provider as primary routing mechanism.
 - Traefik's own CRD provider stays enabled for exactly one reason: Gateway API has no standard
   authorization/middleware primitive, so gateway-level forward-auth (`components/forward-auth/`,

@@ -26,6 +26,15 @@ IPV4_RE = re.compile(r"(?<![\w.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?!/)(?![\w
 EXEMPT_IPS = {"127.0.0.1", "0.0.0.0"}
 SCAN_DIRS = ("platform", "capabilities", "apps", "components", "bootstrap")
 
+# Vendored upstream files (e.g. platform/crds/) are third-party API schema
+# definitions, not SCRAP-authored configuration -- they are never edited to
+# stay byte-identical to upstream, and their OpenAPI descriptions legitimately
+# contain example values (found in practice: the Gateway API CRDs' own field
+# documentation uses 1.2.3.4 as an example IP). Excluded by filename marker
+# rather than by directory, so a future hand-written file under platform/crds/
+# is still checked normally.
+VENDORED_MARKERS = ("standard-install.yaml",)
+
 
 def _defined_vars(root: Path) -> set[str]:
     names: set[str] = set()
@@ -41,6 +50,8 @@ def run(root: Path) -> list[str]:
 
     for subdir in SCAN_DIRS:
         for path in iter_yaml_files(root, subdir):
+            if any(path.name.endswith(marker) for marker in VENDORED_MARKERS):
+                continue
             for lineno, line in enumerate(path.read_text(errors="ignore").splitlines(), start=1):
                 for var in VAR_RE.findall(line):
                     if var not in defined:

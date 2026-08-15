@@ -1,0 +1,16 @@
+# Tier 1: no dependencies. Everything else in platform/ may depend on this;
+# this depends on nothing. See docs/core/repository-structure.md.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-crds
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./platform/crds
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: scrap
+  wait: true
+  timeout: 3m0s

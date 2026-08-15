@@ -1,0 +1,26 @@
+# The ONE certificate SCRAP issues for HTTP(S) applications, in every
+# configuration -- see docs/decisions/0006-tls-wildcard-and-issuer-independence.md.
+# Applications declare nothing about TLS at all; this is the only place a
+# Certificate referencing an issuer exists in the platform layer, and
+# tests/assertions/check_no_cert_in_apps.py proves apps/ never needs one.
+#
+# issuerRef targets "scrap-ca" -- a stable name, owned by
+# platform/cert-manager/. Swapping the private CA for
+# capabilities/public-tls/'s ACME issuer means re-pointing this one field;
+# every application HTTPRoute is unaffected.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: scrap-wildcard
+  namespace: traefik
+spec:
+  secretName: scrap-wildcard-tls
+  duration: 2160h # 90 days
+  renewBefore: 360h # 15 days
+  dnsNames:
+    - "*.${BASE_DOMAIN}"
+    - "${BASE_DOMAIN}"
+  issuerRef:
+    name: scrap-ca
+    kind: ClusterIssuer
+    group: cert-manager.io

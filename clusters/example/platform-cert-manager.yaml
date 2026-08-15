@@ -1,0 +1,16 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-cert-manager
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./platform/cert-manager
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: scrap
+  dependsOn:
+    - name: platform-crds
+  wait: true
+  timeout: 5m0s

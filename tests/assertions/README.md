@@ -25,7 +25,7 @@ python3 tests/assertions/self_test.py     # proves each check catches its fixtur
 | `check_reserved_ports.py` | Every `LoadBalancer` port and container `hostPort` is declared in `platform/ingress/reserved-ports.yaml` |
 | `check_instance_literals.py` | Every `${VAR}` resolves to a defined `clusters/*/instance-config.yaml` key; no literal IPv4 address appears outside `clusters/` |
 | `check_kustomization_dag.py` | The Flux `Kustomization` dependency graph is acyclic; no `Certificate` names an `issuerRef` that isn't guaranteed to exist by the dependency graph |
-| `check_helm_strict.py` | Every `HelmRelease`'s inline values render cleanly under `helm template --strict` |
+| `check_helm_strict.py` | Every `HelmRelease` renders under `helm template` and passes `helm lint --strict` — see the script's own docstring for what this does and does **not** guarantee, found by actually running it |
 
 ## Why each check has a fixture
 

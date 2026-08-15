@@ -8,12 +8,19 @@ certificates." This directory contains:
 1. **cert-manager itself** (Helm chart, pinned version, `enableGatewayAPI: true` in its
    `ControllerConfiguration` so it can solve ACME challenges via Gateway API `HTTPRoute` when the
    ACME capability is later enabled — see `capabilities/public-tls/`).
-2. **The private CA** — a self-signed root `ClusterIssuer`, a long-lived `Certificate` for that
-   root (the actual CA key pair), and the resulting `ClusterIssuer` that signs from it. This is the
-   CORE, minimum-path issuer. No domain, no DNS, no internet.
-3. **The one wildcard `Certificate`** — `*.<base-domain>` + `<base-domain>`, attached to Traefik's
-   `websecure` Gateway listener (`platform/ingress/`). This is the **only** certificate SCRAP ever
-   issues for HTTP(S) applications.
+2. **The private CA** — a self-signed root `ClusterIssuer` (`scrap-selfsigned`), a long-lived
+   `Certificate` for that root (the actual CA key pair), and the resulting `ClusterIssuer`
+   (`scrap-ca`) that signs from it. This is the CORE, minimum-path issuer. No domain, no DNS, no
+   internet. `scrap-ca` is a stable name every other manifest may reference — swapping it for
+   `capabilities/public-tls/`'s ACME issuer means changing what `scrap-ca` points to, not renaming
+   references across the repository.
+
+**The one wildcard `Certificate`** itself — `*.<base-domain>` + `<base-domain>` — is defined in
+`platform/ingress/`, not here, because its Secret must live in the same namespace as the Traefik
+`Gateway` that consumes it (`traefik`). This directory only owns the *issuer*; `platform/ingress/`
+owns the certificate that references it, and its Flux `Kustomization` `dependsOn` this one — CI's
+`check_kustomization_dag` proves that dependency is actually declared, not merely convenient. This
+is the **only** certificate SCRAP ever issues for HTTP(S) applications.
 
 ## The contract this hands to every application
 
