@@ -18,6 +18,17 @@ metadata:
   name: instance-config
   namespace: flux-system
 data:
+  # A short, unique name identifying THIS instance -- never an application
+  # name. Used as the restic --host tag on every snapshot this instance
+  # writes, so that retention/prune grouping (`restic forget --group-by
+  # host,paths`) can never merge two instances' snapshots into one timeline
+  # even if they were accidentally pointed at the same repository. This is
+  # the direct fix for a real incident: a disposable scratch instance held
+  # production backup credentials, tagged its snapshots by application name
+  # only, and `restic forget --prune` treated scratch and production activity
+  # as one retention group. See docs/decisions/0010-backup-credential-isolation.md.
+  INSTANCE_NAME: "example"
+
   # The base domain. The platform wildcard certificate covers
   # "*.${BASE_DOMAIN}" and "${BASE_DOMAIN}" -- see platform/cert-manager/.
   # Use a real domain you control if capabilities/public-tls/ is enabled;

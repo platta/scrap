@@ -7,6 +7,15 @@
 # Age keys — must never live in this repository, generated locally per install.
 *.agekey
 age-keys.txt
+# Exception: clusters/example/secrets/'s reference keypair is deliberately
+# published (its private half protects nothing real) so the example
+# instance can bootstrap with zero manual steps -- see that directory's
+# README.md. Found the hard way: without this negation, `*.agekey` above
+# silently excludes it from `git add -A` too, so a real `git clone` of this
+# repository would never receive the file install.sh's re-encryption step
+# depends on -- worked in local testing only because that copied from an
+# uncommitted working tree, not an actual clone.
+!clusters/example/secrets/PUBLISHED-NOT-SECRET-reference.agekey
 
 # Local editor/OS cruft
 .DS_Store

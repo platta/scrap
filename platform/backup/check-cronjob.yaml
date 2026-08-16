@@ -1,0 +1,43 @@
+# The ONE integrity-check job for the whole installation. `restic check`
+# verifies repository structure and, monthly, packed data too --
+# read-data-subset keeps routine runs cheap while still catching bit rot
+# over time.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scrap-backup-check
+  namespace: scrap-backup
+spec:
+  schedule: "37 4 1 * *" # monthly, 1st
+  timeZone: "${TIMEZONE}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: check
+              image: restic/restic:0.19.1
+              args:
+                - check
+                - --read-data-subset=5%
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: "${BACKUP_DESTINATION}"
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: RESTIC_PASSWORD
+              volumeMounts:
+                - name: repo
+                  mountPath: /var/lib/scrap-backup
+          volumes:
+            - name: repo
+              hostPath:
+                path: /var/lib/scrap-backup
+                type: DirectoryOrCreate

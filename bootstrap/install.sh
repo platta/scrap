@@ -161,6 +161,47 @@ if [ -z "${REPO_URL:-}" ]; then
         sudo -u "$GIT_USER" git clone -q "$BARE_REPO" "$WORKDIR"
         cp -a "$REPO_ROOT/." "$WORKDIR/"
         rm -rf "$WORKDIR/.git"
+
+        # clusters/example/secrets/ ships a structurally-real reference
+        # secret, encrypted to a PUBLISHED (intentionally non-secret)
+        # reference keypair -- see clusters/example/secrets/README.md for
+        # why. A committed ciphertext only a published key can open isn't
+        # protecting anything, so before this becomes THIS instance's own
+        # repository, re-encrypt it to the operational + escrow keys just
+        # generated in step 4, and remove the reference key. Skipped
+        # gracefully if CLUSTER_PATH doesn't ship one (e.g. a hand-rolled
+        # instance directory with its own secrets already in place).
+        REF_CLUSTER_DIR="$WORKDIR/${CLUSTER_PATH#./}"
+        REF_SECRETS_DIR="$REF_CLUSTER_DIR/secrets"
+        # .sops.yaml lives one level ABOVE secrets/, not inside it -- found
+        # by actually running this: the first version of this block checked
+        # for it at "$REF_SECRETS_DIR/.sops.yaml" and the condition was
+        # always false, so re-encryption silently never ran and bootstrap
+        # failed three steps later with a decryption error that gave no
+        # hint the real bug was a wrong path here.
+        REF_KEY=$(find "$REF_SECRETS_DIR" -maxdepth 1 -name 'PUBLISHED-NOT-SECRET-*.agekey' 2>/dev/null | head -n1)
+        if [ -n "$REF_KEY" ] && [ -f "$REF_CLUSTER_DIR/.sops.yaml" ]; then
+            echo "Re-encrypting the example backup credential to this install's own age keys..."
+            sed -i "s|^\( *age: \).*|\1${OP_PUB},${ESCROW_PUB}|" "$REF_CLUSTER_DIR/.sops.yaml"
+            # REAL FINDING, from actually running this: sops discovers
+            # .sops.yaml by walking UP FROM THE CURRENT WORKING DIRECTORY,
+            # not from the target file's path -- and matches path_regex
+            # (unanchored) against a path relative to whatever config it
+            # finds. Invoke it from anywhere else -- e.g. this script's own
+            # CWD, which callers don't control -- and it can silently walk
+            # up into a COMPLETELY UNRELATED repository's .sops.yaml,
+            # match by substring, and re-encrypt to the wrong recipients
+            # with no error at all. `cd` here first and pass a bare
+            # filename, exactly like a human must (see
+            # clusters/example/secrets/README.md).
+            ( cd "$REF_SECRETS_DIR" && for f in *.sops.yaml; do
+                [ -f "$f" ] || continue
+                SOPS_AGE_KEY_FILE="$REF_KEY" sops updatekeys -y "$f" >/dev/null
+            done )
+            rm -f "$REF_KEY"
+            echo "Done -- this instance's secrets/ now decrypts only with this host's own keys."
+        fi
+
         sudo -u "$GIT_USER" sh -c "cd '$WORKDIR' && git init -q -b '$REPO_BRANCH' && \
             git remote add origin '$BARE_REPO' && git add -A && \
             git -c user.name=scrap-bootstrap -c user.email=bootstrap@localhost \

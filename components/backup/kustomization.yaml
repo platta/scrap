@@ -1,0 +1,23 @@
+# Labels every PersistentVolumeClaim in the including kustomization.yaml
+# with backup.scrap.io/enabled: "true" -- the one thing an app must do to
+# be discovered by platform/backup/'s backup job. Verified against a real
+# `kustomize build` (adds metadata.labels even when it doesn't already
+# exist on the PVC).
+#
+# If an app has multiple PVCs and only some should be backed up, don't use
+# this component -- add the label directly to the PVCs that need it
+# instead. This component is a convenience for the common single-PVC (or
+# "back up everything") case, never the only way to opt in (see
+# docs/decisions/0008-abstract-decisions-not-technologies.md).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+    patch: |-
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: placeholder
+        labels:
+          backup.scrap.io/enabled: "true"

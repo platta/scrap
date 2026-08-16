@@ -17,6 +17,7 @@ attractive.
 | [0007](0007-reject-sealed-secrets.md) | Secrets mechanism | SOPS + age; Sealed Secrets explicitly rejected |
 | [0008](0008-abstract-decisions-not-technologies.md) | Transparency principle | No plugin system, no proprietary manifest, no hidden control plane |
 | [0009](0009-repository-topology.md) | Repository topology | Fork/clone (monorepo) or a separate operator repo pinned to an upstream release — both native Flux multi-source, no fork required to configure an install |
+| [0010](0010-backup-credential-isolation.md) | Backup credential isolation | An authorization boundary (`--host`, per-instance credentials), not a naming convention |
 
 ## Format
 

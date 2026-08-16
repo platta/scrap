@@ -2,7 +2,8 @@
 # Verifies the platform actually came up, and reports state honestly
 # rather than assuming success because install.sh didn't error. Per
 # docs/core/bootstrap-lifecycle.md: every Kustomization Ready, the private
-# CA root exported with trust instructions, and the alerting-receiver
+# CA root exported with trust instructions, a backup engine run proven (not
+# just assumed from the CronJob object existing), and the alerting-receiver
 # state stated explicitly -- including, honestly, when there isn't one.
 set -eu
 export KUBECONFIG="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
@@ -37,6 +38,50 @@ if kubectl get secret scrap-ca-key-pair -n cert-manager >/dev/null 2>&1; then
 else
     echo "WARN  scrap-ca-key-pair Secret not found yet -- platform-cert-manager-config may"
     echo "      still be reconciling. Re-run this script, or check: flux get kustomizations"
+fi
+echo
+
+echo "--- backup ---"
+if kubectl get cronjob -n scrap-backup scrap-backup >/dev/null 2>&1; then
+    JOB_NAME="scrap-backup-postflight-$(date +%s)"
+    kubectl create job -n scrap-backup "$JOB_NAME" --from=cronjob/scrap-backup >/dev/null
+    echo "Triggered an immediate run of the backup job ($JOB_NAME) to verify the engine is"
+    echo "actually operational -- not just that its CronJob object exists."
+    deadline=$(($(date +%s) + 120))
+    result=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        succeeded=$(kubectl get job -n scrap-backup "$JOB_NAME" -o jsonpath='{.status.succeeded}' 2>/dev/null || true)
+        failed=$(kubectl get job -n scrap-backup "$JOB_NAME" -o jsonpath='{.status.failed}' 2>/dev/null || true)
+        if [ "${succeeded:-0}" -ge 1 ] 2>/dev/null; then
+            result="ok"
+            break
+        fi
+        if [ "${failed:-0}" -ge 1 ] 2>/dev/null; then
+            result="fail"
+            break
+        fi
+        sleep 5
+    done
+    case "$result" in
+        ok)
+            echo "ok    backup job completed successfully -- credentials, repository, and"
+            echo "      discovery are all working."
+            ;;
+        fail)
+            echo "FAIL  backup job failed -- see: kubectl logs -n scrap-backup job/$JOB_NAME"
+            ;;
+        *)
+            echo "WARN  backup job did not finish within 2 minutes -- check:"
+            echo "      kubectl get job -n scrap-backup $JOB_NAME"
+            ;;
+    esac
+    echo
+    echo "HONEST LIMIT: a fresh install has no application data yet, so this only proves the"
+    echo "engine runs -- it does not exercise a restore. Restore is proven end to end, against"
+    echo "real data, the first time you add a backed-up application; see"
+    echo "docs/runbooks/README.md."
+else
+    echo "WARN  scrap-backup CronJob not found yet -- platform-backup may still be reconciling."
 fi
 echo
 

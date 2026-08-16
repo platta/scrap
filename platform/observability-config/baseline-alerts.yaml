@@ -3,9 +3,11 @@
 # discovered, no extra wiring -- see helmrelease.yaml's *SelectorNilUsesHelmValues
 # settings) if it needs something beyond this baseline.
 #
-# NOTE: no BackupJobFailed rule yet -- platform/backup/ (the restic engine)
-# is a later milestone; that rule is added alongside it, not speculatively
-# here. See docs/core/recovery-model.md.
+# The golden-path.backup group's metric names (kube_job_status_failed,
+# kube_cronjob_status_last_successful_time) were confirmed against a live
+# kube-state-metrics /metrics endpoint, not assumed -- see
+# docs/core/recovery-model.md for why "backups silently stopped" is the
+# single most important alert this baseline carries.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -63,3 +65,38 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "cert-manager certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready"
+
+    - name: golden-path.backup
+      rules:
+        # Thresholds match each job's own schedule (platform/backup/*-cronjob.yaml)
+        # with slack for one missed run: backup is daily, prune weekly, check
+        # monthly. This is the alert the whole observability-core CORE
+        # classification is justified on -- see docs/decisions/ §18.8: backup
+        # without alerting is not a safety system.
+        - alert: BackupJobFailed
+          expr: kube_job_status_failed{namespace="scrap-backup"} > 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "backup-engine job {{ $labels.job_name }} failed in scrap-backup"
+        - alert: BackupStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="scrap-backup", cronjob="scrap-backup"} > 2 * 86400
+          for: 1h
+          labels: { severity: critical }
+          annotations:
+            summary: "the backup job has not completed successfully in over 2 days"
+        - alert: BackupPruneStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="scrap-backup", cronjob="scrap-backup-prune"} > 14 * 86400
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "the backup prune job has not completed successfully in over 14 days"
+        - alert: BackupCheckStale
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{namespace="scrap-backup", cronjob="scrap-backup-check"} > 45 * 86400
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "the backup integrity-check job has not completed successfully in over 45 days"

@@ -1,0 +1,43 @@
+# The backup/prune/check jobs all run as this ServiceAccount. Cluster-wide
+# get/list on PVCs and PVs is how the backup job discovers labelled PVCs
+# without a controller (D3 -- a CronJob running a script, not a control
+# loop); pods/exec is how it runs an application's declared consistency
+# command (components/backup/) before reading its data. Cluster-wide is
+# consistent with SCRAP's stated scope: one trusted operator, no
+# multi-tenant isolation (docs -- out-of-scope/multi-tenancy.md).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scrap-backup
+  namespace: scrap-backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: scrap-backup
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: scrap-backup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: scrap-backup
+subjects:
+  - kind: ServiceAccount
+    name: scrap-backup
+    namespace: scrap-backup

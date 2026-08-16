@@ -1,0 +1,78 @@
+# The one backup job for the whole installation. Discovers labelled PVCs at
+# run time and backs each one up -- see scripts-configmap.yaml and
+# platform/backup/README.md. Nothing here is per-application; adding a
+# backed-up app never touches this file (T2).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scrap-backup
+  namespace: scrap-backup
+spec:
+  schedule: "17 2 * * *"
+  timeZone: "${TIMEZONE}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: scrap-backup
+          restartPolicy: Never
+          initContainers:
+            # Vendors a static restic binary via a shared emptyDir rather
+            # than building/maintaining a combined image -- restic/restic
+            # and alpine/k8s (kubectl + sh) are both maintained upstream;
+            # SCRAP composes them instead of publishing its own image.
+            - name: vendor-restic
+              image: restic/restic:0.19.1
+              command: ["sh", "-c", "cp /usr/bin/restic /tools/restic"]
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+          containers:
+            - name: backup
+              image: alpine/k8s:1.36.2
+              command: ["sh", "/scripts/discover-and-backup.sh"]
+              env:
+                - name: PATH
+                  value: "/tools:/usr/bin:/bin"
+                - name: INSTANCE_NAME
+                  value: "${INSTANCE_NAME}"
+                - name: RESTIC_REPOSITORY
+                  value: "${BACKUP_DESTINATION}"
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: RESTIC_PASSWORD
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+                - name: scripts
+                  mountPath: /scripts
+                - name: hostdata
+                  mountPath: /hostdata
+                  readOnly: true
+                # Only exercised by the CORE local BACKUP_DESTINATION
+                # default (local:/var/lib/scrap-backup). If you change that
+                # path, update this mount to match -- see
+                # platform/backup/README.md.
+                - name: repo
+                  mountPath: /var/lib/scrap-backup
+          volumes:
+            - name: tools
+              emptyDir: {}
+            - name: scripts
+              configMap:
+                name: scrap-backup-scripts
+                defaultMode: 0o555
+            - name: hostdata
+              hostPath:
+                path: /var/lib/rancher/k3s/storage
+                type: DirectoryOrCreate
+            - name: repo
+              hostPath:
+                path: /var/lib/scrap-backup
+                type: DirectoryOrCreate

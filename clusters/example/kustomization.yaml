@@ -1,0 +1,26 @@
+# REAL FINDING, from actually running a from-zero bootstrap: without this
+# explicit file, Flux/Kustomize auto-flattens EVERY yaml file under this
+# path, RECURSIVELY -- including clusters/example/secrets/, which has its
+# own dedicated Kustomization (platform-secrets.yaml) for a reason: it
+# needs `decryption.provider: sops`, and it targets a namespace
+# (scrap-backup) that platform-backup.yaml's Kustomization creates, not
+# this one. Implicitly picking up secrets/restic-credentials.sops.yaml
+# here made the root flux-system Kustomization try to apply a Secret into
+# a namespace that doesn't exist yet, with no SOPS decryption configured
+# at all -- failing bootstrap outright with "namespaces scrap-backup not
+# found". Listing resources explicitly is what keeps this path flat and
+# instance-config.yaml + the platform-tier Kustomization pointers are all
+# it should ever contain; instance secrets live in their own path, applied
+# by their own Kustomization.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - instance-config.yaml
+  - platform-crds.yaml
+  - platform-cert-manager.yaml
+  - platform-cert-manager-config.yaml
+  - platform-ingress.yaml
+  - platform-observability.yaml
+  - platform-observability-config.yaml
+  - platform-secrets.yaml
+  - platform-backup.yaml

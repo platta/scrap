@@ -1,0 +1,113 @@
+# The backup CronJob's discovery-and-backup logic, as a ConfigMap rather than
+# an inline `command:` block -- easier to read, easier to diff. See
+# platform/backup/README.md for the full mechanism this script implements.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scrap-backup-scripts
+  namespace: scrap-backup
+data:
+  discover-and-backup.sh: |
+    #!/bin/sh
+    set -eu
+
+    # Lowercase AND never brace-wrapped without a shell operator inside,
+    # both found live, not by review. Deliberately not shown literally in
+    # this comment either -- Flux's postBuild.substituteFrom scans the raw
+    # text of every resource in this Kustomization, comments included, so
+    # writing the exact pattern here would trip the same failure this
+    # comment is explaining:
+    #  1. tests/assertions/check_instance_literals.py flagged an upper-case
+    #     brace-wrapped shell variable as an undefined Flux
+    #     postBuild.substituteFrom reference (it only scans upper-case, so
+    #     lowercase alone would have silenced it).
+    #  2. Worse, on a real cluster: Flux's actual postBuild.substituteFrom
+    #     runs in envsubst STRICT mode and doesn't care about case at all --
+    #     a bare, brace-wrapped lowercase shell variable with no operator
+    #     inside still failed the whole Kustomization with "variable not
+    #     set (strict mode)". A bare dollar-variable with no braces, and a
+    #     braced one with a parameter-expansion operator inside (like a
+    #     "#pattern" trim), are both left alone by it -- only a bare
+    #     dollar-brace-identifier-brace with nothing else inside is treated
+    #     as a substitution target. So: shell variable references in this
+    #     script drop the braces unless an operator makes them load-bearing.
+    #
+    # The k3s local-path-provisioner default -- see platform/backup/README.md's
+    # "Discovery mechanism" section for why this is a real path, read from
+    # each PersistentVolume object, never guessed from a naming convention.
+    # If storage was relocated after install (see the incident this comment
+    # references in docs/decisions/), update this to match.
+    storage_root="/var/lib/rancher/k3s/storage"
+    mount_root="/hostdata"
+
+    if ! restic snapshots >/dev/null 2>&1; then
+        echo "==> repository not yet initialized -- running restic init"
+        restic init
+    fi
+
+    status=0
+    found=0
+
+    kubectl get pvc -A -l backup.scrap.io/enabled=true \
+        -o jsonpath='{range .items[*]}{.metadata.namespace}{"|"}{.metadata.name}{"|"}{.spec.volumeName}{"|"}{.metadata.annotations.backup\.scrap\.io/consistency-command}{"|"}{.metadata.annotations.backup\.scrap\.io/consistency-pod-selector}{"\n"}{end}' \
+        > /tmp/pvcs.txt
+
+    while IFS='|' read -r ns name pvname cmd selector; do
+        [ -z "$ns" ] && continue
+        found=$((found + 1))
+
+        # REAL FINDING, from actually running this against a live PV: k3s's
+        # local-path-provisioner populates spec.local.path, NOT
+        # spec.hostPath.path (both are valid PersistentVolume fields per
+        # the API schema; only one is what local-path-provisioner actually
+        # writes). Checked live -- confirmed empty hostPath.path, real
+        # value under local.path -- rather than assumed from the schema
+        # alone. Tries local.path first since that's the real default;
+        # falls back to hostPath.path for any other provisioner that does
+        # use it, before concluding this isn't a local-path PV at all.
+        hostpath=$(kubectl get pv "$pvname" -o jsonpath='{.spec.local.path}' 2>/dev/null || true)
+        if [ -z "$hostpath" ]; then
+            hostpath=$(kubectl get pv "$pvname" -o jsonpath='{.spec.hostPath.path}' 2>/dev/null || true)
+        fi
+        case "$hostpath" in
+            "$storage_root"/*) : ;;
+            *)
+                echo "SKIP  $ns/$name: PV $pvname has no path under $storage_root -- not a"
+                echo "      local-path PV. A CSI-backed StorageClass needs its own backup"
+                echo "      approach; see the extension map in docs/decisions/."
+                status=1
+                continue
+                ;;
+        esac
+
+        if [ -n "$cmd" ] && [ -n "$selector" ]; then
+            pod=$(kubectl get pod -n "$ns" -l "$selector" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+            if [ -n "$pod" ]; then
+                echo "==> $ns/$name: running consistency command in pod $pod: $cmd"
+                kubectl exec -n "$ns" "$pod" -- sh -c "$cmd"
+            else
+                echo "WARN  $ns/$name: consistency-pod-selector '$selector' matched no pod -- backing up without it"
+            fi
+        fi
+
+        # Deliberately not using brace parameter expansion (dollar, open
+        # brace, hostpath, hash, storage_root, close brace) here -- found
+        # live: Flux's postBuild.substituteFrom grabs the leading
+        # identifier inside ANY dollar-brace pair and demands it resolve as
+        # an instance-config value, regardless of what parameter-expansion
+        # operator follows inside. It doesn't parse shell syntax at all; it
+        # just found the brace form and failed the whole Kustomization with
+        # the same strict-mode error this comment is explaining. Spelling
+        # the pattern out in words, even here, is intentional -- writing it
+        # literally in this comment reproduces the exact same failure.
+        # sed sidesteps brace-based expansion entirely.
+        localpath=$(printf '%s' "$hostpath" | sed "s#^$storage_root#$mount_root#")
+        echo "==> $ns/$name: backing up $localpath"
+        if ! restic backup "$localpath" --host "$INSTANCE_NAME" --tag "namespace=$ns" --tag "pvc=$name"; then
+            echo "FAIL  $ns/$name: restic backup failed"
+            status=1
+        fi
+    done < /tmp/pvcs.txt
+
+    echo "==> processed $found labelled PVC(s)"
+    exit $status

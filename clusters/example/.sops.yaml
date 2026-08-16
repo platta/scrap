@@ -1,0 +1,29 @@
+# SOPS discovers .sops.yaml by walking UP FROM THE CURRENT WORKING
+# DIRECTORY (not from the file you point it at), then matches path_regex
+# below against the target file's path relative to THIS file's directory.
+# Always `cd` into clusters/example/secrets/ (or a descendant) before
+# running sops against files there -- running it from elsewhere can walk
+# into a completely different, unrelated .sops.yaml and silently encrypt to
+# the wrong recipients with no error. See clusters/example/secrets/README.md.
+#
+# This file scopes encryption rules to THIS instance only. Each
+# clusters/<name>/ directory carries its own .sops.yaml with its own
+# recipients; there is deliberately no repository-root .sops.yaml, because a
+# single global recipient list can't describe keys that don't exist yet for
+# an instance nobody has created.
+#
+# The recipient below is a published, intentionally-non-secret REFERENCE
+# keypair -- see clusters/example/secrets/README.md. It exists only so this
+# checked-in example is structurally real (CI can decrypt and validate it),
+# never to protect anything. A real instance's own .sops.yaml is generated
+# fresh by bootstrap/install.sh, recipients set to that instance's own
+# operational + escrow age public keys -- see docs/core/bootstrap-lifecycle.md
+# step 4.
+creation_rules:
+  - path_regex: secrets/.*\.sops\.ya?ml$
+    age: age1v3e4qexfxds5ljz77qfmjdhttpphm0kpcr7wj0n2fafz3kzm0v5qxzwhsn
+    # Encrypt only data/stringData values -- kind, apiVersion and metadata
+    # stay plaintext so Kustomize can still process the manifest
+    # structurally (namespace transforms, etc.) at build time. Flux
+    # decrypts the data/stringData values at reconcile time, after build.
+    encrypted_regex: ^(data|stringData)$

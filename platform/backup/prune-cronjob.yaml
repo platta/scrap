@@ -1,0 +1,59 @@
+# The ONE prune job for the whole installation -- direct fix for a real
+# defect: eight independent per-app `restic forget --prune` jobs racing each
+# other and evicting one another's snapshots. --host scopes forget to only
+# this instance's own snapshots; restic's default --group-by is
+# "host,paths", so an accidentally-shared repository still can't have one
+# instance's forget touch another's history. See
+# docs/decisions/0010-backup-credential-isolation.md.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scrap-backup-prune
+  namespace: scrap-backup
+spec:
+  schedule: "23 3 * * 0" # weekly, Sunday
+  timeZone: "${TIMEZONE}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: prune
+              image: restic/restic:0.19.1
+              # REAL FINDING, from actually running this: flag and value as
+              # SEPARATE list items ("--keep-daily", "${BACKUP_RETENTION_DAILY}")
+              # failed apply with "expected string, got ...Value:7" --
+              # Flux's postBuild.substituteFrom loses the string type on a
+              # substituted scalar that renders as a bare number, even
+              # though the source was quoted. Folding flag=value into ONE
+              # list item means the rendered text (e.g. "--keep-daily=7")
+              # can never be mistaken for a YAML number. Standard, known
+              # Flux workaround for this class of bug -- not SCRAP-specific.
+              args:
+                - forget
+                - --host=${INSTANCE_NAME}
+                - --keep-daily=${BACKUP_RETENTION_DAILY}
+                - --keep-weekly=${BACKUP_RETENTION_WEEKLY}
+                - --keep-monthly=${BACKUP_RETENTION_MONTHLY}
+                - --prune
+              env:
+                - name: RESTIC_REPOSITORY
+                  value: "${BACKUP_DESTINATION}"
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: RESTIC_PASSWORD
+              volumeMounts:
+                - name: repo
+                  mountPath: /var/lib/scrap-backup
+          volumes:
+            - name: repo
+              hostPath:
+                path: /var/lib/scrap-backup
+                type: DirectoryOrCreate
