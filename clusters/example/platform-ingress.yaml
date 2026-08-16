@@ -16,7 +16,7 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: scrap
+    name: flux-system
   dependsOn:
     - name: platform-crds
     - name: platform-cert-manager-config

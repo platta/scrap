@@ -11,6 +11,6 @@ spec:
   prune: true
   sourceRef:
     kind: GitRepository
-    name: scrap
+    name: flux-system
   wait: true
   timeout: 3m0s

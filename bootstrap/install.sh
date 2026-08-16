@@ -1,0 +1,239 @@
+#!/bin/sh
+# Orchestrates: preflight -> k3s -> age keys (verified escrow) -> Git source
+# -> seed the SOPS decryption secret -> flux bootstrap -> postflight.
+# See docs/core/bootstrap-lifecycle.md for the full documented sequence
+# this script implements.
+#
+# Configuration via environment variables, all optional:
+#
+#   REPO_URL       Git URL to bootstrap Flux against. If unset, a local
+#                   bare repository is created and seeded with a snapshot
+#                   of THIS SCRAP checkout -- the D5 minimum path: no
+#                   GitHub, no hosted Git, no internet at bootstrap time
+#                   beyond what k3s/Helm charts already need. See
+#                   docs/decisions/0005-minimum-git-remote.md.
+#                   Set this to your own repository (a fork, or a separate
+#                   Topology B consumer repo -- see
+#                   docs/decisions/0009-repository-topology.md) for a real,
+#                   externally-hosted install.
+#   REPO_BRANCH     Default: main
+#   CLUSTER_PATH    Default: ./clusters/example -- rename this to your own
+#                   instance name for a real install (copy
+#                   clusters/example/ to clusters/<name>/ first).
+#   K3S_VERSION     Passed through to bootstrap/host/install-k3s.sh.
+#   FLUX_VERSION    Default: v2.9.4, pinned.
+#   AGE_KEY_DIR     Where the two age keypairs are written. Default:
+#                   /etc/scrap/age -- root-only permissions.
+set -eu
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+REPO_BRANCH="${REPO_BRANCH:-main}"
+CLUSTER_PATH="${CLUSTER_PATH:-./clusters/example}"
+FLUX_VERSION="${FLUX_VERSION:-v2.9.4}"
+AGE_KEY_DIR="${AGE_KEY_DIR:-/etc/scrap/age}"
+
+log() { echo "==> $*"; }
+
+# ---------------------------------------------------------------------------
+log "Step 1/7: preflight"
+if ! sh "$SCRIPT_DIR/preflight/run-all.sh"; then
+    echo
+    echo "Preflight failed. Aborting before touching anything. Fix the FAIL items and re-run."
+    exit 1
+fi
+echo
+
+# ---------------------------------------------------------------------------
+log "Step 2/7: install k3s"
+K3S_VERSION="${K3S_VERSION:-}" sh "$SCRIPT_DIR/host/install-k3s.sh"
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+echo
+
+# ---------------------------------------------------------------------------
+log "Step 3/7: install the flux CLI (pinned ${FLUX_VERSION})"
+if ! command -v flux >/dev/null 2>&1 || [ "$(flux version --client 2>/dev/null | awk '{print $2}')" != "$FLUX_VERSION" ]; then
+    # REAL BUG, found running this end-to-end: fluxcd.io/install.sh itself
+    # requires bash (`#!/usr/bin/env bash`, using bash-only syntax further
+    # in) -- piping it into plain `sh` fails with a parse error on Debian,
+    # where /bin/sh is dash, not bash. bash itself is assumed present as a
+    # base OS component (unlike git/age, it is not something Debian/Ubuntu
+    # ship without), so no preflight check was added for it specifically.
+    curl -sfL https://fluxcd.io/install.sh | FLUX_VERSION="${FLUX_VERSION#v}" bash
+fi
+flux install --version="$FLUX_VERSION"
+echo
+
+# ---------------------------------------------------------------------------
+log "Step 4/7: age keys -- operational + offline escrow, escrow verified before continuing"
+# age-keygen's presence was already confirmed by preflight's
+# check-prerequisites.sh in step 1 -- not re-checked here.
+mkdir -p "$AGE_KEY_DIR"
+chmod 700 "$AGE_KEY_DIR"
+OP_KEY="$AGE_KEY_DIR/operational.agekey"
+ESCROW_KEY="$AGE_KEY_DIR/escrow.agekey"
+
+if [ ! -f "$OP_KEY" ]; then
+    age-keygen -o "$OP_KEY" 2>&1
+    chmod 600 "$OP_KEY"
+fi
+if [ ! -f "$ESCROW_KEY" ]; then
+    age-keygen -o "$ESCROW_KEY" 2>&1
+    chmod 600 "$ESCROW_KEY"
+fi
+
+OP_PUB=$(age-keygen -y "$OP_KEY")
+ESCROW_PUB=$(age-keygen -y "$ESCROW_KEY")
+
+echo
+echo "Two age keys were generated. Both public keys will be committed (public keys are not"
+echo "secret). Both PRIVATE keys must never be committed."
+echo
+echo "  Operational public key: $OP_PUB"
+echo "  Escrow public key:      $ESCROW_PUB"
+echo
+echo "The OPERATIONAL key ($OP_KEY) stays on this host -- it's what Flux uses to decrypt"
+echo "secrets day to day."
+echo
+echo "The ESCROW key ($ESCROW_KEY) is your recovery copy. If this host is lost, it is the"
+echo "only way to read your secrets back out of Git. Copy it somewhere that survives this"
+echo "host dying -- a password manager, a printed copy, a USB drive kept elsewhere -- NOW."
+echo
+if [ -t 0 ]; then
+    fingerprint=$(printf '%s' "$ESCROW_PUB" | tail -c 9)
+    echo "Escrow key fingerprint (last 8 characters of its public key): $fingerprint"
+    printf "Once you have copied %s off this host, type that fingerprint to confirm: " "$ESCROW_KEY"
+    read -r confirm
+    if [ "$confirm" != "$fingerprint" ]; then
+        echo "Fingerprint did not match -- refusing to continue without confirmed escrow."
+        exit 1
+    fi
+    echo "Escrow confirmed."
+else
+    echo "Non-interactive shell detected -- cannot verify escrow interactively. Set"
+    echo "SCRAP_ESCROW_CONFIRMED=1 to proceed anyway ONLY if escrow has genuinely been verified"
+    echo "by other means; otherwise this is exactly the gap that left a real restic password"
+    echo "unconfirmed in escrow once before. See docs/core/bootstrap-lifecycle.md."
+    if [ "${SCRAP_ESCROW_CONFIRMED:-0}" != "1" ]; then
+        exit 1
+    fi
+fi
+echo
+
+# ---------------------------------------------------------------------------
+log "Step 5/7: Git source"
+FLUX_PRIVATE_KEY_FILE=""
+if [ -z "${REPO_URL:-}" ]; then
+    # REAL FINDING, from actually running this: Flux's GitRepository source
+    # only supports HTTP/S or SSH URLs -- confirmed directly against
+    # `kubectl explain gitrepository.spec.url` and against a real failure,
+    # `flux bootstrap git --url=file:///...` : `scheme "file" is not
+    # supported`. A bare filesystem path is NOT a usable Flux source, even
+    # though the plain `git` CLI accepts one fine. The D5-honest fix is
+    # SSH to localhost with a purpose-generated deploy key -- genuinely
+    # local (no internet, no hosting provider), and the native mechanism
+    # Flux actually expects for a self-hosted git source, not a SCRAP
+    # workaround.
+    #
+    # Runs as the invoking (non-root) user, not root, so this doesn't
+    # depend on the host's PermitRootLogin policy at all.
+    GIT_USER="${SUDO_USER:-${USER:-$(id -un)}}"
+    GIT_HOME=$(getent passwd "$GIT_USER" | cut -d: -f6)
+    BARE_REPO="/var/lib/scrap/repo.git"
+    DEPLOY_KEY="/etc/scrap/ssh/scrap-git-deploy"
+
+    echo "REPO_URL not set -- using a local bare repository over SSH-to-localhost as user"
+    echo "'$GIT_USER' (the D5 minimum path: no hosted Git, no internet required): $BARE_REPO"
+
+    mkdir -p "$(dirname "$BARE_REPO")"
+    if [ ! -d "$BARE_REPO" ]; then
+        git init --bare -b "$REPO_BRANCH" "$BARE_REPO" >/dev/null
+        chown -R "$GIT_USER" "$(dirname "$BARE_REPO")"
+        # WORKDIR is created by `mktemp -d` as root (this script runs under
+        # sudo); it must be handed to $GIT_USER before that user can clone
+        # into it, or `git clone` fails with a misleading "already exists
+        # and is not an empty directory" -- the real cause is a permission
+        # denied while probing the directory, not a non-empty one. Found
+        # running this end-to-end on a genuinely fresh host, not by review.
+        WORKDIR=$(mktemp -d)
+        chown "$GIT_USER" "$WORKDIR"
+        sudo -u "$GIT_USER" git clone -q "$BARE_REPO" "$WORKDIR"
+        cp -a "$REPO_ROOT/." "$WORKDIR/"
+        rm -rf "$WORKDIR/.git"
+        sudo -u "$GIT_USER" sh -c "cd '$WORKDIR' && git init -q -b '$REPO_BRANCH' && \
+            git remote add origin '$BARE_REPO' && git add -A && \
+            git -c user.name=scrap-bootstrap -c user.email=bootstrap@localhost \
+                commit -q -m 'Initial commit from bootstrap/install.sh' && \
+            git push -q origin '$REPO_BRANCH'"
+        rm -rf "$WORKDIR"
+    fi
+
+    mkdir -p "$(dirname "$DEPLOY_KEY")"
+    if [ ! -f "$DEPLOY_KEY" ]; then
+        ssh-keygen -t ed25519 -N "" -C "scrap-bootstrap" -f "$DEPLOY_KEY" >/dev/null
+    fi
+    mkdir -p "$GIT_HOME/.ssh"
+    touch "$GIT_HOME/.ssh/authorized_keys"
+    if ! grep -qF "$(cat "$DEPLOY_KEY.pub")" "$GIT_HOME/.ssh/authorized_keys" 2>/dev/null; then
+        cat "$DEPLOY_KEY.pub" >> "$GIT_HOME/.ssh/authorized_keys"
+    fi
+    chown -R "$GIT_USER" "$GIT_HOME/.ssh"
+    chmod 700 "$GIT_HOME/.ssh"
+    chmod 600 "$GIT_HOME/.ssh/authorized_keys"
+
+    # REAL FINDING, from actually running this: "localhost" does NOT work
+    # here, even though the flux CLI's own bootstrap-time clone/push
+    # (running directly on the host) succeeds against it. The
+    # IN-CLUSTER GitRepository object is reconciled by source-controller,
+    # running inside a pod with its own network namespace -- that pod's
+    # "localhost" is itself, not the host, so it fails with
+    # `dial tcp [::1]:22: connect: connection refused` the moment Flux
+    # tries to reconcile after bootstrap's own CLI-level operations already
+    # succeeded. The host's actual reachable address is needed instead, so
+    # traffic from the pod network reaches the host's real interface.
+    HOST_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
+    if [ -z "$HOST_IP" ]; then
+        echo "Could not determine a reachable host IP for the local Git source. Set REPO_URL"
+        echo "explicitly (see the comment block at the top of this script) and re-run."
+        exit 1
+    fi
+    REPO_URL="ssh://${GIT_USER}@${HOST_IP}${BARE_REPO}"
+    FLUX_PRIVATE_KEY_FILE="$DEPLOY_KEY"
+fi
+echo "Bootstrapping against: $REPO_URL (branch $REPO_BRANCH, path $CLUSTER_PATH)"
+echo
+
+# ---------------------------------------------------------------------------
+log "Step 6/7: seed the SOPS decryption secret, then flux bootstrap"
+# The one genuinely irreducible manual step: Flux cannot decrypt the key
+# that lets it decrypt anything, so it has to be placed directly.
+kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl create secret generic sops-age \
+    --namespace=flux-system \
+    --from-file=age.agekey="$OP_KEY" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+if [ -n "$FLUX_PRIVATE_KEY_FILE" ]; then
+    flux bootstrap git \
+        --url="$REPO_URL" \
+        --branch="$REPO_BRANCH" \
+        --path="$CLUSTER_PATH" \
+        --private-key-file="$FLUX_PRIVATE_KEY_FILE" \
+        --silent
+else
+    flux bootstrap git \
+        --url="$REPO_URL" \
+        --branch="$REPO_BRANCH" \
+        --path="$CLUSTER_PATH" \
+        --silent
+fi
+echo
+
+# ---------------------------------------------------------------------------
+log "Step 7/7: postflight"
+sh "$SCRIPT_DIR/postflight.sh" || true
+
+echo
+echo "Bootstrap complete. Escrow key location (move it off this host if not already done):"
+echo "  $ESCROW_KEY"

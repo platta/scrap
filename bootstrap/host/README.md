@@ -1,10 +1,12 @@
 # bootstrap/host/
 
-Not yet implemented. Will contain the pinned k3s install (exact version, `--disable=traefik` so
-Flux is the sole reconciler for platform infrastructure — see `platform/ingress/README.md`), node
-labeling, and documented minimum OS/package expectations for the supported host distributions
-(`docs/core/`).
+`install-k3s.sh` — installs a pinned k3s server with `--disable=traefik` (Flux manages Traefik via
+`platform/ingress/`; k3s's own bundled copy would be a second, un-GitOps'd reconciler for the same
+resources). Refuses to run if k3s is already active on the host, rather than silently reinstalling
+over a running cluster.
 
-This directory existing and being populated is itself an architectural commitment: a fresh or
-recovering node must be reconstructible from what's checked in here plus Git, not from
-undocumented, one-off operator knowledge.
+Version pinned via the `K3S_VERSION` environment variable (default set in the script), matching the
+exact version this repository's own scratch validation used — not a guess, not "latest."
+
+No node-role labeling: SCRAP v1 is single-node only (multi-node is explicitly out of scope,
+`docs/out-of-scope/README.md`), so there is no role to label yet.

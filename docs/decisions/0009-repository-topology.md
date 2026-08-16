@@ -80,12 +80,18 @@ one field:
    prune: true
    sourceRef:
      kind: GitRepository
--    name: scrap
+-    name: flux-system
 +    name: scrap-platform
    dependsOn:
      - name: platform-crds
      - name: platform-cert-manager-config
 ```
+
+`flux-system` is not an arbitrary choice — it's the name `flux bootstrap git` itself creates for
+the operator's own repository by convention, every time, regardless of topology. Every
+`Kustomization` under `clusters/example/` in this repository already targets `flux-system` for
+exactly this reason: it's what `bootstrap/install.sh` (running `flux bootstrap git`) actually
+produces, verified end to end, not assumed.
 
 `spec.path` is unchanged — it resolves inside whichever source `sourceRef` names. This is the
 entire diff. Every `platform/`, `capabilities/`, and `components/` manifest in this repository is

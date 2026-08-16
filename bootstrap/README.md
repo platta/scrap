@@ -1,31 +1,56 @@
 # bootstrap/
 
 **Tier 0.** Everything here runs *outside* the cluster, before Flux exists to reconcile anything.
-Not yet implemented — this milestone establishes the skeleton and its documented contract; the
-scripts themselves are the next implementation milestone.
+
+```
+sudo sh bootstrap/install.sh
+```
+
+runs the full sequence: preflight → k3s install → flux CLI → age keys (verified escrow) → Git
+source → seed the SOPS decryption secret → `flux bootstrap` → postflight. See
+`docs/core/bootstrap-lifecycle.md` for the documented sequence this implements, and the comment
+block at the top of `install.sh` for every configuration variable (all optional, sensible
+defaults).
+
+**Topology-agnostic** (`docs/decisions/0009-repository-topology.md`): `install.sh` only needs a Git
+URL and a path. It does not care whether that URL is a fork of this repository, a separate
+Topology B consumer repository, or — the default when `REPO_URL` is unset — a local bare
+repository seeded with a snapshot of this checkout, satisfying D5's minimum path with no hosted
+Git required at all.
 
 ## `preflight/`
 
-Fail-loud checks that run before anything is installed: required ports free, the node's own DNS
-resolver is not itself cluster-hosted (a direct fix for a real incident where stopping an in-cluster
-DNS service broke the Git access needed to fix it), a roughly correct clock, cgroup v2, sufficient
-disk, and a supported architecture. A failing preflight check blocks installation — it does not
-warn and continue.
+Fail-loud checks, run first, that block installation on a FAIL (not just warn): required ports
+free (`check-ports.sh`, reading `platform/ingress/reserved-ports.yaml` as its source of truth), the
+node's own DNS resolver is not itself cluster-hosted or an unconfirmed loopback
+(`check-resolver.sh`), a roughly correct clock (`check-clock.sh`), cgroup v2 (`check-cgroups.sh`),
+sufficient disk (`check-disk.sh`), and a supported architecture (`check-arch.sh`). Run individually
+or all together via `run-all.sh`.
+
+**Two real bugs found testing these against actually-running hosts, not just reading the code back:**
+`check-ports.sh`'s original `ss` invocation concatenated two flags into one invalid argument and
+read the wrong output column, so it silently reported every port free regardless of what was
+listening — caught by testing against a host with a real production Kubernetes API already bound
+to :6443, which it should have (and, once fixed, did) flag. `check-resolver.sh`'s original loopback
+handling silently passed a bare `nameserver 127.0.0.1` with no way to confirm what was actually
+answering there — tested directly against a real host with exactly that configuration (from this
+project's own migration history) and found to give a false "ok" on the precise shape of a real,
+previously-documented incident. Both fixed before this milestone shipped; see the scripts'
+docstrings for the detail.
 
 ## `host/`
 
-Host-level provisioning as data, not manual steps: the pinned k3s install (with `--disable=traefik`,
-so Flux is the only reconciler for platform infrastructure — see `platform/ingress/`), node
-labeling, and the minimum package/OS expectations. This directory is what makes "rebuild from Git
-alone" actually true — a gap the reference implementation never closed.
+`install-k3s.sh` — the pinned k3s install (`--disable=traefik`, so Flux is the only reconciler for
+platform infrastructure — see `platform/ingress/README.md`). Refuses to run over an
+already-running k3s rather than silently reinstalling on top of it.
 
-## `install.sh`
+## `install.sh` / `postflight.sh`
 
-The orchestration: preflight → k3s install → age key generation and **verified** escrow → seed the
-Flux SOPS decryption secret (the one genuinely irreducible manual step — Flux cannot decrypt the key
-that lets it decrypt anything) → `flux bootstrap` → postflight (every `Kustomization` Ready, a
-backup ran, a restore was verified, and the alerting-receiver status is reported explicitly rather
-than silently defaulting to nothing).
+`install.sh` is the orchestration described above. `postflight.sh` (called at the end, but also
+safe to re-run standalone) waits for every Flux `Kustomization` to report Ready, exports the
+private CA root with trust instructions, and states the Alertmanager receiver's actual
+configuration plainly — including, honestly, when there isn't one.
 
-See `docs/core/bootstrap-lifecycle.md` for the full sequence, including what changes when optional,
-connected capabilities are enabled at install time.
+**Not yet in postflight:** a backup ran and a restore was verified. `platform/backup/` (the restic
+engine) doesn't exist yet — this step is added alongside it, not stubbed out speculatively ahead of
+the thing it verifies.
