@@ -34,3 +34,34 @@ spec:
     resources:
       requests: { cpu: 10m, memory: 32Mi }
       limits: { memory: 128Mi }
+
+    app:
+      webhook:
+        tls:
+          # REAL BUG, found by tests/profiles/t-a-minimal.sh's first-ever
+          # genuinely-from-zero run, not on the scratch VM (which only
+          # ever added trust-manager onto an already-healthy cert-manager,
+          # never a simultaneous cold start): this chart's own default
+          # (helmCert.enabled: false) issues its webhook's TLS cert via a
+          # cert-manager Certificate + self-signed Issuer -- but
+          # trust-manager's HelmRelease lives in the SAME Kustomization as
+          # cert-manager's own (deliberately, so trust-bundle.yaml's later
+          # dependsOn on this Kustomization covers both), which starts
+          # applying the instant cert-manager's Deployment is merely
+          # healthy, before its webhook is necessarily accepting
+          # connections yet. Real, reproduced failure: "no endpoints
+          # available for service cert-manager-webhook", then the
+          # never-created Certificate's Secret leaving the pod stuck at
+          # Init forever, then platform-cert-manager's own health check
+          # failing and every downstream Kustomization blocked behind it.
+          #
+          # helmCert is this chart's own documented, sanctioned way out of
+          # exactly this bootstrap circularity: a Helm-hook-generated cert
+          # instead of a cert-manager-issued one, so trust-manager's
+          # webhook never depends on cert-manager being ready at all. The
+          # chart's own values.yaml cautions this cert is long-lived and
+          # harder to rotate than a cert-manager-issued one -- an
+          # acceptable tradeoff for an internal admission-webhook cert
+          # nothing external ever sees, not a production TLS certificate.
+          helmCert:
+            enabled: true
