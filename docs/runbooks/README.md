@@ -39,12 +39,20 @@ data destroyed, then recovered, verified by a specific value rather than "a file
    restored file before the new pod ever reads it. Restore looked like it succeeded (correct byte
    count, correct timestamp, confirmed with `ls` immediately after) and the data was still gone one
    `rollout restart` later. Never restore into a PVC whose pod is still attached to it.
-5. Restore: run a `restic restore latest --host <instance-name> --path <the exact PV hostPath>
+5. Restore: run a `restic restore latest --host <instance-name> --path <translated path>
    --target /` job, mounting the same `hostdata` and `repo` host paths `platform/backup/`'s own jobs
-   use (see `platform/backup/backup-cronjob.yaml` for the volume definitions to copy). The PV's real
-   path comes from `kubectl get pv <name> -o jsonpath='{.spec.local.path}'` (see
-   `platform/backup/README.md`'s discovery-mechanism section for why `local.path`, not
-   `hostPath.path`).
+   use (see `platform/backup/backup-cronjob.yaml` for the volume definitions to copy). **The
+   `--path` filter must match what the backup job actually recorded, not the raw PV hostPath** — the
+   backup job mounts the host storage root at `/hostdata` and translates each PV's real host path
+   (`spec.local.path`) into that mountpoint before calling `restic backup`
+   (`platform/backup/scripts-configmap.yaml`), so every snapshot's recorded `Paths` reads
+   `/hostdata/pvc-...`, never `/var/lib/rancher/k3s/storage/pvc-...`. Get the real path with
+   `kubectl get pv <name> -o jsonpath='{.spec.local.path}'` (see `platform/backup/README.md`'s
+   discovery-mechanism section for why `local.path`, not `hostPath.path`), then apply the same
+   `s#^/var/lib/rancher/k3s/storage#/hostdata#` substitution before passing it as `--path`. Passing
+   the untranslated host path fails with `no snapshot found` even though the snapshot genuinely
+   exists — found live by `tests/profiles/t-a-minimal.sh`'s first from-zero run, which had taken
+   this step's original wording literally.
 6. Scale back to one replica, and verify **through the original application pod**, not a separate
    one, that the specific value destroyed in step 3 is back — not merely that a file of the same
    name exists.

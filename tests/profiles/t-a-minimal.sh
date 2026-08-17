@@ -177,6 +177,24 @@ PVC_NAME=p5-redis-data
 PV_NAME=$(sudo -E kubectl get pvc -n scrap-examples "$PVC_NAME" -o jsonpath='{.spec.volumeName}')
 HOST_PATH=$(sudo -E kubectl get pv "$PV_NAME" -o jsonpath='{.spec.local.path}')
 
+# REAL BUG, found by this script's first genuinely-from-zero run: the
+# backup job (platform/backup/scripts-configmap.yaml) mounts the host
+# storage root at /hostdata and passes restic the path AFTER translating
+# it to that mountpoint (`sed "s#^$storage_root#$mount_root#"`) -- so
+# every snapshot's recorded Paths is /hostdata/pvc-..., never the raw
+# spec.local.path value. A restic restore --path filter matches the
+# snapshot's recorded Paths exactly, so passing the untranslated host path
+# here always failed with "no snapshot found", even though the snapshot
+# genuinely existed. The restore job below mounts the same host directory
+# at the same /hostdata mountpoint the backup job uses (copied from
+# backup-cronjob.yaml, as docs/runbooks/README.md's step 5 already says to
+# do) -- this translation makes --path match what's actually in the
+# repository, and --target=/ then writes the restored files back through
+# that same bind mount onto the real host path.
+STORAGE_ROOT="/var/lib/rancher/k3s/storage"
+MOUNT_ROOT="/hostdata"
+RESTORE_PATH=$(printf '%s' "$HOST_PATH" | sed "s#^$STORAGE_ROOT#$MOUNT_ROOT#")
+
 sudo -E kubectl scale -n scrap-examples deploy/p5-redis --replicas=0
 sudo -E kubectl wait -n scrap-examples --for=delete pod -l app=p5-redis --timeout=60s >/dev/null 2>&1 || true
 
@@ -194,7 +212,7 @@ spec:
       containers:
         - name: restore
           image: restic/restic:0.19.1
-          command: ["restic", "restore", "latest", "--host=$INSTANCE_NAME", "--path=$HOST_PATH", "--target=/"]
+          command: ["restic", "restore", "latest", "--host=$INSTANCE_NAME", "--path=$RESTORE_PATH", "--target=/"]
           env:
             - name: RESTIC_REPOSITORY
               value: "local:/var/lib/scrap-backup"
