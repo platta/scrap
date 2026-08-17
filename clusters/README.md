@@ -18,8 +18,9 @@ containing only their `clusters/<name>/`, `apps/`, and `secrets/`, pinned to a s
 version of `platform/`/`capabilities/`/`components/` here via a second Flux `GitRepository` source
 (**Topology B**) — no fork, no merging against upstream changes just to add an application. Every
 `Kustomization` in `clusters/example/` already names its source explicitly
-(`sourceRef.name: scrap`); adopting Topology B is a one-line change to that field, repeated per
-file. Full mechanism, a worked example, and why this needs no SCRAP-specific abstraction:
+(`sourceRef.name: flux-system` — the name `flux bootstrap git` itself creates, regardless of
+topology); adopting Topology B is a one-line change to that field, repeated per file. Full
+mechanism, a worked example, and why this needs no SCRAP-specific abstraction:
 `docs/decisions/0009-repository-topology.md`.
 
 ## How instance values reach manifests
