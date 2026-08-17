@@ -1,0 +1,28 @@
+# The claim this README already made -- "application hostnames resolve
+# inside the cluster the same way they resolve outside it" -- had never
+# actually been implemented until a pod needed to resolve another app's
+# hostname for the first time (apps/examples/p2-native-oidc/'s own
+# backend calls to auth.${BASE_DOMAIN}). Found live: no pattern before
+# P2 ever made an in-cluster DNS query for a platform hostname; every
+# prior HTTPS check in this repository's history came from curl --resolve
+# outside the cluster, which never exercises CoreDNS at all.
+#
+# k3s's own, documented, supported extension point for exactly this: a
+# ConfigMap named coredns-custom in kube-system, which its bundled
+# CoreDNS auto-imports (no CoreDNS deployment edit, no restart required
+# to pick up changes -- the import itself is already wired into k3s's
+# default Corefile). One wildcard rewrite, not a per-application entry,
+# and never a hardcoded ClusterIP -- rewritten to the Traefik Service's
+# stable DNS name, resolved normally by the same k8s plugin every other
+# in-cluster Service lookup already uses. This is the direct, structural
+# fix for the coredns-custom hand-maintained-list defect
+# (docs/decisions/) applied to SCRAP's own platform, not just described
+# as a lesson from it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  scrap.override: |
+    rewrite name regex (.+)\.${BASE_DOMAIN} traefik.traefik.svc.cluster.local answer auto

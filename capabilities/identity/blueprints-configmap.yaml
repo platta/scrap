@@ -13,10 +13,18 @@
 # Scope, deliberately minimal: one group or claim isn't a demo app, it's
 # THE reference proof that the declarative contract genuinely works --
 # see docs/decisions/0002-identity-implementation.md's obligation. It
-# provisions exactly what apps/examples/'s P3 (forward-auth) example
-# consumes: a scrap-users group and a Proxy Provider + Application pair
-# for that gateway-level flow. Native OIDC (P2) needs the CA-trust
-# component first -- see the README's "what's not here yet" section.
+# provisions exactly what apps/examples/'s P2 and P3 examples consume: a
+# scrap-users group, an OAuth2 Provider + Application for native OIDC
+# (P2), and a Proxy Provider + Application for forward-auth (P3).
+#
+# Provisioning a client here, in capabilities/identity/, not in apps/
+# examples/p2-native-oidc/ itself, is deliberate, not a T2 shortcut: the
+# application contract (docs/core/application-contract.md) states the
+# client Secret for native OIDC is provided BY the identity capability,
+# the same way platform/backup/ owns the restic credential rather than
+# each application bringing its own -- an application never registers
+# itself with an IdP; something on the IdP side always has to know about
+# it first. This is that.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -36,6 +44,36 @@ data:
           name: scrap-users
         attrs:
           is_superuser: false
+
+      # client_secret below is a demo value -- protects nothing real,
+      # exactly like clusters/example/secrets/'s published reference
+      # keypair. A real application's client Secret is a genuine secret
+      # and belongs in clusters/<name>/secrets/, SOPS-encrypted, the same
+      # as every other real credential in this repository.
+      - id: scrap-p2-oidc-provider
+        model: authentik_providers_oauth2.oauth2provider
+        state: present
+        identifiers:
+          name: scrap-p2-oidc-demo
+        attrs:
+          client_type: confidential
+          client_id: scrap-p2-demo
+          client_secret: "scrap-p2-demo-client-secret-not-sensitive"
+          redirect_uris:
+            - matching_mode: strict
+              redirect_uri_type: authorization
+              url: "https://p2.${BASE_DOMAIN}/login"
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: scrap-p2-oidc-demo
+        attrs:
+          name: "SCRAP native OIDC demo (P2)"
+          provider: !KeyOf scrap-p2-oidc-provider
 
       - id: scrap-forward-auth-provider
         model: authentik_providers_proxy.proxyprovider

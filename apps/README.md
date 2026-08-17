@@ -20,11 +20,11 @@ real application's unrelated complexity:
 - **P6** — reverse proxy to an external LAN backend (NAS, router, hypervisor — anything with no
   identity or TLS of its own)
 
-**P1, P4, P5, P6 implemented and live-validated.** P2 and P3 are deferred: both require
-`capabilities/identity/` (Authentik), and P3 also requires `components/forward-auth/` — neither is
-implemented yet, and building either is a separately-scoped milestone, not something this directory
-can absorb without itself violating T2 (a change touching `apps/` must not also touch
-`capabilities/`). See `apps/examples/README.md`.
+**All six implemented and live-validated.** P2 and P3 hard-depend on `capabilities/identity/`
+(Authentik) — P3 additionally on `components/forward-auth/` — so, unlike P1/P4/P5/P6, they are not
+part of the always-on `apps/examples/kustomization.yaml`; enabling them is one more optional file,
+copied alongside identity's own two. See `apps/examples/README.md` and
+`capabilities/identity/README.md`'s "Enabling this capability" section.
 
 ## `catalog/`
 

@@ -1,0 +1,99 @@
+# P2 -- HTTP application with native OIDC. leplusorg/openid-connect-
+# provider-debugger is purpose-built for exactly this: a minimal OIDC
+# relying party that redirects to the issuer, exchanges the code, and
+# prints the resulting claims -- proof the app itself, not a gateway,
+# validated the token.
+#
+# Its backend calls (discovery, token exchange) hit
+# https://auth.${BASE_DOMAIN} directly -- on the private-CA path,
+# nothing trusts that certificate by default (the D2 experiment's
+# finding), which is exactly what components/ca-trust/ fixes. The
+# `nginx-conf` volume/initContainer below is unrelated to that -- see
+# their own comments -- but is why volumes/env/volumeMounts aren't
+# literally `[]` here even though components/ca-trust/'s own comment
+# describes needing them pre-declared: ca-trust's patch *appends*
+# (`/-`), which only requires the arrays to already exist, not be empty.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p2-oidc-debugger
+  namespace: scrap-examples
+  labels:
+    app: p2-oidc-debugger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: p2-oidc-debugger
+  template:
+    metadata:
+      labels:
+        app: p2-oidc-debugger
+    spec:
+      volumes:
+        # Not a SCRAP concern -- a real, pre-existing limitation of this
+        # specific demo image found live: its nginx.conf hardcodes a
+        # `resolver` directive pointed at Docker's own embedded DNS
+        # address, meaningless and unreachable inside a Kubernetes pod's
+        # network namespace, with no env var or templating to override
+        # it -- OpenResty's cosocket-based HTTP client (what the app uses
+        # for its OIDC discovery/token calls) doesn't consult
+        # /etc/resolv.conf at all, unlike normal glibc resolution
+        # (confirmed live: `getent hosts` inside this same pod already
+        # resolved auth.${BASE_DOMAIN} correctly -- proving
+        # platform/ingress/coredns-wildcard.yaml itself works; only this
+        # app's own OIDC HTTP client couldn't see it). Same vendor-via-
+        # emptyDir-and-initContainer shape platform/backup/ already uses
+        # for restic: an initContainer patches the ONE offending line
+        # (verified: the only "resolver" line in the whole 253-line file)
+        # onto a shared emptyDir, which the main container mounts over
+        # the image's own baked-in config directory.
+        - name: nginx-conf
+          emptyDir: {}
+      initContainers:
+        - name: fix-resolver
+          image: leplusorg/openid-connect-provider-debugger:sha-6c906d2
+          command:
+            - sh
+            - -c
+            # Matches on the directive name alone, not the specific
+            # address being replaced -- robust to whatever upstream's
+            # current default happens to be, and keeps that address out
+            # of this file entirely (it isn't an instance-specific value,
+            # but tests/assertions/check_instance_literals.py can't tell
+            # the difference between that and a real one).
+            #
+            # kube-dns.kube-system.svc.cluster.local, not this cluster's
+            # ClusterIP, so the fix stays portable across any Service
+            # CIDR -- nginx's `resolver` directive resolves a hostname
+            # argument once at config-load time via the normal OS
+            # resolver (glibc, /etc/resolv.conf), a genuinely different
+            # code path from the broken per-request cosocket resolution
+            # this whole workaround exists for.
+            - >-
+              sed 's/^resolver .*/resolver kube-dns.kube-system.svc.cluster.local valid=10s;/'
+              /etc/nginx/conf.d/default.conf > /shared/default.conf
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /shared
+      containers:
+        - name: oidc-debugger
+          image: leplusorg/openid-connect-provider-debugger:sha-6c906d2
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: oidc_client_id
+              value: "scrap-p2-demo"
+            - name: oidc_client_secret
+              value: "scrap-p2-demo-client-secret-not-sensitive"
+            - name: oidc_discovery
+              value: "https://auth.${BASE_DOMAIN}/application/o/scrap-p2-oidc-demo/.well-known/openid-configuration"
+            - name: oidc_redirect_uri
+              value: "https://p2.${BASE_DOMAIN}/login"
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+          resources:
+            requests: { cpu: 5m, memory: 32Mi }
+            limits: { memory: 64Mi }

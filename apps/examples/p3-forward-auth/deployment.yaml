@@ -1,0 +1,33 @@
+# P3 -- HTTP application behind gateway forward-auth. Reuses P1's
+# whoami: the point of this pattern is that the application itself is
+# completely unaware of authentication -- it never sees a client ID, a
+# token, or an OIDC library, only whatever headers Traefik's Middleware
+# (components/forward-auth/) chooses to forward. Any plain HTTP app
+# proves the pattern equally well; whoami just makes the result legible
+# (it echoes the identity headers back in its response body).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p3-whoami
+  namespace: scrap-examples
+  labels:
+    app: p3-whoami
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: p3-whoami
+  template:
+    metadata:
+      labels:
+        app: p3-whoami
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.12.0
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits: { memory: 32Mi }

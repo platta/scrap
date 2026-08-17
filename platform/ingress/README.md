@@ -36,5 +36,13 @@ ServiceLB. SCRAP makes that class of mistake CI-detectable rather than a live in
 ## In-cluster hostname resolution
 
 Application hostnames resolve inside the cluster the same way they resolve outside it — one
-wildcard DNS/hosts entry, never a hand-maintained per-application list and never a hardcoded
-ClusterIP. See `docs/decisions/` for the specific defect this replaces.
+wildcard rewrite (`coredns-wildcard.yaml`, a `coredns-custom` `ConfigMap` in `kube-system` — k3s's
+own documented, supported CoreDNS extension point, auto-imported with no CoreDNS deployment edit
+or restart needed), never a hand-maintained per-application list and never a hardcoded ClusterIP:
+`*.${BASE_DOMAIN}` rewrites to the Traefik `Service`'s own stable DNS name, resolved by the same
+`k8s` CoreDNS plugin every other in-cluster `Service` lookup already uses. See `docs/decisions/`
+for the specific defect (a hand-maintained `coredns-custom` list, hardcoded to one `ClusterIP`)
+this replaces. Found needing this live: no application pattern before P2 (native OIDC,
+`apps/examples/p2-native-oidc/`) ever made an in-cluster DNS query for a platform hostname — every
+prior check in this repository's history queried from outside the cluster via `curl --resolve`,
+which never exercises CoreDNS at all.

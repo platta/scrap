@@ -59,7 +59,7 @@ Application, and the outpost assignment that makes forward-auth (P3) actually fu
 Both are the general identity contract (`docs/core/application-contract.md`), not Authentik-specific
 — an extension implementation must satisfy the same two.
 
-## Enabling this capability -- two files, not one
+## Enabling this capability -- two files, not one (three, with the demo apps)
 
 `capabilities/README.md` says enabling a capability is copying one Flux `Kustomization` file. For
 any capability needing its own credential, that's one file short: the credential lives under
@@ -72,6 +72,13 @@ into `clusters/<name>/capabilities/`:
 - `cluster-secrets-kustomization.yaml` → rename to `identity-secrets.yaml`. Installs
   `clusters/<name>/secrets/identity/` — the `authentik` `Namespace` and the `identity-credentials`
   `Secret`.
+- `apps/examples/identity/cluster-kustomization.yaml` → rename to `identity-examples.yaml`.
+  **Optional**, and deliberately not alongside this directory's other two templates — see that
+  file's own comment for why. Installs `apps/examples/p2-native-oidc/` and
+  `apps/examples/p3-forward-auth/` — kept out of the always-on `apps/examples/kustomization.yaml`
+  specifically because they hard-depend on this capability; bundling them there would break the
+  `minimal` profile, which has no identity capability for them to authenticate against. Skip this
+  file if you only want identity itself, no demo apps.
 
 **Dependency direction, found live, the opposite of `platform-backup`/`platform-secrets`:**
 `identity` `dependsOn` `identity-secrets`, not the other way around. `platform-backup`'s CronJob
@@ -151,10 +158,21 @@ A PostgreSQL database to back up and restore (the same pattern already used for 
 applications, `platform/backup/`). ~850 Mi of additional memory, measured (see above) — the
 identity hardware tier. No internet, no external account.
 
+## P2 and P3, live end to end
+
+`apps/examples/p2-native-oidc/` and `apps/examples/p3-forward-auth/` (enabled via the optional
+third file, `apps/examples/identity/cluster-kustomization.yaml` — see "Enabling this capability"
+above) prove both patterns for real, not just structurally. Getting there needed one more fix,
+found live and not specific to identity at all: **no application pattern before P2 ever made an
+in-cluster DNS query for a platform hostname** (every prior check in this repository's history
+queried from outside the cluster). `platform/ingress/`'s own claim that in-cluster hostnames
+resolve was true in prose only — `platform/ingress/coredns-wildcard.yaml` is what actually
+implements it now; see that file and `platform/ingress/README.md` for the full story, including a
+CoreDNS syntax mistake that briefly took cluster DNS down entirely during validation, caught and
+fixed before ever reaching `main`.
+
 ## What's not here yet
 
-- **Native OIDC (P2)** and **forward-auth (P3)** wired into a real `apps/examples/` demo --
-  `components/ca-trust/` (the P2 blocker) is done; both patterns are the next piece of work.
 - **Adversarial auth-flow testing** (`docs/decisions/0002-identity-implementation.md`'s own stated
   obligation) — this milestone proved the declarative contract and the backup/restore contract;
   it did not attempt account-takeover or recovery-flow abuse scenarios.

@@ -1,0 +1,21 @@
+# Matches the external_host capabilities/identity/blueprints-configmap.yaml's
+# scrap-forward-auth Proxy Provider declares (forward_single mode ties
+# one Provider to exactly one hostname) -- p3.${BASE_DOMAIN}, same as
+# this HTTPRoute's own hostname, has to agree with that value or the
+# outpost will reject the callback.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: p3-whoami
+  namespace: scrap-examples
+spec:
+  parentRefs:
+    - name: scrap-gateway
+      namespace: traefik
+      sectionName: websecure
+  hostnames:
+    - "p3.${BASE_DOMAIN}"
+  rules:
+    - backendRefs:
+        - name: p3-whoami
+          port: 80

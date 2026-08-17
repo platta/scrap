@@ -1,0 +1,15 @@
+# A separate aggregator from ../kustomization.yaml on purpose: P2 and P3
+# hard-depend on capabilities/identity/ being enabled (an OIDC discovery
+# URL and a forward-auth outpost that only exist once it is), unlike
+# P1/P4/P5/P6, which the reference instance applies unconditionally.
+# Bundling P2/P3 into the always-on apps/examples/kustomization.yaml
+# would break the minimal profile: it has no identity capability to
+# authenticate against at all. See capabilities/identity/
+# cluster-examples-kustomization.yaml, the Flux Kustomization that
+# applies this directory -- copied in only alongside identity's own two
+# enabling files, never on by default.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../p2-native-oidc
+  - ../p3-forward-auth

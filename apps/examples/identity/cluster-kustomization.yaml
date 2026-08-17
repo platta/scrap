@@ -1,0 +1,39 @@
+# Optional third file, alongside capabilities/identity/'s own two
+# (cluster-kustomization.yaml and cluster-secrets-kustomization.yaml):
+# copy this one too, into clusters/<name>/capabilities/, if you also
+# want the P2 (native OIDC) and P3 (forward-auth) demo applications from
+# apps/examples/ -- they hard-depend on identity being enabled, so they
+# are never part of the always-on apps/examples/kustomization.yaml
+# (P1/P4/P5/P6 stay unconditional; see this directory's own
+# kustomization.yaml). Skip this file entirely if you only want the
+# identity capability itself, with no demo applications.
+#
+# Deliberately lives here, under apps/examples/, not under
+# capabilities/identity/ alongside the other two templates -- found via
+# tests/assertions/check_core_boundary.py, not by inspection: a template
+# file physically under capabilities/ whose own `spec.path` points at
+# apps/ still reads, textually, as "capabilities/ references apps/", the
+# exact tier-direction violation that check exists to catch, regardless
+# of the fact that this file has no effect until copied elsewhere. An
+# apps/-tier template referencing an apps/ path crosses no boundary at
+# all, so this is where it belongs.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: identity-examples
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./apps/examples/identity
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: identity
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 5m0s

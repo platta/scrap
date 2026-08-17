@@ -1,0 +1,15 @@
+# namespace: is required here, unlike p2-native-oidc/'s kustomization.yaml
+# -- components/forward-auth/'s Middleware is a standalone resource with
+# no namespace of its own (Gateway API's extensionRef has no namespace
+# field at all, so it must land in the SAME namespace as this directory's
+# own HTTPRoute); this transformer is what places it there. See
+# components/forward-auth/README.md's "Why namespace: is required".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: scrap-examples
+resources:
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml
+components:
+  - ../../../components/forward-auth
