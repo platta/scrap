@@ -1,0 +1,26 @@
+# The mechanism docs/decisions/ (the private-CA trust contract, §3.2 of
+# the architecture) requires: the platform's CA certificate published
+# somewhere any application can read, without any platform-side action
+# per application. trust-manager's Bundle is a cluster-scoped resource
+# that does exactly this natively -- no SCRAP-authored controller, no
+# init-container concatenation script. Two sources combined into one
+# ConfigMap key: the OS/Mozilla CA set (useDefaultCAs -- so a workload
+# that also calls out to the public internet keeps trusting it) plus this
+# platform's own root, read from the same Secret
+# platform/ingress/wildcard-certificate.yaml's own trust ultimately
+# chains to. No namespaceSelector -- distributed to every namespace
+# unconditionally, so an application obtains trust purely by mounting the
+# ConfigMap (components/ca-trust/) with no platform-side opt-in step.
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: scrap-ca-bundle
+spec:
+  sources:
+    - useDefaultCAs: true
+    - secret:
+        name: scrap-ca-key-pair
+        key: tls.crt
+  target:
+    configMap:
+      key: ca-bundle.crt

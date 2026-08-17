@@ -1,0 +1,46 @@
+# Mounts the ConfigMap platform/cert-manager-config/trust-bundle.yaml's
+# Bundle publishes into every namespace (system CAs + this platform's own
+# private CA, pre-concatenated by trust-manager -- no init container
+# needed here at all, unlike the manual concatenation the architecture
+# doc originally sketched, because trust-manager already does that part
+# server-side) and points SSL_CERT_FILE at it.
+#
+# JSON6902, targeting the FIRST container of every Deployment in the
+# including build -- same "index 0, not by name" approach as
+# components/forward-auth/, for the same reason: this component cannot
+# know the app's container name in advance.
+#
+# Append (`/-`), deliberately, not a wholesale `add` on the array itself:
+# an `add` straight to `.../volumes` or `.../env` REPLACES the whole
+# array if the app's first container already defines one (P5's redis
+# already has `volumes` for its PVC) -- silently destroying it. Append
+# is safe against that, at the cost of a real, honest tradeoff: RFC 6902
+# requires the parent array to already exist for `/-` to work, so your
+# Deployment's spec.template.spec must already declare `volumes: []` and
+# the first container `env: []` / `volumeMounts: []` (empty is fine) for
+# this component to attach to. Omitting them fails `kubectl kustomize`
+# loudly, with the missing path named -- a build-time error, not a
+# silently clobbered app, which is the better failure mode of the two.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: scrap-ca-bundle
+          configMap:
+            name: scrap-ca-bundle
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: scrap-ca-bundle
+          mountPath: /etc/ssl/scrap
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SSL_CERT_FILE
+          value: /etc/ssl/scrap/ca-bundle.crt

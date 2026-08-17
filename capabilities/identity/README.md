@@ -47,12 +47,10 @@ Application, and the outpost assignment that makes forward-auth (P3) actually fu
 
 ## The contract this hands to applications
 
-- **Native OIDC** (pattern P2): an OIDC issuer URL and a per-application client Secret. **Not yet
-  wired into `apps/examples/`** — needs `components/ca-trust/` first, since a P2 application's
-  backend token-exchange calls hit `https://auth.${BASE_DOMAIN}` and, on the default private-CA
-  path, nothing trusts that certificate by default (measured in the D2 experiment: Grafana's OIDC
-  backend calls needed a 223 KB CA bundle injected to succeed). Tracked as the immediate follow-up
-  to this milestone.
+- **Native OIDC** (pattern P2): an OIDC issuer URL and a per-application client Secret.
+  `components/ca-trust/` (its own milestone, landed right after this one) solves the private-CA
+  workload-trust problem this needs — see that directory's README. Not yet wired into an
+  `apps/examples/` demo; that's the next piece of work.
 - **Forward-auth** (pattern P3): a shared gateway-level auth endpoint, consumed via
   `components/forward-auth/` — one filter reference on an `HTTPRoute`, nothing more. **Implemented
   and live-verified** (see below) — no CA-trust dependency, since the `Middleware` calls
@@ -155,8 +153,8 @@ identity hardware tier. No internet, no external account.
 
 ## What's not here yet
 
-- **Native OIDC (P2)** wired into `apps/examples/` — blocked on `components/ca-trust/`, tracked as
-  the immediate next piece of work.
+- **Native OIDC (P2)** and **forward-auth (P3)** wired into a real `apps/examples/` demo --
+  `components/ca-trust/` (the P2 blocker) is done; both patterns are the next piece of work.
 - **Adversarial auth-flow testing** (`docs/decisions/0002-identity-implementation.md`'s own stated
   obligation) — this milestone proved the declarative contract and the backup/restore contract;
   it did not attempt account-takeover or recovery-flow abuse scenarios.

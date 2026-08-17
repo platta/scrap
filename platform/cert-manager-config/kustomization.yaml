@@ -21,7 +21,14 @@
 # health-checkable type, so "dependency ready" here genuinely means "the
 # chart, and therefore its CRDs, are installed," not just "the HelmRelease
 # object was created."
+#
+# trust-bundle.yaml (a Bundle, trust-manager's CRD) rides on the exact
+# same dependency for the exact same reason: trust-manager's own
+# HelmRelease lives in platform/cert-manager/ alongside cert-manager's,
+# so "platform-cert-manager is Ready" already means both charts' CRDs
+# exist by the time this Kustomization applies.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - private-ca.yaml
+  - trust-bundle.yaml

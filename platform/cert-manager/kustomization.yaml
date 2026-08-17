@@ -4,6 +4,7 @@ resources:
   - namespace.yaml
   - helmrepository.yaml
   - helmrelease.yaml
+  - trust-manager-helmrelease.yaml
 # The private CA (ClusterIssuer/Certificate) lives in the SEPARATE
 # platform/cert-manager-config/ directory, applied by its own Flux
 # Kustomization with dependsOn + wait: true on this one. See that

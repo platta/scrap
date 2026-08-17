@@ -1,0 +1,36 @@
+# trust-manager (same upstream org as cert-manager, same HelmRepository)
+# distributes a trust bundle -- the platform's private CA plus the
+# system/OS CA set -- into every namespace as a ConfigMap. This is the
+# mechanism components/ca-trust/ consumes; see that directory's README
+# and platform/cert-manager-config/trust-bundle.yaml for the Bundle
+# resource itself (a separate Kustomization, same CRD-before-CR ordering
+# reason this file's own HelmRelease is split from platform-cert-manager-
+# config -- see that directory's kustomization.yaml).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: trust-manager
+  namespace: cert-manager
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: trust-manager
+      version: "v0.24.0"
+      sourceRef:
+        kind: HelmRepository
+        name: jetstack
+        namespace: cert-manager
+  install:
+    crds: CreateReplace
+    timeout: 5m
+  upgrade:
+    crds: CreateReplace
+    timeout: 5m
+  values:
+    # app.trust.namespace defaults to "cert-manager" already -- exactly
+    # where scrap-ca-key-pair (platform/cert-manager-config/private-ca.yaml)
+    # lives, so the Bundle resource needs no extra RBAC wiring to read it.
+    resources:
+      requests: { cpu: 10m, memory: 32Mi }
+      limits: { memory: 128Mi }
