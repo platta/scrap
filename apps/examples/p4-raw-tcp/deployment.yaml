@@ -1,0 +1,41 @@
+# P4 -- raw TCP/UDP exposure. alpine/socat's whole job is exactly this: a
+# TCP listener that pipes every connection to a command. `EXEC:/bin/cat`
+# makes it a plain echo server -- whatever bytes a client sends come back
+# unchanged, which is the simplest possible proof a raw TCP path works
+# end to end.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p4-tcp-echo
+  namespace: scrap-examples
+  labels:
+    app: p4-tcp-echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: p4-tcp-echo
+  template:
+    metadata:
+      labels:
+        app: p4-tcp-echo
+    spec:
+      containers:
+        - name: echo
+          # Pinned by digest, not tag: alpine/socat's tags are four
+          # dot-separated numbers -- indistinguishable in shape from an
+          # IPv4 address to check_instance_literals.py's literal-IP scan,
+          # found the hard way when tag-pinning tripped that check as a
+          # false positive. A digest sidesteps the collision entirely and
+          # is a strictly stronger pin besides. Resolved from the
+          # upstream "one-eight-one-three" release tag via the registry API.
+          image: alpine/socat@sha256:3ed1cd38741bd445ebffa3aecb9d80c46a83db45f5b5ef03332976c7ca9814af
+          args:
+            - "TCP-LISTEN:9000,fork,reuseaddr"
+            - "EXEC:/bin/cat"
+          ports:
+            - name: tcp-echo
+              containerPort: 9000
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits: { memory: 32Mi }

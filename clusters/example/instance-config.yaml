@@ -59,3 +59,11 @@ data:
   # here when capabilities/offsite-backup/ is enabled -- see
   # docs/core/recovery-model.md for exactly what each choice buys.
   BACKUP_DESTINATION: "local:/var/lib/scrap-backup"
+
+  # apps/examples/p6-external-proxy/'s demonstration backend -- a NAS, a
+  # router admin UI, a hypervisor console, anything real on your LAN with
+  # no identity or TLS of its own. RFC 5737 documentation address below:
+  # a placeholder, like NODE_ADDRESS above, never a real one. Replace it
+  # with your own device's address to make that example actually route
+  # traffic; see apps/examples/p6-external-proxy/README.md.
+  EXAMPLE_P6_BACKEND_ADDRESS: "203.0.113.10"

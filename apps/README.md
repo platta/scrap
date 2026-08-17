@@ -20,7 +20,11 @@ real application's unrelated complexity:
 - **P6** — reverse proxy to an external LAN backend (NAS, router, hypervisor — anything with no
   identity or TLS of its own)
 
-Not yet implemented — tracked in the roadmap (repository root `README.md`).
+**P1, P4, P5, P6 implemented and live-validated.** P2 and P3 are deferred: both require
+`capabilities/identity/` (Authentik), and P3 also requires `components/forward-auth/` — neither is
+implemented yet, and building either is a separately-scoped milestone, not something this directory
+can absorb without itself violating T2 (a change touching `apps/` must not also touch
+`capabilities/`). See `apps/examples/README.md`.
 
 ## `catalog/`
 

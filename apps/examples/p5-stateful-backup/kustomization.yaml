@@ -1,0 +1,12 @@
+# components/backup/ adds backup.scrap.io/enabled: "true" to every PVC in
+# this build -- there's exactly one (p5-redis-data). This is the discovery
+# half of the contract; see pvc.yaml for the consistency half, which the
+# component deliberately does not touch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+components:
+  - ../../../components/backup

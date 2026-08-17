@@ -1,0 +1,26 @@
+# The discovery half of P5's backup contract: no label here at all. This
+# PVC opts into platform/backup/ via components/backup/ (see this
+# directory's kustomization.yaml), the same way a real application would --
+# proving the component actually patches a PVC it didn't write.
+#
+# The consistency half is these two annotations, which components/backup/
+# deliberately does NOT set (it only ever adds the label) -- a consistency
+# method is application-specific and stays declared directly on the PVC it
+# describes. "redis-cli SAVE" forces an immediate RDB rewrite so the file
+# platform/backup/ copies off disk reflects data written up to the moment
+# of the backup run, not whatever Redis's own background-save schedule
+# happened to leave on disk.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: p5-redis-data
+  namespace: scrap-examples
+  annotations:
+    backup.scrap.io/consistency-command: "redis-cli SAVE"
+    backup.scrap.io/consistency-pod-selector: "app=p5-redis"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 256Mi

@@ -1,0 +1,14 @@
+# No selector: this Service has no pods of its own. Its endpoints are set
+# explicitly in endpointslice.yaml, pointing outside the cluster entirely --
+# this pattern runs zero SCRAP-managed code. "port" here is the Service's
+# own port; the real backend port is declared once, in endpointslice.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: p6-external-backend
+  namespace: scrap-examples
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP

@@ -1,0 +1,14 @@
+# ClusterIP only -- Redis here demonstrates the backup pattern, not a
+# reachability pattern; nothing outside this namespace needs to reach it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: p5-redis
+  namespace: scrap-examples
+spec:
+  selector:
+    app: p5-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis

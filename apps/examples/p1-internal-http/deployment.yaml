@@ -1,0 +1,30 @@
+# P1 -- internal HTTP application. traefik/whoami is a purpose-built demo
+# server (echoes request headers, hostname, and its own pod name in the
+# response body), which is exactly what this pattern needs to verify:
+# proof the request actually arrived, routed, and terminated TLS correctly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p1-whoami
+  namespace: scrap-examples
+  labels:
+    app: p1-whoami
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: p1-whoami
+  template:
+    metadata:
+      labels:
+        app: p1-whoami
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.12.0
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests: { cpu: 5m, memory: 16Mi }
+            limits: { memory: 32Mi }

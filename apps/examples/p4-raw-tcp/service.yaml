@@ -1,0 +1,18 @@
+# Never hostNetwork, never an ad hoc host port -- a dedicated LoadBalancer
+# Service, exactly as P4 requires. Its port must be (and is, see
+# platform/ingress/reserved-ports.yaml) declared in the reserved allowlist;
+# tests/assertions/check_reserved_ports.py checks this on every change.
+apiVersion: v1
+kind: Service
+metadata:
+  name: p4-tcp-echo
+  namespace: scrap-examples
+spec:
+  type: LoadBalancer
+  selector:
+    app: p4-tcp-echo
+  ports:
+    - name: tcp-echo
+      port: 9000
+      targetPort: tcp-echo
+      protocol: TCP

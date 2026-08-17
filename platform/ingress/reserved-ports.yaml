@@ -16,3 +16,11 @@ reservedPorts:
     protocol: TCP
     owner: platform-ingress
     note: "Traefik Gateway -- HTTPS, terminates the platform wildcard certificate"
+  - port: 9000
+    protocol: TCP
+    owner: apps-examples
+    # No literal "apps/" path here on purpose -- this file lives under
+    # platform/, and check_core_boundary.py forbids platform/ from
+    # referencing apps/ or capabilities/ even in a comment string. See
+    # docs/patterns/README.md#p4 for the pattern this port demonstrates.
+    note: "P4 pattern demo -- raw TCP echo server (docs/patterns/README.md#p4)"

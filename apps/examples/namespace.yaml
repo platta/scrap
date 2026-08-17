@@ -1,0 +1,9 @@
+# One namespace shared by all four pattern demonstrations in this
+# directory. They are a single deliberate acceptance-probe set, not
+# independent applications added incrementally -- deleting apps/examples/
+# removes this namespace and everything in it, which is exactly what T1
+# requires (apps/ disappears, the platform survives).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scrap-examples

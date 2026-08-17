@@ -1,0 +1,47 @@
+# P5 -- stateful application with a declared consistency method. Redis
+# is a real, believable demonstration of "consistency needs a command, not
+# just a file copy": its on-disk RDB snapshot can lag the in-memory state
+# by up to its own save interval, so the backup contract's consistency
+# command (this PVC's backup.scrap.io/consistency-command annotation)
+# exists precisely to force a fresh, consistent snapshot immediately
+# before the copy runs.
+#
+# strategy: Recreate -- this PVC is ReadWriteOnce; a rolling update briefly
+# running two pods against it would fail to schedule the second one at
+# best, or corrupt the RDB file at worst.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: p5-redis
+  namespace: scrap-examples
+  labels:
+    app: p5-redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: p5-redis
+  template:
+    metadata:
+      labels:
+        app: p5-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:8.4.5
+          args: ["--dir", "/data", "--save", "60", "1"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: p5-redis-data

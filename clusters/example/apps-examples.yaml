@@ -1,0 +1,33 @@
+# apps/examples/ demonstrates four of the six application integration
+# patterns (docs/patterns/): P1 (internal HTTP), P4 (raw TCP), P5 (stateful
+# with a declared backup consistency method), P6 (external LAN backend
+# proxy). P2 (native OIDC) and P3 (forward-auth) are deferred -- both
+# require capabilities/identity/ (Authentik), and P3 also requires
+# components/forward-auth/; neither is implemented yet. See
+# apps/examples/README.md.
+#
+# dependsOn platform-ingress: P1/P5/P6 all attach an HTTPRoute to
+# scrap-gateway, and with wait: true Flux needs that Gateway to already
+# exist for the HTTPRoute to reach Accepted -- otherwise this Kustomization
+# would time out on a from-zero bootstrap, the same ordering reasoning as
+# platform-ingress's own dependsOn on platform-cert-manager-config.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps-examples
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./apps/examples
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-ingress
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 5m0s

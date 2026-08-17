@@ -24,3 +24,4 @@ resources:
   - platform-observability-config.yaml
   - platform-secrets.yaml
   - platform-backup.yaml
+  - apps-examples.yaml

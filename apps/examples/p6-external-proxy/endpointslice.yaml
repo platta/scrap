@@ -1,0 +1,37 @@
+# Points at a real device outside the cluster -- a NAS, a router's admin
+# UI, a hypervisor, anything with a web UI but no identity or TLS of its
+# own. ${EXAMPLE_P6_BACKEND_ADDRESS} ships as an RFC 5737 documentation
+# address (never a real, routable one) in clusters/example/instance-config.yaml,
+# the same placeholder convention that file already uses for NODE_ADDRESS --
+# replace it with your own device's real LAN address to make this pattern
+# actually route traffic.
+#
+# kubernetes.io/service-name is what binds this EndpointSlice to
+# service.yaml's selectorless Service -- the only thing that actually
+# associates the two objects, since there is no label selector to do it.
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: p6-external-backend
+  namespace: scrap-examples
+  labels:
+    kubernetes.io/service-name: p6-external-backend
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 80
+endpoints:
+  - addresses:
+      - "${EXAMPLE_P6_BACKEND_ADDRESS}"
+    # Required, not optional in practice: an endpoint with no explicit
+    # `ready: true` renders as an empty conditions map, and Traefik's
+    # Gateway API provider treats that as unhealthy and refuses to route
+    # to it ("no available server") -- confirmed live, this is not a
+    # theoretical concern. A hand-managed EndpointSlice (no controller is
+    # reconciling readiness for it, unlike a normal Service's own
+    # endpoints) must set this itself.
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
