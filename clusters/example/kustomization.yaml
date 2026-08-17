@@ -25,3 +25,4 @@ resources:
   - platform-secrets.yaml
   - platform-backup.yaml
   - apps-examples.yaml
+  - capabilities.yaml

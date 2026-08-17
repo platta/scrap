@@ -1,0 +1,39 @@
+# Copy this file (and cluster-secrets-kustomization.yaml, next to it) into
+# clusters/<name>/capabilities/ to enable identity -- delete both to
+# disable. See capabilities/README.md and docs/core/configuration-model.md
+# for why a capability needing credentials is a two-file copy, not one:
+# the secret lives under clusters/<name>/secrets/, never under
+# capabilities/, so it stays out of what Topology B's operator repository
+# treats as pinned, shared upstream content
+# (docs/decisions/0009-repository-topology.md).
+#
+# dependsOn identity-secrets, NOT the reverse -- found live, the opposite
+# of platform-secrets/platform-backup's direction, because it's the
+# opposite kind of workload: authentik's server/worker are a HelmRelease-
+# managed Deployment that starts immediately on install, not a CronJob
+# whose secretKeyRef only resolves on its own later schedule. Getting this
+# backwards produced a real, reproducible failure: `CreateContainerConfigError:
+# secret "identity-credentials" not found`. identity-secrets creates both
+# the authentik namespace and the Secret with no dependency of its own;
+# this Kustomization waits on it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: identity
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/identity
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-ingress
+    - name: identity-secrets
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 10m0s

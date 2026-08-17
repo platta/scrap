@@ -17,10 +17,27 @@ config, and that no instance-specific literal — an IP address, in particular �
 
 ## Capability selection
 
-A capability is enabled by **the presence of its Flux `Kustomization` file** in
-`clusters/<name>/capabilities/`. Enabling is copying one file from the capability's own directory;
-disabling is deleting it. Git-diffable, reviewable in a pull request like any other change, no
+A capability is enabled by **the presence of its Flux `Kustomization` file(s)** in
+`clusters/<name>/capabilities/`. Enabling is copying file(s) from the capability's own directory;
+disabling is deleting them. Git-diffable, reviewable in a pull request like any other change, no
 conditional logic anywhere.
+
+`clusters/<name>/capabilities/` is itself a real Flux `Kustomization` (`clusters/example/capabilities.yaml`)
+pointed at that directory with deliberately no `kustomization.yaml` of its own — Flux's fallback
+behavior for a path with no `kustomization.yaml` (discover and flatten every YAML file found) is
+exactly the semantics this needs: any file placed there is picked up, none of them reference each
+other except via their own explicit `dependsOn`.
+
+**A capability needing its own credential is two files, not one** — a small, real exception to
+"copying one file," found while implementing `capabilities/identity/` (the first capability built).
+The credential itself lives under `clusters/<name>/secrets/`, never under `capabilities/`, so it
+stays out of what Topology B treats as pinned, shared upstream content
+(`docs/decisions/0009-repository-topology.md`). That means a second, small Flux `Kustomization`
+pointed at the credential's own directory, alongside the capability's main one — see
+`capabilities/identity/README.md`'s "Enabling this capability" section for the concrete pair, and
+why the dependency between them runs in the direction it does (not always the same direction as
+`platform-backup`/`platform-secrets` — it depends on whether the capability's workload is a
+`CronJob` or something that starts immediately, like a `Deployment`).
 
 ## Profiles
 

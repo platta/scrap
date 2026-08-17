@@ -1,0 +1,31 @@
+# The mechanism docs/core/configuration-model.md promises -- "a capability
+# is enabled by the presence of its Flux Kustomization file in
+# clusters/<name>/capabilities/" -- needed exactly one piece of wiring to
+# become real rather than aspirational: this Kustomization. It's the one
+# structural addition every future capability benefits from; nothing here
+# is identity-specific.
+#
+# Deliberately points at ./clusters/example/capabilities/ WITHOUT that
+# directory having its own kustomization.yaml -- unlike this repository's
+# other paths, that's intentional here, not the bug clusters/example/
+# itself once had. Flux/Kustomize's fallback behavior when a target path
+# has no kustomization.yaml (auto-discover and flatten every yaml file
+# found) is exactly the semantics "copy a file in, delete it to disable,
+# no other edit" needs: clusters/example/capabilities/ holds zero or more
+# independent Flux Kustomization pointer files (identity's two, when
+# copied in, and future capabilities' own), each self-contained, none
+# referencing each other except via their own explicit dependsOn.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: capabilities
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./clusters/example/capabilities
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 5m0s

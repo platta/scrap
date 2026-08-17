@@ -48,11 +48,21 @@ data:
     status=0
     found=0
 
+    # A literal pipe as field separator, not tab, was the first version of
+    # this -- found live: a real consistency-command legitimately contains
+    # "|" (piping pg_dumpall through gzip), which corrupted the field
+    # split and silently dropped the consistency step ("consistency-pod-
+    # selector '... gzip > ...|app.kubernetes.io/...' matched no pod").
+    # Tab is not immune to this in theory, but is not a character any
+    # real shell command or label selector plausibly contains, unlike a
+    # pipe -- confirmed kubectl's jsonpath emits a real tab for {"\t"},
+    # not the two literal characters backslash-t.
     kubectl get pvc -A -l backup.scrap.io/enabled=true \
-        -o jsonpath='{range .items[*]}{.metadata.namespace}{"|"}{.metadata.name}{"|"}{.spec.volumeName}{"|"}{.metadata.annotations.backup\.scrap\.io/consistency-command}{"|"}{.metadata.annotations.backup\.scrap\.io/consistency-pod-selector}{"\n"}{end}' \
+        -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.spec.volumeName}{"\t"}{.metadata.annotations.backup\.scrap\.io/consistency-command}{"\t"}{.metadata.annotations.backup\.scrap\.io/consistency-pod-selector}{"\n"}{end}' \
         > /tmp/pvcs.txt
 
-    while IFS='|' read -r ns name pvname cmd selector; do
+    tab=$(printf '\t')
+    while IFS="$tab" read -r ns name pvname cmd selector; do
         [ -z "$ns" ] && continue
         found=$((found + 1))
 

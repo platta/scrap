@@ -1,0 +1,11 @@
+# No namespace.yaml here -- deliberately. See
+# clusters/example/secrets/identity/namespace.yaml for why the Namespace
+# lives with the Secret this directory's HelmRelease needs to already
+# exist at pod-start time, not here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrepository.yaml
+  - helmrelease.yaml
+  - httproute.yaml
+  - blueprints-configmap.yaml

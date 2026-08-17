@@ -1,0 +1,148 @@
+# Authentik: server + worker + a bundled PostgreSQL (Bitnami subchart,
+# enabled explicitly -- disabled by default upstream). No Redis: current
+# authentik releases (verified against the chart actually pinned below,
+# not assumed) have no Redis dependency at all -- the "4 pods" figure in
+# docs/decisions/0002-identity-implementation.md was measured against an
+# older reference deployment; this one is genuinely lighter.
+#
+# Every sensitive value -- the cookie-signing secret key, the akadmin
+# bootstrap credentials, and authentik's own database password -- comes
+# from clusters/<name>/secrets/identity-credentials.sops.yaml via
+# global.env + secretKeyRef, never from this file's own `values:` block
+# (which Flux stores and reconciles as plain YAML, not a secret. Compare
+# platform/backup/backup-cronjob.yaml's RESTIC_PASSWORD, the same pattern).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: authentik
+  namespace: authentik
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: authentik
+      version: "2026.5.6"
+      sourceRef:
+        kind: HelmRepository
+        name: authentik
+        namespace: authentik
+  install:
+    crds: CreateReplace
+    timeout: 10m
+  upgrade:
+    crds: CreateReplace
+    timeout: 10m
+  values:
+    global:
+      env:
+        - name: AUTHENTIK_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: identity-credentials
+              key: AUTHENTIK_SECRET_KEY
+        - name: AUTHENTIK_BOOTSTRAP_EMAIL
+          valueFrom:
+            secretKeyRef:
+              name: identity-credentials
+              key: AUTHENTIK_BOOTSTRAP_EMAIL
+        - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-credentials
+              key: AUTHENTIK_BOOTSTRAP_PASSWORD
+        - name: AUTHENTIK_BOOTSTRAP_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: identity-credentials
+              key: AUTHENTIK_BOOTSTRAP_TOKEN
+        # AUTHENTIK_<KEY>__<SUBKEY> is authentik's own documented
+        # nested-config-via-env-var convention -- this overrides
+        # authentik.postgresql.password (left blank below) with the same
+        # password postgresql.auth.existingSecret gives the database
+        # server itself, so the two actually agree without maintaining
+        # the value twice.
+        - name: AUTHENTIK_POSTGRESQL__PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-credentials
+              key: AUTHENTIK_POSTGRESQL__PASSWORD
+
+    authentik:
+      # Intentionally blank -- see global.env above. NOT the same as
+      # authentik.existingSecret (which replaces the chart's whole
+      # generated config secret); this is the narrower, additive
+      # env-var-override mechanism authentik itself supports.
+      secret_key: ""
+      postgresql:
+        password: ""
+
+    blueprints:
+      configMaps:
+        - scrap-identity-blueprints
+
+    postgresql:
+      enabled: true
+      auth:
+        # Default secretKeys (postgres-password / password) apply --
+        # see identity-credentials.sops.yaml for both keys, same value.
+        existingSecret: identity-credentials
+      primary:
+        persistence:
+          size: 2Gi
+          # The backup contract, applied to a chart-generated PVC we don't
+          # author ourselves: components/backup/'s label-patch mechanism
+          # only works inside a Kustomize build, and this PVC is created
+          # at Helm-install time instead -- so the label goes straight
+          # into the chart's own values, the extension point it already
+          # exposes for exactly this. Consistency method is a logical
+          # dump (docs/patterns/README.md#p5), not a raw copy: Postgres's
+          # own data directory isn't safe to restic-backup live and
+          # restart from -- the dump file, written to a sibling directory
+          # on the SAME volume so the single-PVC discovery model still
+          # captures it, is the only thing restore actually uses. See
+          # capabilities/identity/README.md.
+          labels:
+            backup.scrap.io/enabled: "true"
+          annotations:
+            # pg_dump as the app user, not pg_dumpall as postgres -- found
+            # live, in two stages. First: PGPASSWORD needs to come from a
+            # FILE, not a plain env var -- Bitnami's postgres image only
+            # ever sets POSTGRES_POSTGRES_PASSWORD_FILE (pointing at a
+            # mounted secret file), never a plain POSTGRES_POSTGRES_PASSWORD
+            # value, regardless of existingSecret. Second, after fixing
+            # that: password auth for the "postgres" superuser itself
+            # still failed -- confirmed live that this Bitnami image does
+            # not wire postgres-password into a network-authenticatable
+            # superuser login when a custom auth.username is configured,
+            # only the app user's own password actually works. Since this
+            # is a genuinely single-database deployment (no other
+            # databases or roles worth a whole-cluster pg_dumpall), a
+            # plain pg_dump as the "authentik" app user against its own
+            # "authentik" database -- which it fully owns -- is both the
+            # fix and the more correct scope to begin with.
+            backup.scrap.io/consistency-command: >-
+              mkdir -p /bitnami/postgresql/scrap-backup &&
+              PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE")" pg_dump -U authentik -d authentik
+              | gzip > /bitnami/postgresql/scrap-backup/pg_dump.sql.gz
+            backup.scrap.io/consistency-pod-selector: >-
+              app.kubernetes.io/instance=authentik,app.kubernetes.io/name=postgresql,app.kubernetes.io/component=primary
+        resources:
+          requests: { cpu: 25m, memory: 128Mi }
+          limits: { memory: 512Mi }
+
+    server:
+      replicas: 1
+      resources:
+        requests: { cpu: 50m, memory: 256Mi }
+        limits: { memory: 768Mi }
+
+    # 512Mi OOMKilled the worker live -- ak apply_blueprint (and, by the
+    # same code path, authentik's own periodic blueprint discovery) spikes
+    # well above steady-state while importing every app module. Not a
+    # one-off: this is the worker's normal operating mode, not an edge
+    # case, so the limit needs headroom for it, not just for idle.
+    worker:
+      replicas: 1
+      resources:
+        requests: { cpu: 25m, memory: 256Mi }
+        limits: { memory: 1Gi }

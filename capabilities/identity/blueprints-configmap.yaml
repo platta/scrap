@@ -1,0 +1,78 @@
+# The declarative half of the non-negotiable requirement in this
+# directory's README: everything SCRAP's supported identity behavior
+# needs exists as a Blueprint here, in Git, reconciled by Flux -- never
+# created only by clicking through the admin UI or a direct API call.
+# Mounted at /blueprints/mounted/cm-scrap-identity-blueprints/ on both
+# the server and worker pods by the chart's own `blueprints.configMaps`
+# mechanism (helmrelease.yaml) -- verified against a live pod's own
+# filesystem, not assumed from docs (which describe a /blueprints/custom/
+# path that this chart version does not actually use). authentik
+# discovers and (re)applies any *.yaml key in a mounted ConfigMap on its
+# own periodic schedule -- no SCRAP-specific reload mechanism.
+#
+# Scope, deliberately minimal: one group or claim isn't a demo app, it's
+# THE reference proof that the declarative contract genuinely works --
+# see docs/decisions/0002-identity-implementation.md's obligation. It
+# provisions exactly what apps/examples/'s P3 (forward-auth) example
+# consumes: a scrap-users group and a Proxy Provider + Application pair
+# for that gateway-level flow. Native OIDC (P2) needs the CA-trust
+# component first -- see the README's "what's not here yet" section.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scrap-identity-blueprints
+  namespace: authentik
+data:
+  scrap-baseline.yaml: |
+    version: 1
+    metadata:
+      name: SCRAP - baseline identity configuration
+      labels:
+        blueprints.scrap.io/managed: "true"
+    entries:
+      - model: authentik_core.group
+        state: present
+        identifiers:
+          name: scrap-users
+        attrs:
+          is_superuser: false
+
+      - id: scrap-forward-auth-provider
+        model: authentik_providers_proxy.proxyprovider
+        state: present
+        identifiers:
+          name: scrap-forward-auth
+        attrs:
+          mode: forward_single
+          external_host: "https://p3.${BASE_DOMAIN}"
+          # Slugs confirmed against a live instance's own /api/v3/flows/instances/
+          # -- "default-authorization-flow" (a plausible-looking guess) does
+          # not exist; authentik ships separate implicit/explicit-consent
+          # authorization flows instead. Implicit consent (no consent
+          # screen) fits a demo/internal proxy provider.
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: scrap-forward-auth-demo
+        attrs:
+          name: "SCRAP forward-auth demo (P3)"
+          provider: !KeyOf scrap-forward-auth-provider
+
+      # Creating a Provider does not attach it to anything that actually
+      # serves it -- found live: components/forward-auth/'s Middleware
+      # called the embedded outpost's real endpoint and got a bare 404,
+      # because the outpost's own `providers` list was still empty.
+      # `identifiers.managed` matches the fixed value the embedded
+      # outpost already ships with (confirmed via
+      # /api/v3/outposts/instances/), so this updates it in place rather
+      # than creating a second one.
+      - model: authentik_outposts.outpost
+        state: present
+        identifiers:
+          managed: goauthentik.io/outposts/embedded
+        attrs:
+          providers:
+            - !KeyOf scrap-forward-auth-provider

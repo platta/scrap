@@ -5,9 +5,12 @@ maintained by this project — a failure here is a SCRAP bug, exactly like a fai
 None of them are required. Several are on by default in the documented `standard` profile
 (`clusters/example/capabilities/`); all are off by default in the `minimal` profile.
 
-**Enabling a capability is copying one Flux `Kustomization` file into
-`clusters/<name>/capabilities/`. Disabling it is deleting that file.** No flags, no templating
-language, no SCRAP-specific configuration format — see `docs/core/configuration-model.md`.
+**Enabling a capability is copying its Flux `Kustomization` file(s) into
+`clusters/<name>/capabilities/`. Disabling it is deleting them.** One file for a capability with no
+credential of its own; two for one that has a credential (the credential itself lives under
+`clusters/<name>/secrets/`, never here — see `capabilities/identity/README.md`'s "Enabling this
+capability" section for the concrete pair). No flags, no templating language, no SCRAP-specific
+configuration format — see `docs/core/configuration-model.md`.
 
 ## The one rule that applies to every directory here
 

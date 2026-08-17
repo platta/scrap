@@ -49,8 +49,20 @@ data destroyed, then recovered, verified by a specific value rather than "a file
    one, that the specific value destroyed in step 3 is back — not merely that a file of the same
    name exists.
 
-Executed exactly this way twice, against two different applications on the `detest` scratch
-cluster:
+**For a multi-tier application (a database plus one or more app-server processes connected to
+it), step 4's "scale to zero" means the *entire* tier that talks to the database, not just the
+database engine itself.** Found the hard way restoring `capabilities/identity/`'s Postgres: with
+authentik's server and worker left running while Postgres was wiped and reloaded from a logical
+dump, the still-live worker's own startup/migration logic raced the manual reload and left Django's
+migration bookkeeping inconsistent with the actual schema (`relation "..." already exists`,
+worker `CrashLoopBackOff` afterward) -- not data loss, but a broken app that then needed the whole
+sequence redone with server *and* worker also scaled to zero throughout. The corrected order for
+any database-backed application: scale every component that connects to the database to zero
+first, restore/reload the database alone, confirm it's healthy on its own (a direct client query,
+not through the app), *then* scale the application tier back up.
+
+Executed exactly this way three times, against three different applications on the `detest`
+scratch cluster:
 
 - **2026-08-16, a bare canary file on a throwaway PVC:** a value written as
   `canary-value-<timestamp>-<random>`, backed up, deleted, confirmed gone via `kubectl exec ...
@@ -63,6 +75,14 @@ cluster:
   this run discovered: the first restore attempt, done without scaling to zero first, silently
   failed exactly as described. Redone with the pod scaled to zero first, the restore held, and
   `redis-cli GET` through the restarted pod returned the exact canary value.
+- **2026-08-17, `capabilities/identity/`'s Postgres:** a group named `canary-identity-final-
+  <timestamp>-<random>` created via authentik's own API, backed up (consistency command: `pg_dump`
+  as the application's own database user, into a sibling directory on the same PVC -- see
+  `capabilities/identity/README.md` for why not `pg_dumpall` as the `postgres` superuser), deleted
+  via the API and confirmed gone (`count: 0`), the whole Postgres data directory wiped, restored via
+  restic, then rebuilt by piping the dump back through `psql` -- with the paragraph above's lesson
+  discovered and corrected mid-run. Verified the exact group, same primary key, back through
+  authentik's own API after restarting server and worker.
 
 **What would make this a real `tests/dr/` entry, not just a runbook:** a script that automates steps
 1-5 against a throwaway PVC as part of CI, asserting the exact value round-trips, replacing the

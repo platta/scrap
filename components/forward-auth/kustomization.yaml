@@ -1,0 +1,32 @@
+# Two things, together: middleware.yaml adds the Middleware object itself
+# (namespace-less -- your consuming kustomization.yaml MUST set a top-level
+# `namespace:` transformer for it, and for every other resource in your
+# build, to land in the right place; components/forward-auth/README.md
+# says so). The patch below attaches it to every HTTPRoute in the
+# including build via Traefik's ExtensionRef filter -- the one place
+# Gateway API has no standard auth primitive of its own (docs/extensions/,
+# platform/ingress/README.md).
+#
+# JSON6902, not a strategic-merge patch like components/backup/ uses:
+# HTTPRouteRule (an item in spec.rules, a list) has no natural merge key
+# for Kustomize's strategic-merge patcher to target rules[0] specifically,
+# so an explicit index is the only reliable mechanism here. Matches every
+# apps/examples/ HTTPRoute today (exactly one rule each); an app with more
+# than one rule needing forward-auth on more than the first would need
+# its own additional patch, not this component alone.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - middleware.yaml
+patches:
+  - target:
+      kind: HTTPRoute
+    patch: |-
+      - op: add
+        path: /spec/rules/0/filters
+        value:
+          - type: ExtensionRef
+            extensionRef:
+              group: traefik.io
+              kind: Middleware
+              name: authentik-forward-auth
