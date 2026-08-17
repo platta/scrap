@@ -96,12 +96,13 @@ add a new one.
 ## Roadmap
 
 1. ~~Repository skeleton + structural CI~~ — **done**
-2. Bootstrap: preflight checks, pinned k3s install, `install.sh`
-3. Platform core: Gateway API CRDs, cert-manager + private CA + wildcard `Certificate`, Traefik/Gateway, local-path storage, observability core, backup engine
-4. Example applications (`apps/examples/`) proving the six application patterns
+2. ~~Bootstrap: preflight checks, pinned k3s install, `install.sh`~~ — **done**
+3. ~~Platform core: Gateway API CRDs, cert-manager + private CA + wildcard `Certificate`, Traefik/Gateway, local-path storage, observability core, backup engine~~ — **done**
+4. ~~Example applications (`apps/examples/`) proving the six application patterns~~ — **P1/P4/P5/P6 done; P2/P3 depend on item 5's identity capability**
 5. Capabilities: Authentik (declarative via Blueprints), Grafana + Loki, ACME/DNS-01, off-site backup, alert delivery, external heartbeat
-6. Dynamic CI profiles (T-A through T-F) and a real destructive-restore test
-7. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
+6. Topology B onboarding: a generator producing a minimal, ordinary Flux/Kustomize/SOPS operator repository pinned to a released SCRAP version, host-agnostic (no GitHub requirement), plus an automated test proving a generated repo bootstraps/reconciles a clean install (`docs/decisions/0009-repository-topology.md`)
+7. Dynamic CI profiles (T-A through T-F) and a real destructive-restore test
+8. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
 
 ## License
 

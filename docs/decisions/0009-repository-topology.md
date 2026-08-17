@@ -135,12 +135,38 @@ puts inside `clusters/<name>/`, never about how `bootstrap/` gets Flux running. 
 documentation should mention both topologies are supported and link here; its scripts need no
 topology-specific branching.
 
-## Open, non-blocking
+## Required for v1: a Topology B generator
+
+**Recorded 2026-08-17, operator decision — supersedes this ADR's original "open, non-blocking"
+framing below.** Topology B must become an implemented, tested onboarding path, not merely an
+architectural possibility documented above. Tracked in the roadmap (repository root `README.md`).
+
+Scope:
+
+- A generator/scaffold tool — a script, not a new abstraction — that produces a minimal, standalone
+  operator repository containing only `clusters/<name>/`, the operator's own `apps/`, and
+  `secrets/`, correctly wired to a pinned SCRAP upstream release exactly per this ADR's "Topology
+  B" section above (the `scrap-platform` `GitRepository`, and every copied `Kustomization`'s
+  `sourceRef.name` already pointed at it) — with zero manual reconstruction of that diff by the
+  operator.
+- Output must stay ordinary Flux/Kustomize/SOPS resources — no proprietary SCRAP configuration
+  format, no generated indirection layer that isn't itself a plain manifest a reader can open and
+  understand (the transparency principle, `0008-abstract-decisions-not-technologies.md`). The
+  generated repository should be small enough that an operator can read the whole thing and see
+  exactly how their instance consumes upstream SCRAP.
+- Must not require GitHub, or any specific host. Generation produces a normal Git repository;
+  hosting it — a local bare repo over SSH, GitHub, GitLab, Forgejo, anything else with a Git
+  remote — is the operator's choice, never something the generator assumes or bakes in.
+- Requires an automated test (`tests/dr/` or `tests/profiles/`) demonstrating that a repository the
+  generator produced actually bootstraps and reconciles a clean SCRAP installation end to end —
+  not merely that the generator's output looks structurally correct.
+
+### Previously open, folded into the scope above
 
 - SCRAP does not yet cut tagged releases — Topology B is fully usable today pinned to a commit
-  SHA, but a real release/tagging convention makes "pinned/versioned" mean what it should. Tracked
-  as future work, not a blocker for this decision or for `bootstrap/`.
-- Whether `clusters/example/` should ship a second, explicitly-labeled example demonstrating
-  Topology B's `sourceRef` diff (versus this ADR's code sample being sufficient) is left open —
-  the working example in this repository stays Topology A for now, since it is the one CI and the
-  scratch validation actually exercise end to end.
+  SHA, but a real release/tagging convention makes "pinned/versioned" mean what it should. Still
+  tracked as its own piece of future work; the generator can target a commit SHA in the meantime.
+- Whether `clusters/example/` should ship a second, explicitly-labeled static example demonstrating
+  Topology B's `sourceRef` diff is superseded by the generator itself: a generated repository *is*
+  the Topology B example, produced on demand rather than hand-maintained statically alongside
+  `clusters/example/`.
