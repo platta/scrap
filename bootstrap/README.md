@@ -48,9 +48,12 @@ already-running k3s rather than silently reinstalling on top of it.
 
 `install.sh` is the orchestration described above. `postflight.sh` (called at the end, but also
 safe to re-run standalone) waits for every Flux `Kustomization` to report Ready, exports the
-private CA root with trust instructions, and states the Alertmanager receiver's actual
-configuration plainly — including, honestly, when there isn't one.
+private CA root with trust instructions, triggers an immediate backup run and confirms it
+succeeds, and states the Alertmanager receiver's actual configuration plainly — including,
+honestly, when there isn't one.
 
-**Not yet in postflight:** a backup ran and a restore was verified. `platform/backup/` (the restic
-engine) doesn't exist yet — this step is added alongside it, not stubbed out speculatively ahead of
-the thing it verifies.
+**Not yet in postflight, and honestly not attempted there:** a *restore* verified. A fresh install
+has no application data yet, so postflight can only prove the backup engine itself runs
+(credentials, repository, discovery) — it does not exercise `restic restore`. Restore is proven
+end to end, against real data, the first time you add a backed-up application; see
+`docs/runbooks/README.md`'s destructive-restore procedure.

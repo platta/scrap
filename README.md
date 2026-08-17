@@ -9,9 +9,15 @@ whatever applications you want. Build the platform once. Deploy arbitrary applic
 using well-defined integration patterns. If the hardware dies, rebuild the platform and restore
 the applications from durable, tested backups.
 
-**Status: early implementation.** The architecture is frozen (see [`docs/decisions/`](docs/decisions/));
-the repository skeleton and its structural guardrails exist; platform manifests do not yet.
-This is not yet installable. See [Roadmap](#roadmap) below.
+**Status: pre-release implementation.** The architecture is frozen (see
+[`docs/decisions/`](docs/decisions/)); the platform core, backup engine, observability core, and
+the identity capability are implemented and live-validated on a real cluster, including P1–P6 of
+the application contract. It is installable end to end via `bootstrap/install.sh` against a fresh
+host. What's still missing before a v1 release candidate: several `capabilities/` (Grafana, logs,
+public TLS, off-site backup, heartbeat), the Topology B onboarding generator, and dynamic
+cluster-backed CI (`tests/profiles/`, `tests/dr/`) — everything tested so far has been validated
+manually against a real scratch cluster, not yet by an automated acceptance suite. See
+[Roadmap](#roadmap) below.
 
 ## What SCRAP actually is
 
