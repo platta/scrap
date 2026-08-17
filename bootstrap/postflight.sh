@@ -14,7 +14,16 @@ echo
 echo "Waiting for all Kustomizations to become Ready (up to 5 minutes)..."
 deadline=$(($(date +%s) + 300))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-    not_ready=$(flux get kustomizations --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$3); if ($3!="True") print}' | wc -l)
+    # $4 is READY -- verified directly against real `flux get kustomizations`
+    # output (NAME, REVISION, SUSPENDED, READY, MESSAGE), not assumed. The
+    # first version of this checked $3 (SUSPENDED, not READY), which is
+    # "False" in normal operation and therefore never equals "True" --
+    # this loop would have spun for the full 5-minute deadline on every
+    # single run, every time, regardless of actual readiness, and the "ok"
+    # branch below could never be reached. Found building tests/profiles/
+    # t-a-minimal.sh, which needed to trust this exact column mapping and
+    # verified it live before relying on it.
+    not_ready=$(flux get kustomizations --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$4); if ($4!="True") print}' | wc -l)
     total=$(flux get kustomizations --no-header 2>/dev/null | wc -l)
     if [ "$total" -gt 0 ] && [ "$not_ready" -eq 0 ]; then
         echo "ok    all $total Kustomization(s) Ready"

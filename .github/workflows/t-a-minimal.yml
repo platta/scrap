@@ -1,0 +1,44 @@
+name: T-A (minimal acceptance profile)
+
+# Dynamic, cluster-backed -- unlike ci.yml's fast structural assertions,
+# this actually bootstraps SCRAP on a fresh machine (the runner itself: a
+# genuinely single-use, ephemeral VM, which is what makes it a legitimate
+# stand-in for "a blank host" rather than a CI-specific shortcut) and
+# mechanically verifies the postconditions tests/profiles/README.md's T-A
+# row requires. See tests/profiles/t-a-minimal.sh for the actual test --
+# this workflow is a thin wrapper around it, deliberately: the same script
+# runs identically on a contributor's own scratch VM.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-minimal:
+    name: T-A -- from-zero bootstrap, live postconditions
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A against this runner as a fresh host
+        run: sh tests/profiles/t-a-minimal.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- kubectl get pvc -A ---"
+          sudo -E kubectl get pvc -A || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service status ---"
+          sudo systemctl status k3s --no-pager || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true
