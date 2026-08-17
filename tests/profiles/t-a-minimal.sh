@@ -164,6 +164,13 @@ fi
 # not just deleted from.
 CANARY="t-a-canary-$(date +%s)-$$"
 sudo -E kubectl exec -n scrap-examples deploy/p5-redis -- redis-cli SET t-a-canary "$CANARY" >/dev/null
+# Sanity check the write actually landed before we trust anything downstream
+# of it -- if this doesn't come back, the bug is in this SET, not in backup
+# or restore.
+preflight_check=$(sudo -E kubectl exec -n scrap-examples deploy/p5-redis -- redis-cli GET t-a-canary 2>/dev/null || true)
+if [ "$preflight_check" != "$CANARY" ]; then
+    echo "WARN  T-A/destructive-restore: canary SET didn't read back immediately (got '$preflight_check') -- continuing anyway to see what backup/restore do"
+fi
 
 RESTORE_JOB="t-a-restore-$(date +%s)"
 sudo -E kubectl create job -n scrap-backup "${RESTORE_JOB}-backup" --from=cronjob/scrap-backup >/dev/null
@@ -172,6 +179,12 @@ for i in $(seq 1 24); do
     [ "${s:-0}" -ge 1 ] 2>/dev/null && break
     sleep 5
 done
+# Diagnostic evidence, always -- not just on outright job failure. A job
+# that exits 0 but restores the wrong content (the actual failure this is
+# guarding against) previously left zero evidence of what the backup step
+# itself saw and did.
+echo "      --- backup-trigger job log (job/${RESTORE_JOB}-backup) ---"
+sudo -E kubectl logs -n scrap-backup "job/${RESTORE_JOB}-backup" 2>&1 | sed 's/^/      /' || true
 
 PVC_NAME=p5-redis-data
 PV_NAME=$(sudo -E kubectl get pvc -n scrap-examples "$PVC_NAME" -o jsonpath='{.spec.volumeName}')
@@ -236,6 +249,8 @@ for i in $(seq 1 20); do
     [ "${f:-0}" -ge 1 ] 2>/dev/null && { restore_result=fail; break; }
     sleep 5
 done
+echo "      --- restic restore job log (job/$RESTORE_JOB) ---"
+sudo -E kubectl logs -n scrap-backup "job/$RESTORE_JOB" 2>&1 | sed 's/^/      /' || true
 
 sudo -E kubectl scale -n scrap-examples deploy/p5-redis --replicas=1
 sudo -E kubectl wait -n scrap-examples --for=condition=Ready pod -l app=p5-redis --timeout=60s >/dev/null 2>&1 || true
@@ -246,6 +261,8 @@ if [ "$restore_result" = ok ]; then
         ok destructive-restore "the exact canary value round-tripped through destroy -> restic restore -> the original app"
     else
         fail destructive-restore "restore job succeeded but the canary value did not come back (got '$restored', wanted '$CANARY')"
+        echo "      --- redis data dir on the restored pod, for comparison ---"
+        sudo -E kubectl exec -n scrap-examples deploy/p5-redis -- sh -c 'ls -la /data; redis-cli DBSIZE' 2>&1 | sed 's/^/      /' || true
     fi
 else
     fail destructive-restore "restic restore job did not succeed -- see: kubectl logs -n scrap-backup job/$RESTORE_JOB"
