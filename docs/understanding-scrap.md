@@ -207,10 +207,13 @@ story is honest because of this layer — see
 destination choice (local disk, LAN target, off-site S3) actually buys you. SCRAP never claims
 "we have backups" as if that were a complete answer.
 
-**What's actually happening:** a `CronJob` per application (generated from a shared, small
-Kustomize component, not hand-written per app) that mounts the labeled `PersistentVolumeClaim`
-directly and runs `restic backup`, plus exactly one scheduled prune and one scheduled integrity
-check for the whole installation.
+**What's actually happening:** **one** platform-owned `CronJob` for the whole installation — not
+one per application. It lists every `PersistentVolumeClaim` labeled for backup, mounts each
+directly, and runs `restic backup` against it, plus exactly one scheduled prune and one scheduled
+integrity check. An early design considered generating a `CronJob` per application from a shared
+Kustomize component instead; a single discovery job turned out to be the more consistent way to
+guarantee "exactly one prune, ever, against a shared repository" — see
+[`decisions/0003-backup-job-generation.md`](decisions/0003-backup-job-generation.md).
 
 **Go deeper:** [restic](https://restic.readthedocs.io/) — genuinely worth reading even if you never
 touch SCRAP's wiring around it, since you may end up running `restic restore` by hand during a real
