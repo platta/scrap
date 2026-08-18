@@ -326,15 +326,21 @@ authentik_login() {
 # point (its documented Verify step, apps/examples/p2-native-oidc/README.md)
 # through a real login, ending on the app's own redirect_uri, which is
 # where THIS specific demo image performs its own token exchange and
-# prints the resulting ID token claims. "iss"/"aud" are real, guaranteed
-# OIDC ID token claims -- not a SCRAP-specific field -- so their presence
-# proves the app itself, not this script, validated a real token.
+# prints the resulting ID token claims nested under
+# .access_token_jwt_payload_decoded -- confirmed against a real
+# response, not assumed (a top-level .iss/.aud, this check's first
+# guess, was wrong: this image wraps the decoded payload one level
+# down). "iss" and "sub" inside it are real, guaranteed OIDC ID token
+# claims -- not a SCRAP-specific field -- so their presence proves the
+# app itself, not this script, validated a real token: the observed
+# "iss" was genuinely "https://auth.${BASE_DOMAIN}/application/o/scrap-p2-oidc-demo/",
+# not a placeholder.
 p2_debug_url="https://p2.${BASE_DOMAIN}/debug?oidc_client_id=scrap-p2-demo&oidc_client_secret=scrap-p2-demo-client-secret-not-sensitive&oidc_discovery=${AUTH_BASE}/application/o/scrap-p2-oidc-demo/.well-known/openid-configuration&oidc_redirect_uri=https://p2.${BASE_DOMAIN}/login"
 if p2_final=$(authentik_login "$p2_debug_url" /tmp/t-b-p2-cookies); then
-    if echo "$p2_final" | jq -e '.iss and .aud' >/dev/null 2>&1; then
-        ok T-B/p2-native-oidc "the app completed a real login, exchanged the code itself, and printed real ID token claims (iss/aud present)"
+    if echo "$p2_final" | jq -e '.access_token_jwt_payload_decoded.iss and .access_token_jwt_payload_decoded.sub' >/dev/null 2>&1; then
+        ok T-B/p2-native-oidc "the app completed a real login, exchanged the code itself, and printed real ID token claims (iss/sub present)"
     else
-        fail T-B/p2-native-oidc "login completed but the app's final response has no iss/aud claims -- got: $(echo "$p2_final" | head -c 500)"
+        fail T-B/p2-native-oidc "login completed but the app's final response has no iss/sub claims -- got: $(echo "$p2_final" | head -c 1500)"
     fi
 else
     fail T-B/p2-native-oidc "the scripted login against authentik's flow-executor API failed -- see the authentik_login diagnostic output above"
