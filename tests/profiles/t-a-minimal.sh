@@ -259,7 +259,22 @@ spec:
       containers:
         - name: restore
           image: restic/restic:0.19.1
-          command: ["restic", "restore", "latest", "--host=$INSTANCE_NAME", "--path=$RESTORE_PATH", "--target=/"]
+          # ls -la after the restore, not a separate `kubectl exec` into
+          # the redis pod later -- REAL BUG under active investigation:
+          # restic reports a genuine, correctly-sized restore every time,
+          # but the canary never comes back. If redis is crash-looping on
+          # the restored file (corrupt RDB, an ownership/permission
+          # mismatch, or an AOF file taking precedence over the RDB this
+          # restore actually wrote), a `kubectl exec` moments later can
+          # race a container restart and report a misleading "container
+          # not found" instead of real evidence. This runs inside the
+          # restore Job itself, immediately after restic exits, so
+          # there's no window for anything else to touch the directory
+          # first.
+          command:
+            - sh
+            - -c
+            - restic restore latest --host=$INSTANCE_NAME --path=$RESTORE_PATH --target=/ && echo '--- restored directory contents ---' && ls -la $RESTORE_PATH
           env:
             - name: RESTIC_REPOSITORY
               value: "local:/var/lib/scrap-backup"
@@ -288,6 +303,16 @@ if [ "$restore_result" = ok ]; then
         ok T-A/destructive-restore "the exact canary value round-tripped through destroy -> restic restore -> the original app"
     else
         fail T-A/destructive-restore "restore job succeeded but the canary value did not come back (got '$restored', wanted '$CANARY')"
+        # `kubectl exec` here, in earlier runs of this same investigation,
+        # raced a redis crash-loop and only ever reported "container not
+        # found" -- `kubectl logs` doesn't have that race (it reads the
+        # (possibly-restarted) container's own history, not a live
+        # connection to a specific instance of it), so use that instead
+        # for what's actually the decisive evidence here: did redis log a
+        # real startup error loading the restored file?
+        echo "      --- redis pod's own log, for comparison ---"
+        kc logs -n scrap-examples deploy/p5-redis --all-containers --previous 2>&1 | sed 's/^/      /' || true
+        kc logs -n scrap-examples deploy/p5-redis --all-containers 2>&1 | sed 's/^/      /' || true
         echo "      --- redis data dir on the restored pod, for comparison ---"
         kc exec -n scrap-examples deploy/p5-redis -- sh -c 'ls -la /data; redis-cli DBSIZE' 2>&1 | sed 's/^/      /' || true
     fi
