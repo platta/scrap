@@ -370,7 +370,7 @@ elif [ "$pod_ready" != 1 ]; then
     fail T-A/destructive-restore "restic restore ran, but the redis pod never became Ready again within 60s afterward -- see: kubectl logs -n scrap-examples deploy/p5-redis"
 elif [ "$restore_result" = ok ]; then
     restored=$(kc exec -n scrap-examples deploy/p5-redis -- redis-cli GET t-a-canary 2>/dev/null || true)
-    if [ "$restored" = "${CANARY}-NEGATIVE-CONTROL-DELIBERATELY-WRONG" ]; then
+    if [ "$restored" = "$CANARY" ]; then
         ok T-A/destructive-restore "the exact canary value round-tripped through destroy -> restic restore -> the original app"
     else
         fail T-A/destructive-restore "restore job succeeded but the canary value did not come back (got '$restored', wanted '$CANARY')"
