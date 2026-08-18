@@ -192,12 +192,28 @@ if [ -z "${REPO_URL:-}" ]; then
             # up into a COMPLETELY UNRELATED repository's .sops.yaml,
             # match by substring, and re-encrypt to the wrong recipients
             # with no error at all. `cd` here first and pass a bare
-            # filename, exactly like a human must (see
+            # (relative) filename, exactly like a human must (see
             # clusters/example/secrets/README.md).
-            ( cd "$REF_SECRETS_DIR" && for f in *.sops.yaml; do
-                [ -f "$f" ] || continue
-                SOPS_AGE_KEY_FILE="$REF_KEY" sops updatekeys -y "$f" >/dev/null
-            done )
+            #
+            # SECOND REAL FINDING, from tests/profiles/t-b-standard.sh's
+            # first genuinely-from-zero run with identity enabled: this
+            # loop used a flat `*.sops.yaml` glob, which only matches files
+            # directly inside secrets/ -- never
+            # clusters/example/secrets/identity/identity-credentials.sops.yaml,
+            # one directory deeper. That file silently never got
+            # re-encrypted, and the reference key it was still encrypted to
+            # was then deleted two lines below, permanently locking the
+            # fresh instance out of its own identity credentials:
+            # "age: identity did not match any of the recipients" the very
+            # first time Flux tried to decrypt it. `find`, not a glob, so
+            # this reaches every *.sops.yaml under secrets/ regardless of
+            # depth -- clusters/example/.sops.yaml's own path_regex
+            # (`secrets/.*\.sops\.ya?ml$`) already covers subdirectories
+            # fine; only this loop didn't.
+            ( cd "$REF_SECRETS_DIR" && find . -name '*.sops.yaml' -print | sed 's#^\./##' | \
+                while IFS= read -r f; do
+                    SOPS_AGE_KEY_FILE="$REF_KEY" sops updatekeys -y "$f" >/dev/null
+                done )
             rm -f "$REF_KEY"
             echo "Done -- this instance's secrets/ now decrypts only with this host's own keys."
         fi

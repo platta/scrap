@@ -97,11 +97,32 @@ export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 # ---------------------------------------------------------------------------
 log "T-B: Phase 3/4: T-B postconditions"
 
-not_ready=$(kc get kustomizations -A --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$5); if ($5!="True") print $2}')
-if [ -z "$not_ready" ]; then
+# install.sh's own postflight.sh only waits 5 minutes before giving up
+# (and deliberately ignores its own exit code, "|| true") -- fine for
+# T-A's Kustomization set, genuinely too short for identity's: standing
+# up Authentik + a bundled Postgres from a cold image cache can take
+# longer than that on a shared CI runner, and identity's own
+# cluster-kustomization.yaml already declares a 10m0s ceiling for
+# itself. Rather than trust postflight already settled this, poll again
+# here for up to 15 minutes -- long enough to cover that ceiling with
+# room to spare, short enough to fail this specific postcondition
+# distinctly rather than let a genuinely stuck install run out the
+# clock silently.
+kustomizations_ready=""
+i=0
+while [ "$i" -lt 90 ]; do
+    not_ready=$(kc get kustomizations -A --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$5); if ($5!="True") print $2}')
+    if [ -z "$not_ready" ]; then
+        kustomizations_ready=1
+        break
+    fi
+    sleep 10
+    i=$((i + 1))
+done
+if [ -n "$kustomizations_ready" ]; then
     ok T-B/kustomizations-ready "every Flux Kustomization, including identity's, is Ready"
 else
-    fail T-B/kustomizations-ready "not Ready: $not_ready"
+    fail T-B/kustomizations-ready "not Ready after 15 minutes: $not_ready"
 fi
 kc get kustomizations -A || true
 

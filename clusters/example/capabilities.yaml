@@ -28,4 +28,21 @@ spec:
     kind: GitRepository
     name: flux-system
   wait: true
-  timeout: 5m0s
+  # REAL BUG, found by tests/profiles/t-b-standard.sh's first
+  # genuinely-from-zero run with identity enabled: this Kustomization's
+  # own health check waits for every nested Kustomization under
+  # clusters/example/capabilities/ to become Ready too (Flux recognizes
+  # nested Kustomization objects as health-checkable resources
+  # automatically) -- but identity's own cluster-kustomization.yaml
+  # declares timeout: 10m0s for itself, twice this Kustomization's old
+  # 5m0s budget. The parent gave up and reported "capabilities" Failed
+  # while identity was still genuinely InProgress, not stuck -- a
+  # structural contradiction (a wrapper can't out-wait what it wraps)
+  # that a from-zero run with identity actually enabled was needed to
+  # expose; every prior validation of identity happened by hand, never
+  # through this aggregator's own timeout. 20m comfortably covers
+  # identity's stated 10m ceiling plus its own dependsOn chain
+  # (identity-secrets -> identity -> identity-examples, which can add
+  # rather than overlap) and leaves headroom for whatever else gets
+  # copied into clusters/example/capabilities/ in the future.
+  timeout: 20m0s
