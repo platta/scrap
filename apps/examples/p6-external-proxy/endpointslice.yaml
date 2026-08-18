@@ -9,6 +9,15 @@
 # kubernetes.io/service-name is what binds this EndpointSlice to
 # service.yaml's selectorless Service -- the only thing that actually
 # associates the two objects, since there is no label selector to do it.
+#
+# ${EXAMPLE_P6_BACKEND_PORT} defaults to "80" (a real device's admin UI
+# usually is), but isn't hardcoded: found needing this for real, not
+# speculatively -- tests/profiles/t-a-minimal.sh proves this pattern
+# end to end against a real backend, and on a single-machine test host
+# port 80 is already claimed by Traefik's own ServiceLB hostPort binding,
+# a collision no real multi-device LAN ever has. A configurable port is
+# also just generally useful: plenty of real NAS/router admin UIs don't
+# run on 80 either.
 apiVersion: discovery.k8s.io/v1
 kind: EndpointSlice
 metadata:
@@ -20,7 +29,7 @@ addressType: IPv4
 ports:
   - name: http
     protocol: TCP
-    port: 80
+    port: ${EXAMPLE_P6_BACKEND_PORT}
 endpoints:
   - addresses:
       - "${EXAMPLE_P6_BACKEND_ADDRESS}"

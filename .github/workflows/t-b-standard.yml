@@ -1,0 +1,43 @@
+name: T-B (standard acceptance profile)
+
+# A separate from-zero bootstrap from t-a-minimal.yml, deliberately -- see
+# tests/profiles/t-b-standard.sh's own header for why identity gets its
+# own cluster rather than being enabled mid-run on T-A's. Slower (a whole
+# second bootstrap, plus a real Authentik install) but keeps the minimal-
+# profile claim T-A makes uncontaminated.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-b-standard:
+    name: T-B -- from-zero bootstrap with identity, P2/P3 verified live
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-B against this runner as a fresh host
+        run: sh tests/profiles/t-b-standard.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- authentik server log tail ---"
+          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=server --tail=200 || true
+          echo "--- authentik worker log tail ---"
+          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=worker --tail=200 || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service status ---"
+          sudo systemctl status k3s --no-pager || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

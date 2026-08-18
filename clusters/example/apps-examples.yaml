@@ -1,10 +1,13 @@
 # apps/examples/ demonstrates four of the six application integration
-# patterns (docs/patterns/): P1 (internal HTTP), P4 (raw TCP), P5 (stateful
-# with a declared backup consistency method), P6 (external LAN backend
-# proxy). P2 (native OIDC) and P3 (forward-auth) are deferred -- both
-# require capabilities/identity/ (Authentik), and P3 also requires
-# components/forward-auth/; neither is implemented yet. See
-# apps/examples/README.md.
+# patterns (docs/patterns/) unconditionally: P1 (internal HTTP), P4 (raw
+# TCP), P5 (stateful with a declared backup consistency method), P6
+# (external LAN backend proxy). P2 (native OIDC) and P3 (forward-auth) are
+# both implemented too (apps/examples/p2-native-oidc/,
+# apps/examples/p3-forward-auth/) but deliberately excluded from THIS
+# always-on Kustomization -- both hard-depend on capabilities/identity/
+# (Authentik) being enabled, which the minimal profile this Kustomization
+# serves doesn't have. See apps/examples/identity/'s own Kustomization for
+# how to enable them alongside identity, and apps/examples/README.md.
 #
 # dependsOn platform-ingress: P1/P5/P6 all attach an HTTPRoute to
 # scrap-gateway, and with wait: true Flux needs that Gateway to already

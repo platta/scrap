@@ -67,3 +67,11 @@ data:
   # with your own device's address to make that example actually route
   # traffic; see apps/examples/p6-external-proxy/README.md.
   EXAMPLE_P6_BACKEND_ADDRESS: "203.0.113.10"
+
+  # The real backend's own port -- "80" is the common case (a device's
+  # admin UI usually is), but not universal, so it's a separate value
+  # rather than assumed. tests/profiles/t-a-minimal.sh overrides both this
+  # and the address above to point at a real, ephemeral backend it stands
+  # up itself, to prove this pattern end to end rather than merely that
+  # its objects exist.
+  EXAMPLE_P6_BACKEND_PORT: "80"

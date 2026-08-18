@@ -13,10 +13,11 @@ the applications from durable, tested backups.
 [`docs/decisions/`](docs/decisions/)); the platform core, backup engine, observability core, and
 the identity capability are implemented and live-validated on a real cluster, including P1–P6 of
 the application contract. It is installable end to end via `bootstrap/install.sh` against a fresh
-host. What's still missing before a v1 release candidate: several `capabilities/` (Grafana, logs,
-public TLS, off-site backup, heartbeat), the Topology B onboarding generator, and dynamic
-cluster-backed CI (`tests/profiles/`, `tests/dr/`) — everything tested so far has been validated
-manually against a real scratch cluster, not yet by an automated acceptance suite. See
+host, and that install path plus P1/P4/P5/P6 (minimal profile) and identity/P2/P3 (standard
+profile) are now mechanically proven from zero on every push/PR by `tests/profiles/`, not just
+validated by hand. What's still missing before a v1 release candidate: several `capabilities/`
+(Grafana, logs, public TLS, off-site backup, heartbeat), the Topology B onboarding generator, the
+rest of T-B (Grafana, logs, a recovery-flow-abuse test), and `tests/dr/` and T-C through T-F. See
 [Roadmap](#roadmap) below.
 
 ## What SCRAP actually is
@@ -107,7 +108,7 @@ add a new one.
 4. ~~Example applications (`apps/examples/`) proving the six application patterns~~ — **done, all six**
 5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; Grafana + Loki, ACME/DNS-01, off-site backup, alert delivery, external heartbeat still open
 6. Topology B onboarding: a generator producing a minimal, ordinary Flux/Kustomize/SOPS operator repository pinned to a released SCRAP version, host-agnostic (no GitHub requirement), plus an automated test proving a generated repo bootstraps/reconciles a clean install (`docs/decisions/0009-repository-topology.md`)
-7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); T-B through T-F still open — see `tests/profiles/README.md`
+7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); **T-B partially done** (`tests/profiles/t-b-standard.sh` — identity + P2/P3 + the adversarial unauthenticated-access check; Grafana, logs, and a recovery-flow-abuse test still open); T-C through T-F still open — see `tests/profiles/README.md`
 8. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
 
 ## License
