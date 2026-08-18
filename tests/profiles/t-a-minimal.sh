@@ -102,6 +102,18 @@ fi
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
+# One-time diagnostic evidence for the kc()/kuberc investigation
+# (tests/profiles/lib.sh) -- exactly which kubectl binary and version
+# kc() actually resolves and runs as, under the identical sudo -E
+# context every other kc() call in this script uses. Kept as a normal,
+# always-printed diagnostic line (not conditional on failure) since it's
+# cheap and the whole reason the fix needed correcting once already was
+# not having this evidence the first time.
+echo "      --- kc() resolved binary, for the record ---"
+kc version --client 2>&1 | sed 's/^/      /' || true
+sudo -E sh -c 'echo "      which kubectl (under sudo -E): $(command -v kubectl)"'
+sudo -E sh -c 'echo "      HOME under sudo -E, before any override: $HOME"'
+
 # ---------------------------------------------------------------------------
 log "T-A: Phase 3/4: T-A postconditions"
 

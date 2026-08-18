@@ -30,13 +30,22 @@
 # scale-back-up wait was ever actually happening -- the two pods raced
 # on the same PVC, and restic's genuinely-correct restore lost the race
 # against the still-terminating old pod often enough to look like a
-# nondeterministic test flake. KUBECTL_KUBERC=false is kubectl's own
-# documented feature-gate for exactly this (`kubectl options`), verified
-# locally to eliminate the kuberc read attempt entirely before relying
-# on it here. Applies to every kc() call, not just wait, since nothing
-# about this is wait-specific at the cause layer -- only wait happened
-# to be the command whose own parsing broke when it fired.
-kc() { sudo -E env KUBECTL_KUBERC=false kubectl "$@"; }
+# nondeterministic test flake.
+#
+# First attempt at a fix (KUBECTL_KUBERC=false, kubectl's own documented
+# feature-gate) was verified against a vanilla upstream kubectl v1.36.0
+# binary locally and DID suppress the kuberc read there -- but did NOT
+# suppress it live, 3/3 again, against this environment's actual
+# k3s-bundled kubectl ("v1.36.3+k3s1"). k3s vendors its own build; this
+# project doesn't control or fully know that build's exact feature-gate
+# wiring, so this fix doesn't depend on it at all. Overriding HOME to
+# root's own (which the process is actually running as) addresses the
+# real structural mismatch directly: kubectl finds no kuberc file at
+# /root/.kube/kuberc (root's own home has none, and never will unless
+# something puts one there), which is a normal, silent, error-free case
+# for every kubectl build, upstream or vendored -- not a feature this
+# project has to trust stays implemented a particular way.
+kc() { sudo -E env HOME=/root KUBECTL_KUBERC=false kubectl "$@"; }
 
 log() { echo; echo "=== $*"; }
 ok()   { echo "ok    $1: $2"; }
