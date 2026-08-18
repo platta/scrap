@@ -124,3 +124,46 @@ wait_for_job() {
     done
     echo "$result"
 }
+
+# wait_for_pod_gone / wait_for_pod_ready <namespace> <label-selector>
+# [iterations, default 12 -> 60s] -- REAL BUG, root-caused via the
+# T-A-destructive-restore investigation: `kubectl wait --for=delete` /
+# `--for=condition=Ready` intermittently failed their OWN argument
+# parsing in this environment ("error: pod, type/name or --filename
+# must be specified") despite syntactically valid, correct invocations
+# -- reproduced repeatedly, independent of an earlier, separate HOME/
+# kuberc issue this project also found and fixed (fixing that one did
+# NOT fix this one; they only looked related because they'd often
+# co-occur). `kubectl wait` carries a lot of internal machinery this
+# project doesn't need and evidently can't fully trust here; `kubectl
+# get`, one of the simplest kubectl subcommands, has shown no
+# comparable failure anywhere in this whole investigation. Polling it
+# directly for the actual condition (no pods left / a pod reporting
+# Ready) is the real synchronization boundary either check needs -- not
+# a workaround for kubectl's own unreliability, but the removal of a
+# dependency on the one subcommand that's proven unreliable here.
+# Echoes "ok" or "fail" to stdout, same convention as wait_for_job.
+wait_for_pod_gone() {
+    ns="$1"; selector="$2"; iterations="${3:-12}"
+    i=0
+    while [ "$i" -lt "$iterations" ]; do
+        count=$(kc get pods -n "$ns" -l "$selector" --no-headers 2>/dev/null | wc -l)
+        [ "${count:-1}" -eq 0 ] 2>/dev/null && { echo ok; return 0; }
+        sleep 5
+        i=$((i + 1))
+    done
+    echo fail
+}
+
+wait_for_pod_ready() {
+    ns="$1"; selector="$2"; iterations="${3:-12}"
+    i=0
+    while [ "$i" -lt "$iterations" ]; do
+        ready=$(kc get pods -n "$ns" -l "$selector" \
+            -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+        [ "$ready" = "True" ] && { echo ok; return 0; }
+        sleep 5
+        i=$((i + 1))
+    done
+    echo fail
+}

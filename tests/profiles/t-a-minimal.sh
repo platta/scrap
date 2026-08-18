@@ -280,19 +280,18 @@ MOUNT_ROOT="/hostdata"
 RESTORE_PATH=$(printf '%s' "$HOST_PATH" | sed "s#^$STORAGE_ROOT#$MOUNT_ROOT#")
 
 kc scale -n scrap-examples deploy/p5-redis --replicas=0
-# This wait is the actual synchronization boundary the whole procedure
+# This is the actual synchronization boundary the whole procedure
 # depends on -- restoring while the old pod might still be attached to
 # the PVC is exactly the race docs/runbooks/README.md already documents
 # finding once ("Never restore into a PVC whose pod is still attached to
-# it"). It used to be `|| true` here, silently swallowing this wait's
-# own failures -- which is exactly what let a real, separate bug (see
-# lib.sh's kc() -- KUBECTL_KUBERC) go undetected: `kubectl wait` was
-# failing its own argument parsing every single time under sudo -E, so
-# this line was never actually waiting for anything, and old/new pods
-# were racing on the same file. Restoring anyway, without confirmed
-# termination, would be unsound -- so a wait failure here is now a hard
-# stop for the restore attempt, not a silently-ignored possibility.
-if kc wait -n scrap-examples --for=delete pod -l app=p5-redis --timeout=60s >/dev/null 2>&1; then
+# it"). Polls `kubectl get` directly (wait_for_pod_gone, lib.sh) rather
+# than trusting `kubectl wait --for=delete`, which this same
+# investigation found fails its own argument parsing intermittently in
+# this environment even with correct, valid arguments -- see
+# wait_for_pod_gone's own comment for the full evidence. A failure here
+# is a hard stop for the restore attempt, not a silently-ignored
+# possibility: restoring without confirmed termination would be unsound.
+if [ "$(wait_for_pod_gone scrap-examples app=p5-redis)" = ok ]; then
     pod_terminated=1
 else
     pod_terminated=0
@@ -356,8 +355,10 @@ kc scale -n scrap-examples deploy/p5-redis --replicas=1
 # Same reasoning as the scale-down wait above: this is the real
 # synchronization boundary for "is the app's own pod actually able to
 # answer redis-cli yet", not a cosmetic nicety -- so its failure is
-# tracked explicitly (pod_ready) rather than swallowed.
-if kc wait -n scrap-examples --for=condition=Ready pod -l app=p5-redis --timeout=60s >/dev/null 2>&1; then
+# tracked explicitly (pod_ready) rather than swallowed, and polled
+# directly (wait_for_pod_ready, lib.sh) for the same reason the
+# scale-down wait no longer uses `kubectl wait` either.
+if [ "$(wait_for_pod_ready scrap-examples app=p5-redis)" = ok ]; then
     pod_ready=1
 else
     pod_ready=0
