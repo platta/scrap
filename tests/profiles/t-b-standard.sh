@@ -165,6 +165,7 @@ authentik_login() {
 
     loc1=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /dev/null -c "$jar" -b "$jar" "$start_url" 2>/dev/null \
         | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
+    echo "authentik_login: trace: start_url=$start_url -> loc1=$loc1" >&2
     if [ -z "$loc1" ]; then
         echo "authentik_login: no redirect from starting URL: $start_url" >&2
         return 1
@@ -172,6 +173,7 @@ authentik_login() {
 
     loc2=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /dev/null -c "$jar" -b "$jar" "$loc1" 2>/dev/null \
         | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
+    echo "authentik_login: trace: loc1 -> loc2=$loc2" >&2
     if [ -z "$loc2" ]; then
         echo "authentik_login: no redirect from the authorize endpoint: $loc1" >&2
         return 1

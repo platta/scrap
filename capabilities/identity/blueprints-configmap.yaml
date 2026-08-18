@@ -107,6 +107,28 @@ data:
       # outpost already ships with (confirmed via
       # /api/v3/outposts/instances/), so this updates it in place rather
       # than creating a second one.
+      #
+      # config.authentik_host_browser -- REAL BUG, found by
+      # tests/profiles/t-b-standard.sh's first successful login: with no
+      # interactive admin-UI visit to auto-populate it (this whole
+      # install is non-interactive, bootstrap/install.sh end to end), the
+      # embedded outpost's authentik_host/authentik_host_browser stay at
+      # their dataclass defaults (empty string, which authentik's own
+      # request-building code falls back to "localhost" for) -- normally
+      # auto-set to whatever URL an operator's browser first used to open
+      # the admin dashboard, a step that never happens here. Confirmed
+      # live: an unauthenticated P3 request DID get redirected (the
+      # adversarial check this exists for still held), but to
+      # "http://localhost/application/o/authorize/?..." -- correct for
+      # nothing real, since no browser anywhere is ever at "localhost"
+      # for this cluster. Setting only these two keys is safe despite
+      # `attrs` fully replacing the stored config JSON: authentik reloads
+      # the Outpost's config through its OutpostConfig dataclass on every
+      # read (`from_dict(OutpostConfig, self._config)`), which fills
+      # every other field (log_level, kubernetes_*, docker_*, all
+      # irrelevant to an embedded outpost anyway) from that dataclass's
+      # own defaults regardless of what the stored JSON does or doesn't
+      # contain.
       - model: authentik_outposts.outpost
         state: present
         identifiers:
@@ -114,3 +136,6 @@ data:
         attrs:
           providers:
             - !KeyOf scrap-forward-auth-provider
+          config:
+            authentik_host: "https://auth.${BASE_DOMAIN}"
+            authentik_host_browser: "https://auth.${BASE_DOMAIN}"
