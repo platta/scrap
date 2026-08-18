@@ -16,6 +16,7 @@ CHECKS=(
   check_instance_literals
   check_kustomization_dag
   check_helm_strict
+  check_bootstrap_git_snapshot
 )
 
 FAIL=0

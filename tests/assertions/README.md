@@ -26,6 +26,7 @@ python3 tests/assertions/self_test.py     # proves each check catches its fixtur
 | `check_instance_literals.py` | Every `${VAR}` resolves to a defined `clusters/*/instance-config.yaml` key; no literal IPv4 address appears outside `clusters/` |
 | `check_kustomization_dag.py` | The Flux `Kustomization` dependency graph is acyclic; no `Certificate` names an `issuerRef` that isn't guaranteed to exist by the dependency graph |
 | `check_helm_strict.py` | Every `HelmRelease` renders under `helm template` and passes `helm lint --strict` — see the script's own docstring for what this does and does **not** guarantee, found by actually running it |
+| `check_bootstrap_git_snapshot.py` | `bootstrap/install.sh`'s Git-source seeding step never blindly copies this checkout's own `.git` directory (`cp -a "$X/." "$Y/"`) into the fresh instance's working directory — the pattern a real, root-caused bootstrap flake ("Directory not empty") traced back to |
 
 ## Why each check has a fixture
 

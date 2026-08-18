@@ -27,6 +27,7 @@ import check_reserved_ports
 import check_instance_literals
 import check_kustomization_dag
 import check_helm_strict
+import check_bootstrap_git_snapshot
 
 REPO_ROOT = find_repo_root()
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "violations"
@@ -41,6 +42,7 @@ FIXTURE_CASES = [
     ("ip-literal", check_instance_literals),
     ("cyclic-dag", check_kustomization_dag),
     ("issuer-ordering", check_kustomization_dag),
+    ("bootstrap-git-snapshot", check_bootstrap_git_snapshot),
 ]
 
 # Every check with a real `run(root)` -- excludes check_app_addition_boundary,
@@ -53,6 +55,7 @@ ROOT_SCANNABLE = (
     check_instance_literals,
     check_kustomization_dag,
     check_helm_strict,
+    check_bootstrap_git_snapshot,
 )
 
 failures: list[str] = []

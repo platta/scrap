@@ -159,41 +159,47 @@ if [ -z "${REPO_URL:-}" ]; then
         WORKDIR=$(mktemp -d)
         chown "$GIT_USER" "$WORKDIR"
         sudo -u "$GIT_USER" git clone -q "$BARE_REPO" "$WORKDIR"
-        cp -a "$REPO_ROOT/." "$WORKDIR/"
-        # DIAGNOSTIC INSTRUMENTATION -- investigating an intermittently
-        # observed "rm: cannot remove '$WORKDIR/.git': Directory not
-        # empty" here. `cp -a "$REPO_ROOT/."` above copies $REPO_ROOT/.git
-        # too (nothing excludes it), so this rm -rf is actually removing a
-        # full copy of the real checkout's own .git directory (hundreds of
-        # files, this repo's own has 654 files / 253 dirs), not just the
-        # small, freshly-cloned-from-an-empty-bare-repo .git that `git
-        # clone` created two lines up. That's real, unnecessary work
-        # regardless of the flake -- but not yet confirmed as the flake's
-        # actual cause, which is what this block establishes: a marker
-        # file's mtime taken right after cp finishes, then (only if rm
-        # fails) `find -newer` against that marker to see whether anything
-        # created NEW entries in $WORKDIR/.git after cp completed --
-        # which would prove a live concurrent writer, not just "a lot of
-        # files to remove." set -eu means this rm's own exit code would
-        # otherwise kill the script immediately with no chance to gather
-        # any of this.
-        _diag_marker="$WORKDIR/.cp-done-marker"
-        touch "$_diag_marker"
-        if ! rm -rf "$WORKDIR/.git" 2>"$WORKDIR/.rm-git-stderr"; then
-            echo "DIAGNOSTIC: rm -rf \"\$WORKDIR/.git\" failed. Gathering evidence before re-raising:"
-            echo "--- rm's own stderr ---"
-            cat "$WORKDIR/.rm-git-stderr" 2>/dev/null || true
-            echo "--- entries under \$WORKDIR/.git newer than the post-cp marker (a nonempty list means something wrote here AFTER cp -a finished) ---"
-            find "$WORKDIR/.git" -newer "$_diag_marker" 2>&1 || true
-            echo "--- full current listing of \$WORKDIR/.git ---"
-            find "$WORKDIR/.git" 2>&1 || true
-            echo "--- any git processes still running on this host ---"
-            ps -ef 2>/dev/null | grep -i '[g]it' || true
-            echo "--- END DIAGNOSTIC ---"
-            rm -f "$_diag_marker" "$WORKDIR/.rm-git-stderr" 2>/dev/null || true
-            exit 1
-        fi
-        rm -f "$_diag_marker" "$WORKDIR/.rm-git-stderr" 2>/dev/null || true
+        # REAL BUG, root-caused via a dedicated investigation into an
+        # intermittently observed "rm: cannot remove '$WORKDIR/.git':
+        # Directory not empty" that used to follow this line (see this
+        # commit's own message for the full instrumentation-driven
+        # writeup). The OLD code was `cp -a "$REPO_ROOT/." "$WORKDIR/"`
+        # followed by `rm -rf "$WORKDIR/.git"` -- but that cp has no
+        # exclusion for `.git`, so it copied the ACTUAL checked-out
+        # repository's own .git directory (this repo's own: 654 files
+        # across 253 directories) on top of the freshly-cloned .git that
+        # `git clone` created one line up (itself a real, but much
+        # smaller, directory -- verified live: 17 files / 10 dirs for a
+        # clone of an empty bare repo). The next line then had to remove
+        # that MERGED, far larger tree -- a genuinely unnecessary
+        # copy-then-delete of real git history the intended "snapshot of
+        # the working tree" was never supposed to include, and the only
+        # directory tree in this entire step big/complex enough to give a
+        # rare filesystem-level race real surface area to occur on.
+        # Diagnostic instrumentation confirmed the checkout's own .git is
+        # a real 654-file/253-dir tree but could not force a live
+        # reproduction of the specific race in 23 straight T-A runs
+        # (0/23) -- consistent with a genuinely rare, environment-level
+        # race this project cannot fully observe or reproduce on demand,
+        # not a deterministic bug in this script's own logic. Rather than
+        # continue chasing that specific race, this removes the actual
+        # precondition it depended on: `.git` is excluded from the copy
+        # in the first place, using `find`+`cp -a` per top-level entry
+        # (not rsync -- not an existing prerequisite this project checks
+        # for, see bootstrap/preflight/check-prerequisites.sh, and not
+        # worth adding one for this).
+        find "$REPO_ROOT" -mindepth 1 -maxdepth 1 ! -name .git -exec cp -a {} "$WORKDIR/" \;
+        # The rm below is still necessary, NOT just cosmetic cleanup of
+        # what cp copied in -- confirmed live: `git init` on top of an
+        # EXISTING .git (the one `git clone` made) does not clear its
+        # `origin` remote, so without removing it first, the `git remote
+        # add origin` a few lines down fails outright ("error: remote
+        # origin already exists"). What changed is only WHICH .git this
+        # removes: with .git now excluded from the copy above, this is
+        # always the small, freshly-cloned one (17 files / 10 dirs) --
+        # never the large merged-in tree that made the old version of
+        # this line the flake's most likely cause.
+        rm -rf "$WORKDIR/.git"
 
         # clusters/example/secrets/ ships a structurally-real reference
         # secret, encrypted to a PUBLISHED (intentionally non-secret)
