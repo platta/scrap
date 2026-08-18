@@ -11,5 +11,10 @@ resources:
   - deployment.yaml
   - service.yaml
   - httproute.yaml
-components:
-  - ../../../components/forward-auth
+# NEGATIVE CONTROL, DO NOT KEEP: forward-auth deliberately disabled to
+# verify tests/profiles/t-b-standard.sh's T-B/p3-adversarial-unauth check
+# genuinely turns red when the security invariant it claims to prove is
+# actually violated -- not just when something else in the run breaks.
+# Reverted immediately after one confirming CI run.
+#components:
+#  - ../../../components/forward-auth
