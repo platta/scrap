@@ -93,7 +93,30 @@ log "T-A: Phase 2/4: bootstrap/install.sh -- the real, unmodified installer"
 # would.
 export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E sh bootstrap/install.sh; then
+# REAL BUG, root-caused via the §T-A-destructive-restore investigation
+# (see tests/profiles/lib.sh's kc() for the earlier chapters -- this is
+# where the actual poisoning happens, found by checking evidence instead
+# of trusting that removing sudo from kc() alone would be enough. It
+# wasn't: the same "kuberc: ... permission denied" showed up even for
+# the plain, unprivileged "runner" user reading its OWN
+# /home/runner/.kube/kuberc -- meaning the problem isn't which user
+# kc() itself runs as at all. install.sh runs under `sudo -E` too, which
+# preserves HOME=/home/runner while the process is root; install.sh's
+# own internal kubectl calls (unrelated to this script's kc(), and
+# rightly so -- it's the real, unmodified installer) then run as root
+# with that same borrowed HOME, and something in that combination
+# leaves /home/runner/.kube/ behind in a state the later, genuinely
+# unprivileged "runner" user can't read -- root-owned, most likely.
+# Overriding HOME to /root for JUST this one invocation (not this
+# script's own environment -- kc()'s later unprivileged calls still
+# need HOME=/home/runner, their own real home) keeps every
+# root-privileged operation in the ENTIRE bootstrap (not just this
+# script's own postcondition checks) inside root's own home, which
+# root can always read/write without issue -- so /home/runner/.kube/
+# is never touched by anything except the genuinely-unprivileged
+# runner user from here on. This changes only how this test-harness
+# script invokes the real installer, never the installer itself.
+if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A: bootstrap/install.sh exited non-zero -- see the 'Step N/7' marker"
     echo "      above for which layer of the documented bootstrap sequence failed."
@@ -113,6 +136,8 @@ echo "      --- kc() identity, for the record ---"
 echo "      whoami: $(whoami), HOME: $HOME, KUBECONFIG: $KUBECONFIG"
 kc version --client 2>&1 | sed 's/^/      /' || true
 echo "      which kubectl: $(command -v kubectl)"
+echo "      --- state of \$HOME/.kube/ after bootstrap, before any kc() call runs ---"
+ls -la "$HOME/.kube/" 2>&1 | sed 's/^/      /' || echo "      ($HOME/.kube/ does not exist)"
 
 # ---------------------------------------------------------------------------
 log "T-A: Phase 3/4: T-A postconditions"

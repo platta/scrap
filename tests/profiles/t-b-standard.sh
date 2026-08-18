@@ -85,7 +85,18 @@ log "T-B: Phase 2/4: bootstrap/install.sh -- the real, unmodified installer"
 # reconciled, exactly as a real operator's own copy-in would.
 export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E sh bootstrap/install.sh; then
+# HOME=/root for this one invocation only (see tests/profiles/lib.sh's
+# kc() and tests/profiles/t-a-minimal.sh's own comment at this exact
+# call for the full investigation): install.sh runs as root under
+# `sudo -E`, which without this would preserve HOME=/home/runner into
+# every root-privileged operation inside it, including its own internal
+# kubectl calls -- leaving /home/runner/.kube/ poisoned (root-owned)
+# for every later, genuinely-unprivileged kc() call in this script to
+# fail against, confirmed live and reproduced deterministically (5/5)
+# against T-A before this fix. Root gets its own real home; this
+# script's own HOME (used by kc(), after setup_kubeconfig()) is
+# untouched.
+if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-B: bootstrap/install.sh exited non-zero -- see the 'Step N/7' marker"
     echo "      above for which layer of the documented bootstrap sequence failed."
