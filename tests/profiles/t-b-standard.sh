@@ -220,35 +220,45 @@ authentik_login() {
     # adds to field 1 for HttpOnly cookies.
     csrf() { awk -F'\t' '$6=="authentik_csrf"{v=$7} END{print v}' "$jar"; }
 
-    stage1=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
-        -H 'Accept: application/json' "$executor_url" 2>/dev/null || true)
-    component1=$(echo "$stage1" | jq -r '.component // empty' 2>/dev/null || true)
+    # flow_stage [POST-json-body] -- GETs (no body arg) or POSTs the
+    # executor URL, appending the HTTP status to its own output on a
+    # trailing line (curl -w) so a failure can show the two separately --
+    # a genuinely empty body (a real 200 with no useful content) reads
+    # very differently from a 403/500 that also happened to have no body,
+    # and only printing the raw text left that ambiguous the one time it
+    # mattered (P3's first-ever password-stage attempt).
+    flow_stage() {
+        raw=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
+            -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
+            ${1:+-d "$1"} -w '\nHTTPSTATUS:%{http_code}' "$executor_url" 2>/dev/null || true)
+        printf '%s' "$raw"
+    }
+    stage_body() { printf '%s' "$1" | sed '$d'; }
+    stage_status() { printf '%s' "$1" | tail -1 | sed -n 's/^HTTPSTATUS://p'; }
+
+    stage1=$(flow_stage)
+    component1=$(stage_body "$stage1" | jq -r '.component // empty' 2>/dev/null || true)
     if [ "$component1" != "ak-stage-identification" ]; then
-        echo "authentik_login: expected component ak-stage-identification, got '$component1'. Raw response:" >&2
-        echo "$stage1" >&2
+        echo "authentik_login: expected component ak-stage-identification, got '$component1' (HTTP $(stage_status "$stage1")). Raw body:" >&2
+        stage_body "$stage1" >&2
         return 1
     fi
 
-    stage2=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
-        -H 'Accept: application/json' -H 'Content-Type: application/json' \
-        -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
-        -d '{"uid_field":"akadmin"}' "$executor_url" 2>/dev/null || true)
-    component2=$(echo "$stage2" | jq -r '.component // empty' 2>/dev/null || true)
+    stage2=$(flow_stage '{"uid_field":"akadmin"}')
+    component2=$(stage_body "$stage2" | jq -r '.component // empty' 2>/dev/null || true)
     if [ "$component2" != "ak-stage-password" ]; then
-        echo "authentik_login: expected component ak-stage-password after identification, got '$component2'. Raw response:" >&2
-        echo "$stage2" >&2
+        echo "authentik_login: expected component ak-stage-password after identification, got '$component2' (HTTP $(stage_status "$stage2")). Raw body:" >&2
+        stage_body "$stage2" >&2
         return 1
     fi
 
-    stage3=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
-        -H 'Accept: application/json' -H 'Content-Type: application/json' \
-        -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
-        -d "{\"password\":\"$AKADMIN_PASSWORD\"}" "$executor_url" 2>/dev/null || true)
-    final_type=$(echo "$stage3" | jq -r '.type // empty' 2>/dev/null || true)
-    final_to=$(echo "$stage3" | jq -r '.to // empty' 2>/dev/null || true)
+    stage3=$(flow_stage "{\"password\":\"$AKADMIN_PASSWORD\"}")
+    final_type=$(stage_body "$stage3" | jq -r '.type // empty' 2>/dev/null || true)
+    final_to=$(stage_body "$stage3" | jq -r '.to // empty' 2>/dev/null || true)
     if [ "$final_type" != "redirect" ] || [ -z "$final_to" ]; then
-        echo "authentik_login: expected a final redirect after submitting the password, got type='$final_type'. Raw response:" >&2
-        echo "$stage3" >&2
+        echo "authentik_login: expected a final redirect after submitting the password, got type='$final_type' (HTTP $(stage_status "$stage3")). Raw body:" >&2
+        stage_body "$stage3" >&2
         return 1
     fi
 
