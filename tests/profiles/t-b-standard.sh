@@ -214,6 +214,30 @@ authentik_login() {
     executor_url="${AUTH_BASE}/api/v3/flows/executor/${flow_slug}/?${flow_query}"
     referer="${AUTH_BASE}${flow_path}"
 
+    # The flow's own completion signal turned out not to carry the real
+    # destination -- REAL FINDING, confirmed against the actual response:
+    # once the flow genuinely completes, it returns
+    # {"component": "xak-flow-redirect", "to": "/", "final_redirect": true},
+    # not the {"type": "redirect", "to": <real url>} shape this script
+    # originally assumed. "to" here is a generic post-login default
+    # ("/"), not the OAuth2 authorize continuation -- that continuation
+    # is the "next" query parameter loc2 already carried (the same
+    # mechanism authentik's own frontend SPA holds onto client-side and
+    # navigates to itself once a flow reports done, rather than trusting
+    # the flow's own "to" field). Decoded and resolved once, up front,
+    # so the actual completion check below only has to use it.
+    # POSIX printf's %b does not understand \xHH hex escapes -- that's a
+    # bash extension, silently a no-op under dash (confirmed live: the
+    # sed-plus-printf version of this that seemed obviously right left
+    # every %XX sequence completely undecoded when actually run under
+    # /bin/sh, this script's own shebang). python3 -- already relied on
+    # elsewhere on this same runner image (t-a-minimal.sh's real P6
+    # backend) -- has its own correct implementation; use that instead
+    # of a second hand-rolled decoder.
+    urldecode() { python3 -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.argv[1]), end='')" "$1"; }
+    next_raw=$(printf '%s' "$flow_query" | tr '&' '\n' | sed -n 's/^next=//p')
+    next_url=$(resolve_location "$AUTH_BASE" "$(urldecode "$next_raw")")
+
     # authentik's session/CSRF cookie is re-read fresh before each POST
     # (it can rotate) -- Netscape jar format, tab-separated, name is
     # field 6, value is field 7, regardless of the #HttpOnly_ prefix curl
@@ -281,19 +305,21 @@ authentik_login() {
     fi
 
     stage3=$(flow_stage "{\"password\":\"$AKADMIN_PASSWORD\"}")
-    final_type=$(stage_body "$stage3" | jq -r '.type // empty' 2>/dev/null || true)
-    final_to=$(stage_body "$stage3" | jq -r '.to // empty' 2>/dev/null || true)
-    if [ "$final_type" != "redirect" ] || [ -z "$final_to" ]; then
-        echo "authentik_login: expected a final redirect after submitting the password, got type='$final_type' (HTTP $(stage_status "$stage3"), Location: $(stage_location "$stage3")). Raw body:" >&2
+    final_component=$(stage_body "$stage3" | jq -r '.component // empty' 2>/dev/null || true)
+    final_done=$(stage_body "$stage3" | jq -r '.final_redirect // false' 2>/dev/null || true)
+    if [ "$final_component" != "xak-flow-redirect" ] || [ "$final_done" != "true" ] || [ -z "$next_url" ]; then
+        echo "authentik_login: expected the flow to report done (xak-flow-redirect, final_redirect=true) after submitting the password, got component='$final_component' final_redirect='$final_done' next_url='$next_url' (HTTP $(stage_status "$stage3"), Location: $(stage_location "$stage3")). Raw body:" >&2
         stage_body "$stage3" >&2
         return 1
     fi
 
-    # Follow the completion chain through -- this is where the OAuth2
-    # authorize call actually finalizes and lands back on the
-    # application's own redirect_uri (P2) or the originally requested URL
-    # (P3), now carrying a real, authenticated session.
-    curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" -L "$final_to" 2>/dev/null || true
+    # Follow the ORIGINAL "next" continuation, not the flow's own "to"
+    # (which is just "/" -- see the comment where next_url was computed).
+    # This is where the OAuth2 authorize call actually finalizes and
+    # lands back on the application's own redirect_uri (P2) or the
+    # originally requested URL (P3), now carrying a real, authenticated
+    # session.
+    curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" -L "$next_url" 2>/dev/null || true
 }
 
 # 3a. P2 -- native OIDC, the full round trip: the app's own /debug entry
