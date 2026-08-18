@@ -243,8 +243,26 @@ MOUNT_ROOT="/hostdata"
 RESTORE_PATH=$(printf '%s' "$HOST_PATH" | sed "s#^$STORAGE_ROOT#$MOUNT_ROOT#")
 
 kc scale -n scrap-examples deploy/p5-redis --replicas=0
-kc wait -n scrap-examples --for=delete pod -l app=p5-redis --timeout=60s >/dev/null 2>&1 || true
+# This wait is the actual synchronization boundary the whole procedure
+# depends on -- restoring while the old pod might still be attached to
+# the PVC is exactly the race docs/runbooks/README.md already documents
+# finding once ("Never restore into a PVC whose pod is still attached to
+# it"). It used to be `|| true` here, silently swallowing this wait's
+# own failures -- which is exactly what let a real, separate bug (see
+# lib.sh's kc() -- KUBECTL_KUBERC) go undetected: `kubectl wait` was
+# failing its own argument parsing every single time under sudo -E, so
+# this line was never actually waiting for anything, and old/new pods
+# were racing on the same file. Restoring anyway, without confirmed
+# termination, would be unsound -- so a wait failure here is now a hard
+# stop for the restore attempt, not a silently-ignored possibility.
+if kc wait -n scrap-examples --for=delete pod -l app=p5-redis --timeout=60s >/dev/null 2>&1; then
+    pod_terminated=1
+else
+    pod_terminated=0
+    echo "      --- old p5-redis pod did not confirm terminated within 60s -- restore NOT attempted ---"
+fi
 
+if [ "$pod_terminated" = 1 ]; then
 cat <<EOF | kc apply -f - >/dev/null
 apiVersion: batch/v1
 kind: Job
@@ -293,11 +311,26 @@ EOF
 restore_result=$(wait_for_job scrap-backup "$RESTORE_JOB" 20)
 echo "      --- restic restore job log (job/$RESTORE_JOB) ---"
 kc logs -n scrap-backup "job/$RESTORE_JOB" 2>&1 | sed 's/^/      /' || true
+else
+    restore_result=""
+fi
 
 kc scale -n scrap-examples deploy/p5-redis --replicas=1
-kc wait -n scrap-examples --for=condition=Ready pod -l app=p5-redis --timeout=60s >/dev/null 2>&1 || true
+# Same reasoning as the scale-down wait above: this is the real
+# synchronization boundary for "is the app's own pod actually able to
+# answer redis-cli yet", not a cosmetic nicety -- so its failure is
+# tracked explicitly (pod_ready) rather than swallowed.
+if kc wait -n scrap-examples --for=condition=Ready pod -l app=p5-redis --timeout=60s >/dev/null 2>&1; then
+    pod_ready=1
+else
+    pod_ready=0
+fi
 
-if [ "$restore_result" = ok ]; then
+if [ "$pod_terminated" != 1 ]; then
+    fail T-A/destructive-restore "the old p5-redis pod never confirmed terminated within 60s after scaling to zero -- restore was not attempted, since restoring while it might still be attached to the PVC is exactly the race docs/runbooks/README.md warns against"
+elif [ "$pod_ready" != 1 ]; then
+    fail T-A/destructive-restore "restic restore ran, but the redis pod never became Ready again within 60s afterward -- see: kubectl logs -n scrap-examples deploy/p5-redis"
+elif [ "$restore_result" = ok ]; then
     restored=$(kc exec -n scrap-examples deploy/p5-redis -- redis-cli GET t-a-canary 2>/dev/null || true)
     if [ "$restored" = "$CANARY" ]; then
         ok T-A/destructive-restore "the exact canary value round-tripped through destroy -> restic restore -> the original app"

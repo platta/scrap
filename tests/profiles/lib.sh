@@ -15,7 +15,28 @@
 # Every caller must `set -eu` itself, and define REPO_ROOT and
 # INSTANCE_CONFIG before sourcing this file.
 
-kc() { sudo -E kubectl "$@"; }
+# REAL BUG, root-caused via the §T-A-destructive-restore investigation
+# (see the commit this comment shipped in for the full writeup): under
+# `sudo -E`, HOME stays the invoking user's ("runner" in CI) but the
+# process runs as root -- and a newer kubectl's "kuberc" preferences
+# feature tries to read $HOME/.kube/kuberc unconditionally, fails with
+# "permission denied" (root can't read another user's file there in
+# this environment), and -- confirmed live, reproduced 3/3 -- `kubectl
+# wait` specifically then fails its OWN argument parsing right
+# afterward ("error: pod, type/name or --filename must be specified"),
+# even though a perfectly valid resource type and selector were given.
+# That failure was silently swallowed by this project's own `|| true`
+# on every `kc wait` call, so neither the scale-to-zero wait nor the
+# scale-back-up wait was ever actually happening -- the two pods raced
+# on the same PVC, and restic's genuinely-correct restore lost the race
+# against the still-terminating old pod often enough to look like a
+# nondeterministic test flake. KUBECTL_KUBERC=false is kubectl's own
+# documented feature-gate for exactly this (`kubectl options`), verified
+# locally to eliminate the kuberc read attempt entirely before relying
+# on it here. Applies to every kc() call, not just wait, since nothing
+# about this is wait-specific at the cause layer -- only wait happened
+# to be the command whose own parsing broke when it fired.
+kc() { sudo -E env KUBECTL_KUBERC=false kubectl "$@"; }
 
 log() { echo; echo "=== $*"; }
 ok()   { echo "ok    $1: $2"; }
