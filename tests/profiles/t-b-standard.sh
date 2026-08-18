@@ -92,7 +92,7 @@ if ! sudo -E sh bootstrap/install.sh; then
     exit 1
 fi
 
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+setup_kubeconfig
 
 # ---------------------------------------------------------------------------
 log "T-B: Phase 3/4: T-B postconditions"

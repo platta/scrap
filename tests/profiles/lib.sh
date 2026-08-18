@@ -16,36 +16,47 @@
 # INSTANCE_CONFIG before sourcing this file.
 
 # REAL BUG, root-caused via the §T-A-destructive-restore investigation
-# (see the commit this comment shipped in for the full writeup): under
-# `sudo -E`, HOME stays the invoking user's ("runner" in CI) but the
-# process runs as root -- and a newer kubectl's "kuberc" preferences
-# feature tries to read $HOME/.kube/kuberc unconditionally, fails with
-# "permission denied" (root can't read another user's file there in
-# this environment), and -- confirmed live, reproduced 3/3 -- `kubectl
-# wait` specifically then fails its OWN argument parsing right
-# afterward ("error: pod, type/name or --filename must be specified"),
-# even though a perfectly valid resource type and selector were given.
-# That failure was silently swallowed by this project's own `|| true`
-# on every `kc wait` call, so neither the scale-to-zero wait nor the
-# scale-back-up wait was ever actually happening -- the two pods raced
-# on the same PVC, and restic's genuinely-correct restore lost the race
-# against the still-terminating old pod often enough to look like a
-# nondeterministic test flake.
+# (see the commit this comment first shipped in, and the two that
+# followed it correcting it, for the full writeup -- this is the third
+# and structurally final version). Under `sudo -E kubectl`, HOME stays
+# the invoking user's ("runner" in CI) but the process runs as root --
+# and a newer kubectl's "kuberc" preferences feature tries to read
+# $HOME/.kube/kuberc unconditionally, fails with "permission denied"
+# (root can't read another user's file there), and -- confirmed live,
+# reproduced repeatedly -- `kubectl wait` specifically can then fail
+# its own argument parsing right afterward ("error: pod, type/name or
+# --filename must be specified") despite a perfectly valid resource
+# type and selector, SOMETIMES without even returning a nonzero exit
+# code (confirmed live: one run's scale-down wait hit this and still
+# reported success, having genuinely waited for nothing). That
+# unreliable exit code is what sank the second attempt at this fix
+# (overriding HOME=/root for the sudo'd process): even verified-correct
+# on its own, an explicit `if kc wait; then ... else ...` check can't
+# detect a failure kubectl itself doesn't reliably surface. Trying to
+# out-guess exactly which kubectl code path does or doesn't touch
+# kuberc isn't a sound foundation for a fix.
 #
-# First attempt at a fix (KUBECTL_KUBERC=false, kubectl's own documented
-# feature-gate) was verified against a vanilla upstream kubectl v1.36.0
-# binary locally and DID suppress the kuberc read there -- but did NOT
-# suppress it live, 3/3 again, against this environment's actual
-# k3s-bundled kubectl ("v1.36.3+k3s1"). k3s vendors its own build; this
-# project doesn't control or fully know that build's exact feature-gate
-# wiring, so this fix doesn't depend on it at all. Overriding HOME to
-# root's own (which the process is actually running as) addresses the
-# real structural mismatch directly: kubectl finds no kuberc file at
-# /root/.kube/kuberc (root's own home has none, and never will unless
-# something puts one there), which is a normal, silent, error-free case
-# for every kubectl build, upstream or vendored -- not a feature this
-# project has to trust stays implemented a particular way.
-kc() { sudo -E env HOME=/root KUBECTL_KUBERC=false kubectl "$@"; }
+# This version removes the actual precondition for all of the above:
+# root privilege was never needed for kubectl itself -- only to read
+# the k3s-generated kubeconfig (0600, root-owned). setup_kubeconfig()
+# below copies it once to a path this user owns, so kc() runs kubectl
+# as this same unprivileged user throughout: HOME is genuinely this
+# user's own home, matches the effective UID, and kuberc's own file
+# read (if it even fires) targets a path this process can actually
+# read -- not a workaround for a specific kubectl behavior, but the
+# removal of the mismatch that made any of those behaviors reachable.
+kc() { kubectl "$@"; }
+
+# Copies the root-owned k3s kubeconfig to a location this user owns and
+# points KUBECONFIG at it -- see kc()'s own comment for why. Call once,
+# right after KUBECONFIG would otherwise have been set to the raw
+# /etc/rancher/k3s/k3s.yaml path.
+setup_kubeconfig() {
+    sudo cp /etc/rancher/k3s/k3s.yaml /tmp/t-profile-kubeconfig
+    sudo chown "$(id -u):$(id -g)" /tmp/t-profile-kubeconfig
+    chmod 600 /tmp/t-profile-kubeconfig
+    export KUBECONFIG=/tmp/t-profile-kubeconfig
+}
 
 log() { echo; echo "=== $*"; }
 ok()   { echo "ok    $1: $2"; }
