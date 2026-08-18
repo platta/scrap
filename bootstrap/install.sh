@@ -160,7 +160,40 @@ if [ -z "${REPO_URL:-}" ]; then
         chown "$GIT_USER" "$WORKDIR"
         sudo -u "$GIT_USER" git clone -q "$BARE_REPO" "$WORKDIR"
         cp -a "$REPO_ROOT/." "$WORKDIR/"
-        rm -rf "$WORKDIR/.git"
+        # DIAGNOSTIC INSTRUMENTATION -- investigating an intermittently
+        # observed "rm: cannot remove '$WORKDIR/.git': Directory not
+        # empty" here. `cp -a "$REPO_ROOT/."` above copies $REPO_ROOT/.git
+        # too (nothing excludes it), so this rm -rf is actually removing a
+        # full copy of the real checkout's own .git directory (hundreds of
+        # files, this repo's own has 654 files / 253 dirs), not just the
+        # small, freshly-cloned-from-an-empty-bare-repo .git that `git
+        # clone` created two lines up. That's real, unnecessary work
+        # regardless of the flake -- but not yet confirmed as the flake's
+        # actual cause, which is what this block establishes: a marker
+        # file's mtime taken right after cp finishes, then (only if rm
+        # fails) `find -newer` against that marker to see whether anything
+        # created NEW entries in $WORKDIR/.git after cp completed --
+        # which would prove a live concurrent writer, not just "a lot of
+        # files to remove." set -eu means this rm's own exit code would
+        # otherwise kill the script immediately with no chance to gather
+        # any of this.
+        _diag_marker="$WORKDIR/.cp-done-marker"
+        touch "$_diag_marker"
+        if ! rm -rf "$WORKDIR/.git" 2>"$WORKDIR/.rm-git-stderr"; then
+            echo "DIAGNOSTIC: rm -rf \"\$WORKDIR/.git\" failed. Gathering evidence before re-raising:"
+            echo "--- rm's own stderr ---"
+            cat "$WORKDIR/.rm-git-stderr" 2>/dev/null || true
+            echo "--- entries under \$WORKDIR/.git newer than the post-cp marker (a nonempty list means something wrote here AFTER cp -a finished) ---"
+            find "$WORKDIR/.git" -newer "$_diag_marker" 2>&1 || true
+            echo "--- full current listing of \$WORKDIR/.git ---"
+            find "$WORKDIR/.git" 2>&1 || true
+            echo "--- any git processes still running on this host ---"
+            ps -ef 2>/dev/null | grep -i '[g]it' || true
+            echo "--- END DIAGNOSTIC ---"
+            rm -f "$_diag_marker" "$WORKDIR/.rm-git-stderr" 2>/dev/null || true
+            exit 1
+        fi
+        rm -f "$_diag_marker" "$WORKDIR/.rm-git-stderr" 2>/dev/null || true
 
         # clusters/example/secrets/ ships a structurally-real reference
         # secret, encrypted to a PUBLISHED (intentionally non-secret)
