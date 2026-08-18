@@ -221,26 +221,31 @@ authentik_login() {
     csrf() { awk -F'\t' '$6=="authentik_csrf"{v=$7} END{print v}' "$jar"; }
 
     # flow_stage [POST-json-body] -- GETs (no body arg) or POSTs the
-    # executor URL, appending the HTTP status to its own output on a
-    # trailing line (curl -w) so a failure can show the two separately --
-    # a genuinely empty body (a real 200 with no useful content) reads
-    # very differently from a 403/500 that also happened to have no body,
-    # and only printing the raw text left that ambiguous the one time it
-    # mattered (P3's first-ever password-stage attempt).
+    # executor URL. -i (not -w) this time -- the identification POST's
+    # first-ever real response turned out to be a bare 302 with an
+    # empty body, and %{http_code} alone can't say WHERE a redirect
+    # points; -i captures the full response (status line + headers +
+    # body) as one string, so stage_location can answer that too rather
+    # than leaving a second round of "what actually happened" guessing.
     flow_stage() {
-        raw=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
+        curl -s -i --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
             -H 'Accept: application/json' -H 'Content-Type: application/json' \
             -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
-            ${1:+-d "$1"} -w '\nHTTPSTATUS:%{http_code}' "$executor_url" 2>/dev/null || true)
-        printf '%s' "$raw"
+            ${1:+-d "$1"} "$executor_url" 2>/dev/null || true
     }
-    stage_body() { printf '%s' "$1" | sed '$d'; }
-    stage_status() { printf '%s' "$1" | tail -1 | sed -n 's/^HTTPSTATUS://p'; }
+    # A response from -i is "status line\r\nheaders\r\n\r\nbody" -- body
+    # is everything after the first blank line; on a redirect, curl's -i
+    # output for a chained request (this endpoint doesn't get -L) is
+    # just the one response, so the first blank line reliably separates
+    # headers from body here.
+    stage_body() { printf '%s' "$1" | awk 'body{print} /^\r?$/{body=1}'; }
+    stage_status() { printf '%s' "$1" | awk 'NR==1{print $2; exit}'; }
+    stage_location() { printf '%s' "$1" | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1; }
 
     stage1=$(flow_stage)
     component1=$(stage_body "$stage1" | jq -r '.component // empty' 2>/dev/null || true)
     if [ "$component1" != "ak-stage-identification" ]; then
-        echo "authentik_login: expected component ak-stage-identification, got '$component1' (HTTP $(stage_status "$stage1")). Raw body:" >&2
+        echo "authentik_login: expected component ak-stage-identification, got '$component1' (HTTP $(stage_status "$stage1"), Location: $(stage_location "$stage1")). Raw body:" >&2
         stage_body "$stage1" >&2
         return 1
     fi
@@ -248,7 +253,7 @@ authentik_login() {
     stage2=$(flow_stage '{"uid_field":"akadmin"}')
     component2=$(stage_body "$stage2" | jq -r '.component // empty' 2>/dev/null || true)
     if [ "$component2" != "ak-stage-password" ]; then
-        echo "authentik_login: expected component ak-stage-password after identification, got '$component2' (HTTP $(stage_status "$stage2")). Raw body:" >&2
+        echo "authentik_login: expected component ak-stage-password after identification, got '$component2' (HTTP $(stage_status "$stage2"), Location: $(stage_location "$stage2")). Raw body:" >&2
         stage_body "$stage2" >&2
         return 1
     fi
@@ -257,7 +262,7 @@ authentik_login() {
     final_type=$(stage_body "$stage3" | jq -r '.type // empty' 2>/dev/null || true)
     final_to=$(stage_body "$stage3" | jq -r '.to // empty' 2>/dev/null || true)
     if [ "$final_type" != "redirect" ] || [ -z "$final_to" ]; then
-        echo "authentik_login: expected a final redirect after submitting the password, got type='$final_type' (HTTP $(stage_status "$stage3")). Raw body:" >&2
+        echo "authentik_login: expected a final redirect after submitting the password, got type='$final_type' (HTTP $(stage_status "$stage3"), Location: $(stage_location "$stage3")). Raw body:" >&2
         stage_body "$stage3" >&2
         return 1
     fi
