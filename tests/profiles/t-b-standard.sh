@@ -243,14 +243,25 @@ authentik_login() {
             -H 'Accept: application/json' -H 'Content-Type: application/json' \
             -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
             ${1:+-d "$1"} "$executor_url" 2>/dev/null || true)
-        case "$(stage_status "$raw")" in
-            3??)
-                next=$(resolve_location "$executor_url" "$(stage_location "$raw")")
-                curl -s -i --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
-                    -H 'Accept: application/json' -H "Referer: $referer" "$next" 2>/dev/null || true
-                ;;
-            *) printf '%s' "$raw" ;;
-        esac
+        # Loop, not a single hop: the first redirect this uncovered
+        # (identification -> executor) turned out not to be the only
+        # one -- the password stage's own completion redirected back to
+        # the executor again too. Bounded at 5, generous for a flow with
+        # at most a couple of PRG hops in a row; a real infinite loop
+        # here would mean something is genuinely wrong, and this stops
+        # short of hanging the whole script on it.
+        hops=0
+        while [ "$hops" -lt 5 ]; do
+            case "$(stage_status "$raw")" in
+                3??) : ;;
+                *) break ;;
+            esac
+            next=$(resolve_location "$executor_url" "$(stage_location "$raw")")
+            raw=$(curl -s -i --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
+                -H 'Accept: application/json' -H "Referer: $referer" "$next" 2>/dev/null || true)
+            hops=$((hops + 1))
+        done
+        printf '%s' "$raw"
     }
 
     stage1=$(flow_stage)
