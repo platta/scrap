@@ -333,6 +333,39 @@ authentik_login() {
     curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" -L "$next_url" 2>/dev/null || true
 }
 
+# 3a-pre. CA trust for in-cluster OIDC backend calls -- components/ca-trust/'s
+# whole contract (see that directory's own README). P2's own login below
+# already exercises this end to end -- its backend calls to
+# https://auth.${BASE_DOMAIN} would fail outright with a TLS verification
+# error without it, since nothing in this image's stock trust store knows
+# the platform's private CA -- but a bare P2 failure doesn't say WHICH
+# layer broke; a TLS error and a broken Blueprint look identical from the
+# outside (both just fail the login). This checks the component's own
+# wiring directly and attributably, before P2 runs, so a ca-trust
+# regression fails here by name: the pod's own env carries
+# SSL_CERT_FILE at the exact path the component's kustomization.yaml
+# patches in, AND the platform's real CA (the same secret
+# platform/cert-manager-config/ exports, already decoded into $CA_CERT
+# above) is genuinely present inside the mounted scrap-ca-bundle
+# ConfigMap's content -- not just that a bundle exists, but that it
+# contains the right CA, not merely the stock system set.
+p2_pod=$(kc get pods -n scrap-examples -l app=p2-oidc-debugger -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+p2_ssl_cert_file=$(kc get pod -n scrap-examples "$p2_pod" -o jsonpath='{.spec.containers[0].env[?(@.name=="SSL_CERT_FILE")].value}' 2>/dev/null || true)
+kc get configmap -n scrap-examples scrap-ca-bundle -o jsonpath='{.data.ca-bundle\.crt}' > /tmp/t-b-p2-ca-bundle.pem 2>/dev/null || true
+ca_in_bundle=""
+if [ -s /tmp/t-b-p2-ca-bundle.pem ]; then
+    ca_in_bundle=$(python3 -c "
+needle = open('$CA_CERT').read().strip()
+haystack = open('/tmp/t-b-p2-ca-bundle.pem').read()
+print('yes' if needle and needle in haystack else 'no')
+" 2>/dev/null || echo no)
+fi
+if [ "$p2_ssl_cert_file" = "/etc/ssl/scrap/ca-bundle.crt" ] && [ "$ca_in_bundle" = "yes" ]; then
+    ok T-B/ca-trust-wiring "components/ca-trust/ wired SSL_CERT_FILE onto p2's own pod, and the platform's real CA is genuinely present in the mounted scrap-ca-bundle ConfigMap"
+else
+    fail T-B/ca-trust-wiring "SSL_CERT_FILE='$p2_ssl_cert_file' (expected /etc/ssl/scrap/ca-bundle.crt), CA present in bundle: '$ca_in_bundle' -- see components/ca-trust/README.md"
+fi
+
 # 3a. P2 -- native OIDC, the full round trip: the app's own /debug entry
 # point (its documented Verify step, apps/examples/p2-native-oidc/README.md)
 # through a real login, ending on the app's own redirect_uri, which is
@@ -345,13 +378,21 @@ authentik_login() {
 # claims -- not a SCRAP-specific field -- so their presence proves the
 # app itself, not this script, validated a real token: the observed
 # "iss" was genuinely "https://auth.${BASE_DOMAIN}/application/o/scrap-p2-oidc-demo/",
-# not a placeholder.
+# not a placeholder. Strengthened beyond bare presence: also requires
+# preferred_username=="akadmin", the exact identity actually logged in
+# with -- ties the claim to THIS specific login, not merely "some
+# claims happened to be present," which a garbage-but-nonempty response
+# could otherwise satisfy.
 p2_debug_url="https://p2.${BASE_DOMAIN}/debug?oidc_client_id=scrap-p2-demo&oidc_client_secret=scrap-p2-demo-client-secret-not-sensitive&oidc_discovery=${AUTH_BASE}/application/o/scrap-p2-oidc-demo/.well-known/openid-configuration&oidc_redirect_uri=https://p2.${BASE_DOMAIN}/login"
 if p2_final=$(authentik_login "$p2_debug_url" /tmp/t-b-p2-cookies); then
-    if echo "$p2_final" | jq -e '.access_token_jwt_payload_decoded.iss and .access_token_jwt_payload_decoded.sub' >/dev/null 2>&1; then
-        ok T-B/p2-native-oidc "the app completed a real login, exchanged the code itself, and printed real ID token claims (iss/sub present)"
+    if echo "$p2_final" | jq -e '
+        .access_token_jwt_payload_decoded.iss and
+        .access_token_jwt_payload_decoded.sub and
+        (.access_token_jwt_payload_decoded.preferred_username == "akadmin")
+    ' >/dev/null 2>&1; then
+        ok T-B/p2-native-oidc "the app completed a real login, exchanged the code itself, and printed real ID token claims for the exact user logged in (iss/sub present, preferred_username=akadmin)"
     else
-        fail T-B/p2-native-oidc "login completed but the app's final response has no iss/sub claims -- got: $(echo "$p2_final" | head -c 1500)"
+        fail T-B/p2-native-oidc "login completed but the app's final response is missing iss/sub, or preferred_username isn't akadmin -- got: $(echo "$p2_final" | head -c 1500)"
     fi
 else
     fail T-B/p2-native-oidc "the scripted login against authentik's flow-executor API failed -- see the authentik_login diagnostic output above"
@@ -359,9 +400,15 @@ fi
 
 # 3b. P3 -- the adversarial claim first: an unauthenticated request must
 # never reach the protected app at all. Checked two independent ways --
-# the HTTP status/Location say "redirected to authentik", and the body
-# does NOT contain whoami's own marker string -- so this can't pass by
-# accident on a redirect to the wrong place.
+# the HTTP status/Location say "redirected to authentik specifically",
+# and the body does NOT contain whoami's own marker string -- so this
+# can't pass by accident on a redirect to the wrong place. The Location
+# check requires the exact host "auth.${BASE_DOMAIN}", not a loose
+# substring match against "${BASE_DOMAIN}" -- p3.${BASE_DOMAIN} itself
+# also contains that substring, so the looser check couldn't have told
+# "redirected to authentik" apart from "redirected back to itself" on
+# host alone; the body-marker check below is what actually carries that
+# distinction, but the location check should say what it means too.
 p3_unauth_headers=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /tmp/t-b-p3-unauth-body \
     "https://p3.${BASE_DOMAIN}/" 2>/dev/null || true)
 p3_unauth_status=$(echo "$p3_unauth_headers" | awk 'NR==1{print $2}')
@@ -369,11 +416,18 @@ p3_unauth_location=$(echo "$p3_unauth_headers" | awk 'BEGIN{IGNORECASE=1} /^loca
 p3_unauth_body=$(cat /tmp/t-b-p3-unauth-body 2>/dev/null || true)
 case "$p3_unauth_status" in
     30[0-9])
-        if echo "$p3_unauth_location" | grep -q "${BASE_DOMAIN}" && ! echo "$p3_unauth_body" | grep -q "Hostname:"; then
-            ok T-B/p3-adversarial-unauth "an unauthenticated request never reached whoami -- redirected to authentik instead (status $p3_unauth_status -> $p3_unauth_location)"
-        else
-            fail T-B/p3-adversarial-unauth "got a redirect but not to authentik, or whoami's own marker leaked through anyway (status $p3_unauth_status, location '$p3_unauth_location')"
-        fi
+        case "$p3_unauth_location" in
+            https://auth."${BASE_DOMAIN}"/*)
+                if ! echo "$p3_unauth_body" | grep -q "Hostname:"; then
+                    ok T-B/p3-adversarial-unauth "an unauthenticated request never reached whoami -- redirected to authentik instead (status $p3_unauth_status -> $p3_unauth_location)"
+                else
+                    fail T-B/p3-adversarial-unauth "redirected to authentik but whoami's own marker leaked through in the response body anyway (status $p3_unauth_status, location '$p3_unauth_location')"
+                fi
+                ;;
+            *)
+                fail T-B/p3-adversarial-unauth "got a redirect but not to auth.${BASE_DOMAIN} specifically (status $p3_unauth_status, location '$p3_unauth_location')"
+                ;;
+        esac
         ;;
     *)
         fail T-B/p3-adversarial-unauth "expected a redirect (30x) to authentik's login for an unauthenticated request, got status '$p3_unauth_status'"
