@@ -220,19 +220,6 @@ authentik_login() {
     # adds to field 1 for HttpOnly cookies.
     csrf() { awk -F'\t' '$6=="authentik_csrf"{v=$7} END{print v}' "$jar"; }
 
-    # flow_stage [POST-json-body] -- GETs (no body arg) or POSTs the
-    # executor URL. -i (not -w) this time -- the identification POST's
-    # first-ever real response turned out to be a bare 302 with an
-    # empty body, and %{http_code} alone can't say WHERE a redirect
-    # points; -i captures the full response (status line + headers +
-    # body) as one string, so stage_location can answer that too rather
-    # than leaving a second round of "what actually happened" guessing.
-    flow_stage() {
-        curl -s -i --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
-            -H 'Accept: application/json' -H 'Content-Type: application/json' \
-            -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
-            ${1:+-d "$1"} "$executor_url" 2>/dev/null || true
-    }
     # A response from -i is "status line\r\nheaders\r\n\r\nbody" -- body
     # is everything after the first blank line; on a redirect, curl's -i
     # output for a chained request (this endpoint doesn't get -L) is
@@ -241,6 +228,30 @@ authentik_login() {
     stage_body() { printf '%s' "$1" | awk 'body{print} /^\r?$/{body=1}'; }
     stage_status() { printf '%s' "$1" | awk 'NR==1{print $2; exit}'; }
     stage_location() { printf '%s' "$1" | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1; }
+
+    # flow_stage [POST-json-body] -- GETs (no body arg) or POSTs the
+    # executor URL, and follows exactly one redirect as a plain GET if
+    # the response is one. REAL FINDING: the identification POST's
+    # first-ever real response was a bare 302, Location pointing right
+    # back at this same executor URL -- a POST/Redirect/GET pattern, not
+    # the "the next stage's JSON comes back inline" shape this function
+    # originally assumed. authentik's own frontend SPA presumably just
+    # follows redirects like a browser does automatically; a script using
+    # the raw API has to do that step itself.
+    flow_stage() {
+        raw=$(curl -s -i --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
+            -H 'Accept: application/json' -H 'Content-Type: application/json' \
+            -H "X-CSRFToken: $(csrf)" -H "Referer: $referer" \
+            ${1:+-d "$1"} "$executor_url" 2>/dev/null || true)
+        case "$(stage_status "$raw")" in
+            3??)
+                next=$(resolve_location "$executor_url" "$(stage_location "$raw")")
+                curl -s -i --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -c "$jar" -b "$jar" \
+                    -H 'Accept: application/json' -H "Referer: $referer" "$next" 2>/dev/null || true
+                ;;
+            *) printf '%s' "$raw" ;;
+        esac
+    }
 
     stage1=$(flow_stage)
     component1=$(stage_body "$stage1" | jq -r '.component // empty' 2>/dev/null || true)
