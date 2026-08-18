@@ -158,23 +158,44 @@ RESOLVE_ARGS="--resolve p2.${BASE_DOMAIN}:443:${NODE_IP} --resolve p3.${BASE_DOM
 # writing it. Treat a first failure here as a measurement, the same way
 # t-a-minimal.sh's own early bugs were found -- not a sign the approach is
 # wrong.
+# resolve_location <base_url> <location_header_value>
+#
+# A Location header is allowed by RFC 7231 to be relative to the request
+# it answers, not just an absolute URL -- found real, not theoretical:
+# authentik's own login-flow redirect (the /if/flow/... hop) sends a bare
+# path ("/if/flow/default-authentication-flow/?..."), no scheme or host
+# at all, which broke the flow-slug parsing below the first time a login
+# actually got this far. Every curl call in this function resolves its
+# Location through this first, so an absolute-URL assumption doesn't
+# quietly break again at some other hop.
+resolve_location() {
+    base="$1"; loc="$2"
+    case "$loc" in
+        http://*|https://*) echo "$loc" ;;
+        /*) echo "$base" | sed -n 's#^\(https\?://[^/]*\).*#\1#p' | { read -r origin; echo "${origin}${loc}"; } ;;
+        *) echo "$loc" ;;
+    esac
+}
+
 authentik_login() {
     start_url="$1"
     jar="$2"
     rm -f "$jar"
 
-    loc1=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /dev/null -c "$jar" -b "$jar" "$start_url" 2>/dev/null \
+    loc1_raw=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /dev/null -c "$jar" -b "$jar" "$start_url" 2>/dev/null \
         | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
+    loc1=$(resolve_location "$start_url" "$loc1_raw")
     echo "authentik_login: trace: start_url=$start_url -> loc1=$loc1" >&2
-    if [ -z "$loc1" ]; then
+    if [ -z "$loc1_raw" ]; then
         echo "authentik_login: no redirect from starting URL: $start_url" >&2
         return 1
     fi
 
-    loc2=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /dev/null -c "$jar" -b "$jar" "$loc1" 2>/dev/null \
+    loc2_raw=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -D - -o /dev/null -c "$jar" -b "$jar" "$loc1" 2>/dev/null \
         | awk 'BEGIN{IGNORECASE=1} /^location:/{print $2}' | tr -d '\r' | tail -1 || true)
+    loc2=$(resolve_location "$loc1" "$loc2_raw")
     echo "authentik_login: trace: loc1 -> loc2=$loc2" >&2
-    if [ -z "$loc2" ]; then
+    if [ -z "$loc2_raw" ]; then
         echo "authentik_login: no redirect from the authorize endpoint: $loc1" >&2
         return 1
     fi
