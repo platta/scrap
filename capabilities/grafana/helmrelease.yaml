@@ -120,11 +120,7 @@ spec:
         # way across upgrades.
         disable_login_form: false
       "auth.anonymous":
-        # NEGATIVE CONTROL, DO NOT KEEP: deliberately flipped to true to
-        # verify T-B/grafana-adversarial-anon actually turns red on a
-        # genuine anonymous-access bypass, not just that it happens to
-        # pass. Revert immediately after this run.
-        enabled: true
+        enabled: false
       "auth.generic_oauth":
         enabled: false # flipped to true by GF_AUTH_GENERIC_OAUTH_ENABLED above, when identity integration is enabled
         name: Authentik
