@@ -274,12 +274,23 @@ if [ -z "${REPO_URL:-}" ]; then
             echo "Done -- this instance's secrets/ now decrypts only with this host's own keys."
         fi
 
+        echo "DIAG2: about to run init/add/commit/push composite"
         sudo -u "$GIT_USER" sh -c "cd '$WORKDIR' && git init -q -b '$REPO_BRANCH' && \
             git remote add origin '$BARE_REPO' && git add -A && \
             git -c user.name=scrap-bootstrap -c user.email=bootstrap@localhost \
                 commit -q -m 'Initial commit from bootstrap/install.sh' && \
             git push -q origin '$REPO_BRANCH'"
-        rm -rf "$WORKDIR"
+        echo "DIAG2: composite succeeded (rc=$?). WORKDIR listing before final rm:"
+        find "$WORKDIR" -maxdepth 2 2>&1 || true
+        echo "DIAG2: attempting final rm -rf \$WORKDIR now"
+        if rm -rf "$WORKDIR"; then RC=0; else RC=$?; fi
+        echo "DIAG2: final rm exit code: $RC"
+        if [ -e "$WORKDIR" ]; then
+            echo "DIAG2: WORKDIR STILL EXISTS after rm. Contents:"
+            find "$WORKDIR" 2>&1 || true
+        else
+            echo "DIAG2: WORKDIR confirmed gone."
+        fi
     fi
 
     mkdir -p "$(dirname "$DEPLOY_KEY")"
