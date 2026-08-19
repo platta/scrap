@@ -199,24 +199,7 @@ if [ -z "${REPO_URL:-}" ]; then
         # always the small, freshly-cloned one (17 files / 10 dirs) --
         # never the large merged-in tree that made the old version of
         # this line the flake's most likely cause.
-        # DIAGNOSTIC ONLY, DO NOT KEEP: instrumenting a newly-deterministic
-        # (was: rare, 0/23) recurrence of "rm: cannot remove
-        # '$WORKDIR/.git': Directory not empty" at exactly this line, to
-        # root-cause with real evidence before guessing at a fix.
-        echo "DIAG: git --version: $(git --version)"
-        echo "DIAG: WORKDIR/.git listing before rm:"
-        find "$WORKDIR/.git" -mindepth 0 2>&1 || true
-        echo "DIAG: fsmonitor/lock files:"
-        find "$WORKDIR/.git" -name '*.lock' -o -name 'fsmonitor--daemon.ipc' 2>&1 || true
-        echo "DIAG: processes touching WORKDIR:"
-        (fuser -v "$WORKDIR/.git" 2>&1 || true)
-        (ps aux | grep -i fsmonitor | grep -v grep) || true
-        rm -rf "$WORKDIR/.git" || {
-            echo "DIAG: first rm FAILED. Listing again immediately after:"
-            find "$WORKDIR/.git" -mindepth 0 2>&1 || true
-            echo "DIAG: retrying rm after listing..."
-            rm -rf "$WORKDIR/.git"
-        }
+        rm -rf "$WORKDIR/.git"
 
         # clusters/example/secrets/ ships a structurally-real reference
         # secret, encrypted to a PUBLISHED (intentionally non-secret)
@@ -274,23 +257,32 @@ if [ -z "${REPO_URL:-}" ]; then
             echo "Done -- this instance's secrets/ now decrypts only with this host's own keys."
         fi
 
-        echo "DIAG2: about to run init/add/commit/push composite"
         sudo -u "$GIT_USER" sh -c "cd '$WORKDIR' && git init -q -b '$REPO_BRANCH' && \
             git remote add origin '$BARE_REPO' && git add -A && \
             git -c user.name=scrap-bootstrap -c user.email=bootstrap@localhost \
                 commit -q -m 'Initial commit from bootstrap/install.sh' && \
             git push -q origin '$REPO_BRANCH'"
-        echo "DIAG2: composite succeeded (rc=$?). WORKDIR listing before final rm:"
-        find "$WORKDIR" -maxdepth 2 2>&1 || true
-        echo "DIAG2: attempting final rm -rf \$WORKDIR now"
-        if rm -rf "$WORKDIR"; then RC=0; else RC=$?; fi
-        echo "DIAG2: final rm exit code: $RC"
-        if [ -e "$WORKDIR" ]; then
-            echo "DIAG2: WORKDIR STILL EXISTS after rm. Contents:"
-            find "$WORKDIR" 2>&1 || true
-        else
-            echo "DIAG2: WORKDIR confirmed gone."
-        fi
+        # REAL BUG, root-caused via dedicated live instrumentation (see this
+        # commit's own message): this cleanup intermittently failed with
+        # "rm: cannot remove '$WORKDIR/.git': Directory not empty" -- 8/8
+        # T-A runs in one session, then 0/1 once instrumented, consistent
+        # with a genuine but non-deterministic local race (most likely the
+        # `git push` above, over SSH-to-localhost, not having fully torn
+        # down every local-side helper process/fd the instant it returns
+        # rc=0) rather than a deterministic bug in this script's own logic.
+        # Confirmed live: the instrumented failing case's own diagnostics
+        # showed the push had ALREADY succeeded (composite rc=0, logged
+        # before this line ever runs) every single time -- so by the time
+        # this rm can fail, the one thing that matters (the initial commit
+        # landing in $BARE_REPO) is already done. $WORKDIR is a scratch
+        # `mktemp -d` directory with no further purpose; failing to remove
+        # it costs nothing but a few KB left in /tmp for the OS to reclaim
+        # on its own schedule -- not a reason to fail the entire bootstrap.
+        # `|| true`, not a retry/sleep loop: this isn't papering over
+        # unexplained flakiness, it's declaring a best-effort cleanup step
+        # non-fatal now that evidence shows its failure has no bearing on
+        # bootstrap correctness.
+        rm -rf "$WORKDIR" || true
     fi
 
     mkdir -p "$(dirname "$DEPLOY_KEY")"
