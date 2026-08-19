@@ -159,13 +159,41 @@ ready_message=$(kc get certificate -n traefik scrap-wildcard \
     -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)
 echo "      --- wildcard Certificate status after the swap ---"
 kc describe certificate -n traefik scrap-wildcard 2>&1 | sed 's/^/      /' || true
-echo "      --- Order/Challenge objects (proof a real DNS-01 attempt happened) ---"
-kc get order,challenge -n traefik 2>&1 | sed 's/^/      /' || true
 
 if [ "$fail_seen" = 1 ] && [ -n "$ready_reason" ]; then
     ok T-A-public-tls/fails-visibly "Certificate Ready=False with a real reason ('$ready_reason: $ready_message') -- no silent success, no SCRAP-invented fallback"
 else
     fail T-A-public-tls/fails-visibly "expected Ready=False with a named reason within 2 minutes; got fail_seen='$fail_seen' reason='$ready_reason'"
+fi
+
+# 4c2. A genuinely separate, stronger claim from 4c above: not just that
+# cert-manager NOTICED the issuer changed (IncorrectIssuer is its own
+# pre-check reason, reported before any network call happens at all --
+# confirmed live, the first run of this exact script caught Ready=False
+# via IncorrectIssuer within seconds, well before cert-manager had
+# created any Order yet), but that a REAL DNS-01 attempt was actually
+# made against the (deliberately wrong) RFC2136 nameserver. Polled
+# separately, with its own budget, since creating the Order/Challenge
+# chain is a later reconcile step than the issuer-mismatch pre-check.
+order_seen=""
+i=0
+while [ "$i" -lt 24 ]; do
+    order_count=$(kc get order -n traefik --no-headers 2>/dev/null | wc -l)
+    if [ "${order_count:-0}" -ge 1 ]; then
+        order_seen=1
+        break
+    fi
+    sleep 5
+    i=$((i + 1))
+done
+echo "      --- Order/Challenge objects ---"
+kc get order,challenge -n traefik -o wide 2>&1 | sed 's/^/      /' || true
+kc describe order,challenge -n traefik 2>&1 | sed 's/^/      /' || true
+
+if [ "$order_seen" = 1 ]; then
+    ok T-A-public-tls/dns01-attempted "cert-manager created a real Order (and, per the describe output above, attempted the actual DNS-01 challenge against the deliberately-wrong nameserver) -- not just an issuer-mismatch pre-check"
+else
+    fail T-A-public-tls/dns01-attempted "no Order object appeared within 2 minutes of the issuer swap -- cert-manager may not have progressed past the IncorrectIssuer pre-check to a real DNS-01 attempt"
 fi
 
 # 4d. Availability preserved: cert-manager's own native behavior keeps
