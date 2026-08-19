@@ -136,6 +136,15 @@ spec:
         # group that mapping's membership check is written against.
         role_attribute_path: "contains(groups, 'scrap-admins') && 'Admin' || 'Viewer'"
         role_attribute_strict: false
+        # REAL BUG, found live: without this, Grafana's own default login
+        # identifier is the email claim ("admin@example.internal" for
+        # akadmin) rather than preferred_username ("akadmin") -- both
+        # genuinely identify the exact same, specific user, but this
+        # keeps the identifier consistent with P2's own check
+        # (preferred_username=="akadmin"), the established convention
+        # elsewhere in this project for "the exact identity, not just
+        # some claims."
+        login_attribute_path: preferred_username
 
     resources:
       requests: { cpu: 25m, memory: 128Mi }

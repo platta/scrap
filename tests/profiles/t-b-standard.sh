@@ -470,7 +470,14 @@ fi
 # points rather than the Kustomize component itself (which cannot attach
 # to a Helm-rendered Deployment -- see capabilities/grafana/README.md).
 grafana_pod=$(kc get pods -n monitoring -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-grafana_ssl_cert_file=$(kc get pod -n monitoring "$grafana_pod" -o jsonpath='{.spec.containers[0].env[?(@.name=="SSL_CERT_FILE")].value}' 2>/dev/null || true)
+# REAL BUG, found live via this script's own first run: containers[0]
+# assumed the grafana container was first, but sidecar.dashboards.enabled
+# (helmrelease.yaml) inserts a grafana-sc-dashboard sidecar BEFORE it in
+# spec.containers -- confirmed via a direct `helm template` render, not
+# guessed. Query by container NAME instead of position; the CA-trust
+# wiring itself was correct all along, only this check's own assumption
+# about container ordering was wrong.
+grafana_ssl_cert_file=$(kc get pod -n monitoring "$grafana_pod" -o jsonpath='{.spec.containers[?(@.name=="grafana")].env[?(@.name=="SSL_CERT_FILE")].value}' 2>/dev/null || true)
 kc get configmap -n monitoring scrap-ca-bundle -o jsonpath='{.data.ca-bundle\.crt}' > /tmp/t-b-grafana-ca-bundle.pem 2>/dev/null || true
 grafana_ca_in_bundle=""
 if [ -s /tmp/t-b-grafana-ca-bundle.pem ]; then
@@ -491,15 +498,25 @@ fi
 # references capabilities/grafana/ at all unless this script's own Phase
 # 1 copy-in added it, and T-A runs against a COMPLETELY SEPARATE cluster
 # with no such copy-in ever happening. Restated here as a live,
-# in-this-cluster fact for the record: this Grafana Deployment is a
-# capability object (kustomize.toolkit.fluxcd.io/name=grafana), not
-# something core -- deleting capabilities/grafana/ (T1) would remove
-# exactly this and nothing platform/observability/ itself owns.
-grafana_owner=$(kc get deployment -n monitoring grafana -o jsonpath='{.metadata.labels.kustomize\.toolkit\.fluxcd\.io/name}' 2>/dev/null || true)
+# in-this-cluster fact for the record: capabilities/grafana/'s own
+# Kustomization, not platform/observability/, is what applied this --
+# deleting capabilities/grafana/ (T1) would remove exactly this and
+# nothing platform/observability/ itself owns.
+#
+# REAL BUG, found live via this script's own first run: checked the
+# CHART-RENDERED Deployment's own labels, which came back empty --
+# Flux's kustomize.toolkit.fluxcd.io/name label is applied to resources
+# Kustomize itself builds and applies directly; a Deployment a Helm
+# chart renders (via helm-controller, tracked through Helm's own release
+# mechanism, not kustomize-controller) never carries it. The HelmRelease
+# object ITSELF is what's actually a raw resource in
+# capabilities/grafana/'s own Kustomization -- checking that object,
+# not what it causes to be rendered, is the correct, attributable proof.
+grafana_owner=$(kc get helmrelease -n monitoring grafana -o jsonpath='{.metadata.labels.kustomize\.toolkit\.fluxcd\.io/name}' 2>/dev/null || true)
 if [ "$grafana_owner" = "grafana" ]; then
-    ok T-B/grafana-capability-owned "the Grafana Deployment is owned by the capabilities/grafana/ Kustomization, not platform/observability/ -- T1 holds"
+    ok T-B/grafana-capability-owned "the Grafana HelmRelease is owned by the capabilities/grafana/ Kustomization, not platform/observability/ -- T1 holds"
 else
-    fail T-B/grafana-capability-owned "expected the Grafana Deployment's owning Kustomization to be 'grafana', got '$grafana_owner'"
+    fail T-B/grafana-capability-owned "expected the Grafana HelmRelease's owning Kustomization to be 'grafana', got '$grafana_owner'"
 fi
 
 # 3f. Grafana is actually connected to the platform's real Prometheus --
