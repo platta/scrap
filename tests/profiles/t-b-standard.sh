@@ -543,15 +543,26 @@ else
 fi
 
 # 3g. Anonymous access is genuinely off -- the adversarial check this
-# capability's own security claim depends on. An unauthenticated request
-# to a real API endpoint (not the login page, which always returns 200)
-# must be rejected, not silently served.
+# capability's own security claim depends on.
+#
+# REAL BUG, found by this exact check's own negative-control run: the
+# original version of this check queried /api/user, which returned 401
+# regardless of auth.anonymous.enabled -- confirmed live, with anonymous
+# access DELIBERATELY enabled, the check still reported 401 and passed.
+# /api/user means "give me MY signed-in user record"; an anonymous
+# session has no such record even when Grafana treats it as an
+# authenticated Viewer for everything else, so 401 there proves nothing
+# about whether anonymous viewing is actually possible. The real,
+# security-relevant surface is whether an anonymous request can see real
+# platform data -- /api/datasources (which would reveal the real
+# Prometheus URL this capability configured) is what an anonymous
+# bypass would actually expose, and is what this now checks instead.
 anon_status=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -o /dev/null -w '%{http_code}' \
-    "https://grafana.${BASE_DOMAIN}/api/user" 2>/dev/null || true)
+    "https://grafana.${BASE_DOMAIN}/api/datasources" 2>/dev/null || true)
 if [ "$anon_status" = "401" ]; then
-    ok T-B/grafana-adversarial-anon "an unauthenticated request to a real Grafana API endpoint is rejected (401) -- no accidental anonymous bypass"
+    ok T-B/grafana-adversarial-anon "an unauthenticated request to a real Grafana API endpoint exposing the platform's own configuration (/api/datasources) is rejected (401) -- no accidental anonymous bypass"
 else
-    fail T-B/grafana-adversarial-anon "expected 401 for an unauthenticated /api/user request, got '$anon_status' -- anonymous access may be accidentally enabled"
+    fail T-B/grafana-adversarial-anon "expected 401 for an unauthenticated /api/datasources request, got '$anon_status' -- anonymous access may be accidentally enabled"
 fi
 
 # 3h. Native OIDC login through authentik, end to end, reusing the SAME
