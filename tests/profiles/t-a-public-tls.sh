@@ -92,32 +92,36 @@ cp "$REPO_ROOT/capabilities/public-tls/cluster-secrets-kustomization.yaml" \
     "$LIVE_CLUSTER_DIR/capabilities/public-tls-secrets.yaml"
 
 sed -i 's|^\(  TLS_ISSUER: \).*|\1"scrap-acme-staging"|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
-# REAL BUG, found live via this script's own first THREE runs -- two
-# distinct failures from the same underlying cause, not one: the checked-
-# in reference ACME_EMAIL ("admin@example.internal") isn't just a
-# harmless placeholder once public-tls is actually enabled, because
-# Let's Encrypt's ACME server validates the contact email as part of
-# ACCOUNT REGISTRATION, before any Certificate/Order/Challenge exists at
-# all.
+# REAL BUG, found live via this script's own first FOUR runs -- three
+# distinct failures, each one narrowing the actual cause, not the same
+# one recurring: the checked-in reference ACME_EMAIL
+# ("admin@example.internal") isn't just a harmless placeholder once
+# public-tls is actually enabled.
 #   Attempt 1: ".internal" isn't a real public-suffix TLD --
 #     "400 invalidContact: ... does not end with a valid public suffix".
-#   Attempt 2: switched to "example.com" (a real TLD) -- rejected anyway,
-#     for a DIFFERENT, more specific reason: "400 invalidContact: ...
-#     contact email has forbidden domain \"example.com\"". Let's Encrypt's
-#     server explicitly denylists the RFC 2606 documentation domains
-#     (example.com/.org/.net) BY NAME, precisely because they're the
-#     obvious fake-placeholder choice -- confirmed live, not assumed from
-#     the first fix's own reasoning, which stopped one layer too early.
-# Both attempts were guessing at which domain would pass an undocumented
-# denylist. The robust fix sidesteps the whole question: cert-manager's
-# ACME issuer `email` field is OPTIONAL. An empty value here means no
-# contact email is registered at all -- a real ACME account still
-# registers successfully (Let's Encrypt has always allowed this), and
-# nothing about the DNS-01 claim this test exists to exercise depends on
-# a contact email existing. A real operator enabling this capability for
-# real still sets their own real address, per this capability's own
-# README -- this empty override is specific to this test's own live-edit.
-sed -i 's|^\(  ACME_EMAIL: \).*|\1""|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
+#   Attempt 2: switched to "example.com" (a real TLD) -- rejected anyway:
+#     "400 invalidContact: ... contact email has forbidden domain
+#     \"example.com\"". Let's Encrypt denylists the RFC 2606 documentation
+#     domains (example.com/.org/.net) BY NAME.
+#   Attempt 3: tried omitting the email (empty string) on the theory that
+#     cert-manager's `email` field is optional -- wrong layer entirely.
+#     Flux's own dry-run rejected it before the field's VALUE ever
+#     mattered: "spec.acme.email: Invalid value: \"null\": ... must be of
+#     type string" -- Kubernetes' structural schema validation forbids
+#     null for a plain (non-nullable) string field once the key is
+#     PRESENT at all, and Flux substitution can only change a value, not
+#     remove a key. "Optional" only helps if the key is absent from the
+#     manifest entirely, which a fixed YAML file with one always-present
+#     `email:` line structurally cannot express.
+# The actual fix: use a real, syntactically valid, un-denylisted address.
+# mailinator.com is a real, ordinary, long-registered domain (a public
+# disposable-inbox service) -- not one of Let's Encrypt's specifically
+# reserved/denylisted documentation domains, and needs no DNS lookup of
+# its own for ACME's contact-format check to pass. A real operator
+# enabling this capability for real still sets their own address, per
+# this capability's own README -- this override is specific to this
+# test's own live-edit step, not a change to the checked-in default.
+sed -i 's|^\(  ACME_EMAIL: \).*|\1"scrap-public-tls-test@mailinator.com"|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
 # Deliberately WRONG nameserver -- unroutable TEST-NET address (RFC 5737),
 # guaranteed not to answer, so the DNS-01 challenge fails predictably and
 # quickly rather than hanging on a real-but-wrong server's own timeout
