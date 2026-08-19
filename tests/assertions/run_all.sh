@@ -17,6 +17,7 @@ CHECKS=(
   check_kustomization_dag
   check_helm_strict
   check_bootstrap_git_snapshot
+  check_dr_quiesce_ordering
 )
 
 FAIL=0

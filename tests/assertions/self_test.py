@@ -28,6 +28,7 @@ import check_instance_literals
 import check_kustomization_dag
 import check_helm_strict
 import check_bootstrap_git_snapshot
+import check_dr_quiesce_ordering
 
 REPO_ROOT = find_repo_root()
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "violations"
@@ -43,6 +44,7 @@ FIXTURE_CASES = [
     ("cyclic-dag", check_kustomization_dag),
     ("issuer-ordering", check_kustomization_dag),
     ("bootstrap-git-snapshot", check_bootstrap_git_snapshot),
+    ("dr-quiesce-ordering", check_dr_quiesce_ordering),
 ]
 
 # Every check with a real `run(root)` -- excludes check_app_addition_boundary,
@@ -56,6 +58,7 @@ ROOT_SCANNABLE = (
     check_kustomization_dag,
     check_helm_strict,
     check_bootstrap_git_snapshot,
+    check_dr_quiesce_ordering,
 )
 
 failures: list[str] = []

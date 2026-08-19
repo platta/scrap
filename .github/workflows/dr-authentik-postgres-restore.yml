@@ -1,0 +1,54 @@
+name: DR (Authentik/PostgreSQL destructive restore, R1)
+
+# tests/dr/'s first entry: a genuinely destructive restore of
+# capabilities/identity/'s own multi-tier Postgres, proving R1
+# (application-data loss) with multi-tier quiescence ordering, a real
+# logical-dump consistency method, and stable primary-key preservation --
+# see tests/dr/authentik-postgres-restore.sh's own header and
+# docs/core/recovery-model.md for the recovery contract this exists to
+# prove.
+#
+# Nightly, not every push/PR -- unlike T-A/T-B this test destroys and
+# reloads a real database as its own subject matter, on top of a full
+# identity bootstrap (T-B's own ~15 minute cost) plus the destroy/quiesce/
+# restore/reload sequence itself. Costly enough that gating every PR on it
+# would slow ordinary iteration without buying proportionally more
+# regression protection than a nightly cadence already does for a
+# recovery claim that isn't expected to drift day to day. workflow_dispatch
+# stays available for on-demand verification (exactly how this milestone's
+# own repeated clean-run verification was performed).
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  dr-authentik-postgres-restore:
+    name: DR -- destroy, quiesce, restore, reload identity's own Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the DR rehearsal against this runner as a fresh host
+        run: sh tests/dr/authentik-postgres-restore.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- authentik server log tail ---"
+          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=server --tail=200 || true
+          echo "--- authentik worker log tail ---"
+          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=worker --tail=200 || true
+          echo "--- postgres log tail ---"
+          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=primary --tail=200 || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

@@ -15,10 +15,13 @@ the identity capability are implemented and live-validated on a real cluster, in
 the application contract. It is installable end to end via `bootstrap/install.sh` against a fresh
 host, and that install path plus P1/P4/P5/P6 (minimal profile) and identity/P2/P3 (standard
 profile) are now mechanically proven from zero on every push/PR by `tests/profiles/`, not just
-validated by hand. What's still missing before a v1 release candidate: several `capabilities/`
+validated by hand. Disaster recovery (R1) is proven the same way, nightly, not just documented: a
+genuinely destructive restore of identity's own multi-tier Authentik + PostgreSQL, including
+quiescence ordering, a real logical-dump consistency method, and stable-primary-key preservation —
+see `tests/dr/`. What's still missing before a v1 release candidate: several `capabilities/`
 (Grafana, logs, public TLS, off-site backup, heartbeat), the Topology B onboarding generator, the
-rest of T-B (Grafana, logs, a recovery-flow-abuse test), and `tests/dr/` and T-C through T-F. See
-[Roadmap](#roadmap) below.
+rest of T-B (Grafana, logs, a recovery-flow-abuse test), the host-loss rehearsal (R3, T-E), and
+T-C/T-D/T-F. See [Roadmap](#roadmap) below.
 
 ## What SCRAP actually is
 
@@ -109,7 +112,8 @@ add a new one.
 5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; Grafana + Loki, ACME/DNS-01, off-site backup, alert delivery, external heartbeat still open
 6. Topology B onboarding: a generator producing a minimal, ordinary Flux/Kustomize/SOPS operator repository pinned to a released SCRAP version, host-agnostic (no GitHub requirement), plus an automated test proving a generated repo bootstraps/reconciles a clean install (`docs/decisions/0009-repository-topology.md`)
 7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); ~~T-B for identity + P2/P3~~ **done** (`tests/profiles/t-b-standard.sh` — a genuinely separate from-zero bootstrap, `components/ca-trust/` checked directly and attributably, a real scripted OIDC login the relying-party app itself exchanges, forward-auth proven both ways including a passing negative control; Grafana, logs, and a recovery-flow-abuse test remain open **capabilities this repo doesn't implement yet**, not a T-B gap); T-C through T-F still open — see `tests/profiles/README.md`
-8. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
+8. Disaster-recovery acceptance: R1 (Authentik/PostgreSQL destructive restore) implemented (`tests/dr/authentik-postgres-restore.sh`, nightly — genuine destruction, full-tier quiescence ordering, restore through the real recovery mechanism, documented-procedure reload with hard error checking, stable-primary-key recovery proven through authentik's own API); R3 host-loss rehearsal (T-E) still open — see `tests/dr/README.md`
+9. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
 
 ## License
 
