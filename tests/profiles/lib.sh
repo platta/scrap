@@ -72,6 +72,34 @@ cfg_value() {
     }' "$INSTANCE_CONFIG"
 }
 
+# apt_install <package> -- REAL BUG, found live: a DR-acceptance CI run
+# (tests/dr/authentik-postgres-restore.sh) hung for the ENTIRE 40-minute
+# job timeout with zero diagnostic output whatsoever -- confirmed from
+# the raw log: exactly one line ("Phase 0/5: environment prerequisites")
+# printed, then nothing until GitHub's own "operation was canceled" kill.
+# Traced to the very first statement install_prereqs() below can reach --
+# a bare `sudo apt-get update -qq`, with no timeout anywhere on it. A
+# stalled mirror or a network blip on the runner turns into total silence
+# for the whole CI budget instead of a fast, clear failure. This function
+# is shared by every profile script (T-A, T-B, and this DR rehearsal), so
+# fixed here once, for all of them: apt-get itself gets a bounded
+# retry/timeout via its own Acquire:: options, and the whole call is
+# additionally wrapped in `timeout` as a hard backstop in case even that
+# somehow doesn't bound it. A genuine failure now costs at most 150s and
+# says why, instead of silently consuming the entire job.
+apt_install() {
+    pkg="$1"
+    apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+    if ! timeout 150 sudo apt-get $apt_opts update -qq; then
+        echo "FAIL  install_prereqs: apt-get update did not complete within 150s -- likely a stalled mirror or network issue on this runner, not a SCRAP defect" >&2
+        exit 1
+    fi
+    if ! timeout 150 sudo apt-get $apt_opts install -y -qq "$pkg" >/dev/null; then
+        echo "FAIL  install_prereqs: apt-get install $pkg did not complete within 150s -- likely a stalled mirror or network issue on this runner, not a SCRAP defect" >&2
+        exit 1
+    fi
+}
+
 # Installs exactly what bootstrap/preflight/check-prerequisites.sh's own
 # FAIL messages already tell a real operator to run, plus the handful of
 # extra tools a *test harness* (not the platform itself) needs to drive
@@ -82,26 +110,26 @@ cfg_value() {
 # test-runner concern, not a platform one.
 install_prereqs() {
     if ! command -v age-keygen >/dev/null 2>&1; then
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq age >/dev/null
+        apt_install age
     fi
     if ! command -v sops >/dev/null 2>&1; then
         SOPS_VERSION=v3.9.4
-        curl -sfLo /tmp/sops.deb "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"
+        if ! curl -sfL --connect-timeout 15 --max-time 120 \
+            -o /tmp/sops.deb "https://github.com/getsops/sops/releases/download/${SOPS_VERSION}/sops_${SOPS_VERSION#v}_amd64.deb"; then
+            echo "FAIL  install_prereqs: could not download sops within 120s -- see the curl error above" >&2
+            exit 1
+        fi
         sudo dpkg -i /tmp/sops.deb >/dev/null
         rm -f /tmp/sops.deb
     fi
     if ! command -v ss >/dev/null 2>&1; then
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq iproute2 >/dev/null
+        apt_install iproute2
     fi
     if ! command -v nc >/dev/null 2>&1; then
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq netcat-openbsd >/dev/null
+        apt_install netcat-openbsd
     fi
     if ! command -v jq >/dev/null 2>&1; then
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq jq >/dev/null
+        apt_install jq
     fi
 }
 
