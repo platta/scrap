@@ -1,0 +1,10 @@
+# No namespace.yaml here -- deliberately, and unlike capabilities/identity/.
+# The ClusterIssuers' DNS-01 solver secretRef resolves in cert-manager's
+# own cluster-resource-namespace (the "cert-manager" namespace, cert-manager's
+# own default, unoverridden by platform/cert-manager/'s HelmRelease values) --
+# a namespace platform/cert-manager/ already creates unconditionally. This
+# directory never needs to create a namespace of its own.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - acme-issuers.yaml

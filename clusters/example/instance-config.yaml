@@ -45,9 +45,30 @@ data:
   # IANA time zone, used for backup schedules and log timestamps.
   TIMEZONE: "Etc/UTC"
 
+  # Which ClusterIssuer platform/ingress/'s one wildcard Certificate uses --
+  # see that file's own comment. "scrap-ca" (platform/cert-manager-config/'s
+  # private CA, CORE, always present) is the default in every checked-in
+  # instance. Set to "scrap-acme-staging" or "scrap-acme" once
+  # capabilities/public-tls/ is enabled -- staging first (Let's Encrypt's
+  # staging environment has no meaningful rate limit but issues untrusted
+  # certs, so DNS-01 wiring can be validated safely before cutting over to
+  # the trusted, rate-limited production issuer).
+  TLS_ISSUER: "scrap-ca"
+
   # ACME account email. Only consumed if capabilities/public-tls/ is enabled;
   # harmless to leave as a placeholder otherwise.
   ACME_EMAIL: "admin@example.internal"
+
+  # capabilities/public-tls/'s DNS-01 solver is RFC2136 (the generic DNS
+  # UPDATE protocol, not one commercial provider's API -- see that
+  # capability's own README for why). Only consumed if it's enabled.
+  # ACME_DNS01_NAMESERVER is the authoritative nameserver cert-manager sends
+  # UPDATE requests to (host:port, port is almost always 53).
+  # ACME_DNS01_TSIG_KEY_NAME names the TSIG key configured on that
+  # nameserver; the key's own secret value is credential material and
+  # lives in clusters/<name>/secrets/public-tls/, never here.
+  ACME_DNS01_NAMESERVER: "ns.example.internal:53"
+  ACME_DNS01_TSIG_KEY_NAME: "example-tsig-key"
 
   # Backup retention policy, passed straight to `restic forget`.
   BACKUP_RETENTION_DAILY: "7"

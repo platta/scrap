@@ -4,10 +4,13 @@
 #
 # Three objects, chained: a bootstrap self-signed issuer creates the CA's own
 # certificate; the CA's certificate becomes a second ClusterIssuer that signs
-# everything else. `scrap-ca` is the name every other manifest in this
-# repository may reference as an issuerRef -- it is the one name that stays
-# stable if this issuer is ever swapped for capabilities/public-tls/'s ACME
-# issuer (same name, different backing implementation).
+# everything else. `scrap-ca` -- always present, unconditionally, since this
+# is the CORE minimum path -- is one of the (currently three) ClusterIssuer
+# names platform/ingress/wildcard-certificate.yaml's ${TLS_ISSUER} can
+# select; capabilities/public-tls/'s ACME issuers coexist under their own
+# names (scrap-acme-staging, scrap-acme) rather than replacing this one --
+# see that file's own comment for why "same name, different backing
+# implementation" (this comment's own earlier wording) was reconsidered.
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer

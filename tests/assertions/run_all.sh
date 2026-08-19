@@ -12,6 +12,7 @@ CHECKS=(
   check_app_addition_boundary
   check_image_pinning
   check_no_cert_in_apps
+  check_tls_issuer_not_in_apps
   check_reserved_ports
   check_instance_literals
   check_kustomization_dag

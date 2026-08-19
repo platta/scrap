@@ -23,6 +23,7 @@ import check_core_boundary
 import check_app_addition_boundary
 import check_image_pinning
 import check_no_cert_in_apps
+import check_tls_issuer_not_in_apps
 import check_reserved_ports
 import check_instance_literals
 import check_kustomization_dag
@@ -38,11 +39,13 @@ FIXTURE_CASES = [
     ("core-boundary", check_core_boundary),
     ("floating-tag", check_image_pinning),
     ("cert-in-apps", check_no_cert_in_apps),
+    ("tls-issuer-in-apps", check_tls_issuer_not_in_apps),
     ("unreserved-port", check_reserved_ports),
     ("undefined-var", check_instance_literals),
     ("ip-literal", check_instance_literals),
     ("cyclic-dag", check_kustomization_dag),
     ("issuer-ordering", check_kustomization_dag),
+    ("issuer-ordering-template-token", check_kustomization_dag),
     ("bootstrap-git-snapshot", check_bootstrap_git_snapshot),
     ("dr-quiesce-ordering", check_dr_quiesce_ordering),
 ]
@@ -53,6 +56,7 @@ ROOT_SCANNABLE = (
     check_core_boundary,
     check_image_pinning,
     check_no_cert_in_apps,
+    check_tls_issuer_not_in_apps,
     check_reserved_ports,
     check_instance_literals,
     check_kustomization_dag,

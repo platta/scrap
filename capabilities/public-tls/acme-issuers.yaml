@@ -1,0 +1,99 @@
+# Two ClusterIssuers, coexisting alongside (never replacing)
+# platform/cert-manager-config/'s "scrap-ca" -- see that directory's
+# README and platform/ingress/wildcard-certificate.yaml's own comment for
+# why coexistence under separate names, selected by ${TLS_ISSUER}, is the
+# mechanism, not a same-name swap.
+#
+# Real upstream concepts, nothing SCRAP-invented, so a reader who knows
+# cert-manager already knows all of this:
+#
+#   cert-manager    the controller that watches Certificate objects and
+#                    drives whatever ClusterIssuer they reference through
+#                    issuance/renewal. Already installed by
+#                    platform/cert-manager/ -- this file adds no new
+#                    controller, only two more objects for it to watch.
+#   ACME             the protocol Let's Encrypt (and any other ACME CA)
+#                    speaks: prove you control a name, get a certificate
+#                    for it. cert-manager's `acme` issuer type implements
+#                    the CLIENT side of that protocol natively.
+#   DNS-01           one of ACME's two challenge types -- prove control by
+#                    publishing a TXT record, not by serving a file over
+#                    HTTP. The only challenge type that can prove control
+#                    of a WILDCARD name, which is why it's the only one
+#                    SCRAP uses (docs/decisions/0006).
+#   the DNS provider the thing that actually has to publish that TXT
+#                    record. cert-manager ships ~10 built-in provider
+#                    integrations (Route53, Cloudflare, etc.) plus a
+#                    webhook extension point for the rest. This capability
+#                    ships wired for RFC2136 (the generic DNS UPDATE
+#                    protocol, RFC 2136) rather than any one commercial
+#                    API -- deliberately: SCRAP's own backup-destination
+#                    contract already treats "any S3-compatible endpoint"
+#                    as the generic case rather than naming AWS, and this
+#                    is the same choice for DNS. Any RFC2136-capable
+#                    authoritative nameserver works (BIND, PowerDNS, Knot,
+#                    and several providers' own "dynamic DNS" zone-update
+#                    features) -- self-hosting one's own DNS is common
+#                    enough among SCRAP's own homelab audience that this
+#                    isn't a niche choice. An operator on a provider that
+#                    doesn't speak RFC2136 swaps this file's `solvers:`
+#                    block for cert-manager's own provider-specific one
+#                    (or a webhook) -- everything else in this capability
+#                    (the ClusterIssuer names, ${TLS_ISSUER}, the secret
+#                    contract) is unaffected by that choice.
+#   ClusterIssuer    a cert-manager CRD: "here is how to get a certificate
+#                    signed," cluster-scoped so any namespace's Certificate
+#                    can reference it by name. Exactly the same kind of
+#                    object platform/cert-manager-config/'s private CA
+#                    already is -- this capability adds two more, it
+#                    doesn't introduce a new concept.
+#   the wildcard     platform/ingress/wildcard-certificate.yaml -- the ONE
+#   Certificate      Certificate object SCRAP ever issues for HTTP(S)
+#                    apps. Enabling this capability doesn't create a new
+#                    one; it gives that existing object a second (and
+#                    third) ClusterIssuer it COULD reference, selected by
+#                    the operator's own ${TLS_ISSUER} value.
+#
+# privateKeySecretRef is NOT the DNS credential -- cert-manager generates
+# and owns that secret itself (the ACME account's own private key,
+# created on first successful registration), the same way it generates
+# scrap-ca-key-pair for the private CA. Nothing to pre-supply.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: scrap-acme-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: scrap-acme-staging-account-key
+    solvers:
+      - dns01:
+          rfc2136:
+            nameserver: ${ACME_DNS01_NAMESERVER}
+            tsigKeyName: ${ACME_DNS01_TSIG_KEY_NAME}
+            tsigAlgorithm: HMACSHA256
+            tsigSecretSecretRef:
+              name: public-tls-credentials
+              key: TSIG_SECRET
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: scrap-acme
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${ACME_EMAIL}
+    privateKeySecretRef:
+      name: scrap-acme-account-key
+    solvers:
+      - dns01:
+          rfc2136:
+            nameserver: ${ACME_DNS01_NAMESERVER}
+            tsigKeyName: ${ACME_DNS01_TSIG_KEY_NAME}
+            tsigAlgorithm: HMACSHA256
+            tsigSecretSecretRef:
+              name: public-tls-credentials
+              key: TSIG_SECRET

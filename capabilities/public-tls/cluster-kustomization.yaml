@@ -1,0 +1,37 @@
+# Copy this file (and cluster-secrets-kustomization.yaml, next to it) into
+# clusters/<name>/capabilities/ to enable public-tls -- delete both to
+# disable. See capabilities/README.md and docs/core/configuration-model.md
+# for why a capability needing credentials is a two-file copy, not one.
+#
+# dependsOn platform-cert-manager, not platform-cert-manager-config --
+# same real ordering bug platform-cert-manager-config.yaml's own comment
+# documents (a Flux Kustomization dry-runs ALL its resources in one batch;
+# the ClusterIssuer CRD this directory's raw manifests need only exists
+# once the HelmRelease genuinely finishes installing, which `wait: true`
+# against the HelmRelease itself -- not against another raw-manifest
+# Kustomization -- is what Flux's health-check logic can actually confirm).
+# Also dependsOn public-tls-secrets: the DNS-01 solver's tsigSecretSecretRef
+# must resolve, and unlike platform-backup's CronJob-only secretKeyRef
+# (resolved lazily, on a schedule), cert-manager's ClusterIssuer controller
+# reads it eagerly on reconcile.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: public-tls
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/public-tls
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-cert-manager
+    - name: public-tls-secrets
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 5m0s

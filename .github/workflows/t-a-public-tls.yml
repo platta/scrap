@@ -1,0 +1,45 @@
+name: T-A-public-tls (capabilities/public-tls/ live acceptance)
+
+# A separate from-zero bootstrap from T-A's own -- see
+# tests/profiles/t-a-public-tls.sh's own header for why. Cheap (no
+# identity, no destructive-restore cycle) and needs no external domain or
+# DNS credentials at all -- the failure path is deliberately provoked with
+# bogus RFC2136 config -- so this runs on every push/PR, the same trigger
+# tier as T-A itself.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-public-tls:
+    name: T-A-public-tls -- issuer swap, fails visibly, reverts cleanly
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-public-tls against this runner as a fresh host
+        run: sh tests/profiles/t-a-public-tls.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- cert-manager log tail ---"
+          sudo -E kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager --tail=200 || true
+          echo "--- wildcard Certificate, full describe ---"
+          sudo -E kubectl describe certificate -n traefik scrap-wildcard || true
+          echo "--- ClusterIssuers ---"
+          sudo -E kubectl get clusterissuer -o wide || true
+          sudo -E kubectl describe clusterissuer scrap-acme-staging scrap-acme || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

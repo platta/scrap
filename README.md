@@ -10,18 +10,19 @@ using well-defined integration patterns. If the hardware dies, rebuild the platf
 the applications from durable, tested backups.
 
 **Status: pre-release implementation.** The architecture is frozen (see
-[`docs/decisions/`](docs/decisions/)); the platform core, backup engine, observability core, and
-the identity capability are implemented and live-validated on a real cluster, including P1–P6 of
-the application contract. It is installable end to end via `bootstrap/install.sh` against a fresh
-host, and that install path plus P1/P4/P5/P6 (minimal profile) and identity/P2/P3 (standard
-profile) are now mechanically proven from zero on every push/PR by `tests/profiles/`, not just
-validated by hand. Disaster recovery (R1) is proven the same way, nightly, not just documented: a
-genuinely destructive restore of identity's own multi-tier Authentik + PostgreSQL, including
-quiescence ordering, a real logical-dump consistency method, and stable-primary-key preservation —
-see `tests/dr/`. What's still missing before a v1 release candidate: several `capabilities/`
-(Grafana, logs, public TLS, off-site backup, heartbeat), the Topology B onboarding generator, the
-rest of T-B (Grafana, logs, a recovery-flow-abuse test), the host-loss rehearsal (R3, T-E), and
-T-C/T-D/T-F. See [Roadmap](#roadmap) below.
+[`docs/decisions/`](docs/decisions/)); the platform core, backup engine, observability core, the
+identity capability, and public TLS via ACME/DNS-01 are implemented and live-validated on a real
+cluster, including P1–P6 of the application contract. It is installable end to end via
+`bootstrap/install.sh` against a fresh host, and that install path plus P1/P4/P5/P6 (minimal
+profile), identity/P2/P3 (standard profile), and the public-TLS issuer swap are now mechanically
+proven from zero on every push/PR by `tests/profiles/`, not just validated by hand. Disaster
+recovery (R1) is proven the same way, nightly, not just documented: a genuinely destructive restore
+of identity's own multi-tier Authentik + PostgreSQL, including quiescence ordering, a real
+logical-dump consistency method, and stable-primary-key preservation — see `tests/dr/`. What's
+still missing before a v1 release candidate: several `capabilities/` (Grafana, off-site backup),
+recovery-flow-abuse testing for identity, minimal release/versioning packaging, and (before final
+v1, not RC) logs, public ingress, heartbeat, the Topology B onboarding generator, the host-loss
+rehearsal (R3, T-E), and T-C/T-D/T-F. See [Roadmap](#roadmap) below.
 
 ## What SCRAP actually is
 
@@ -109,9 +110,9 @@ add a new one.
 2. ~~Bootstrap: preflight checks, pinned k3s install, `install.sh`~~ — **done**
 3. ~~Platform core: Gateway API CRDs, cert-manager + private CA + wildcard `Certificate`, Traefik/Gateway, local-path storage, observability core, backup engine~~ — **done**
 4. ~~Example applications (`apps/examples/`) proving the six application patterns~~ — **done, all six**
-5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; Grafana + Loki, ACME/DNS-01, off-site backup, alert delivery, external heartbeat still open
+5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; ~~ACME/DNS-01 (public TLS)~~ **done** (`capabilities/public-tls/` — the two ACME `ClusterIssuer`s are capability-owned, the wildcard certificate's issuer swap is live-verified with no diff under `apps/`, misconfiguration fails visibly rather than silently reusing the private CA; see `tests/profiles/t-a-public-tls.sh`); Grafana + Loki, off-site backup, alert delivery, external heartbeat still open
 6. Topology B onboarding: a generator producing a minimal, ordinary Flux/Kustomize/SOPS operator repository pinned to a released SCRAP version, host-agnostic (no GitHub requirement), plus an automated test proving a generated repo bootstraps/reconciles a clean install (`docs/decisions/0009-repository-topology.md`)
-7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); ~~T-B for identity + P2/P3~~ **done** (`tests/profiles/t-b-standard.sh` — a genuinely separate from-zero bootstrap, `components/ca-trust/` checked directly and attributably, a real scripted OIDC login the relying-party app itself exchanges, forward-auth proven both ways including a passing negative control; Grafana, logs, and a recovery-flow-abuse test remain open **capabilities this repo doesn't implement yet**, not a T-B gap); T-C through T-F still open — see `tests/profiles/README.md`
+7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); ~~T-B for identity + P2/P3~~ **done** (`tests/profiles/t-b-standard.sh` — a genuinely separate from-zero bootstrap, `components/ca-trust/` checked directly and attributably, a real scripted OIDC login the relying-party app itself exchanges, forward-auth proven both ways including a passing negative control; Grafana, logs, and a recovery-flow-abuse test remain open **capabilities this repo doesn't implement yet**, not a T-B gap); ~~T-A-public-tls~~ **done** (`tests/profiles/t-a-public-tls.sh` — its own separate from-zero bootstrap; the operator-run, real-domain-requiring counterpart is `capabilities/public-tls/verify-live.sh`, deliberately not CI-executed); T-C through T-F still open — see `tests/profiles/README.md`
 8. ~~Disaster-recovery acceptance: R1 (Authentik/PostgreSQL destructive restore)~~ **done** (`tests/dr/authentik-postgres-restore.sh`, nightly — genuine destruction, full-tier quiescence ordering proven both positively and by a reverted live negative control, restore through the real recovery mechanism, documented-procedure reload with hard error checking, stable-primary-key recovery proven through authentik's own API); R3 host-loss rehearsal (T-E) still open — see `tests/dr/README.md`
 9. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
 

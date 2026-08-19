@@ -4,10 +4,26 @@
 # Certificate referencing an issuer exists in the platform layer, and
 # tests/assertions/check_no_cert_in_apps.py proves apps/ never needs one.
 #
-# issuerRef targets "scrap-ca" -- a stable name, owned by
-# platform/cert-manager/. Swapping the private CA for
-# capabilities/public-tls/'s ACME issuer means re-pointing this one field;
-# every application HTTPRoute is unaffected.
+# issuerRef.name is ${TLS_ISSUER} -- an instance-config scalar (D4's own
+# established mechanism, the same one every other instance-specific choice
+# uses), not a SCRAP-invented issuer-selection abstraction. Defaults to
+# "scrap-ca" (platform/cert-manager-config/'s private CA, CORE, always
+# present) in every checked-in instance-config.yaml. Enabling
+# capabilities/public-tls/ means the operator also sets this to
+# "scrap-acme-staging" or "scrap-acme" in their OWN instance-config.yaml --
+# a config value change, never a platform file edit.
+#
+# CORRECTION from this file's own earlier design comment (which said
+# swapping issuers meant "the scrap-ca ClusterIssuer changes what it
+# points to, same name, different backing implementation"): implementing
+# that literally would mean two separate Flux Kustomizations -- the
+# always-present platform-cert-manager-config and the optional
+# capabilities/public-tls/ -- both continually reconciling a ClusterIssuer
+# object with the SAME name but DIFFERENT spec, fighting every reconcile
+# interval. cert-manager has no problem with multiple ClusterIssuers
+# coexisting under different names -- that's the native, idiomatic
+# mechanism, and it's what ${TLS_ISSUER} selects between. No two
+# Kustomizations ever own the same object.
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -21,6 +37,6 @@ spec:
     - "*.${BASE_DOMAIN}"
     - "${BASE_DOMAIN}"
   issuerRef:
-    name: scrap-ca
+    name: ${TLS_ISSUER}
     kind: ClusterIssuer
     group: cert-manager.io

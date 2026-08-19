@@ -1,7 +1,9 @@
 # platform/ingress/
 
-**Tier 2.** Depends on `platform/crds/` (Gateway API) and `platform/cert-manager/` (the `scrap-ca`
-`ClusterIssuer` this directory's own wildcard `Certificate` references).
+**Tier 2.** Depends on `platform/crds/` (Gateway API) and `platform/cert-manager/` (the
+`ClusterIssuer` this directory's own wildcard `Certificate` references — `scrap-ca` by default;
+see `wildcard-certificate.yaml`'s own comment for the `${TLS_ISSUER}` mechanism
+`capabilities/public-tls/` uses to select a different one).
 
 Traefik, installed as a plain Flux `HelmRelease` — not k3s's own bundled Traefik, and not k3s's
 built-in Helm controller. k3s is installed with `--disable=traefik` specifically so there is exactly
@@ -14,8 +16,9 @@ Provides:
   platform wildcard certificate).
 - **The one wildcard `Certificate`** (`wildcard-certificate.yaml`) — owned here, not in
   `platform/cert-manager/`, because its Secret must live in this directory's own `traefik`
-  namespace, the same one the `Gateway` resolving it lives in. It references the `scrap-ca`
-  `ClusterIssuer` that `platform/cert-manager/` owns — the reason this Kustomization `dependsOn`
+  namespace, the same one the `Gateway` resolving it lives in. It references whichever
+  `ClusterIssuer` `${TLS_ISSUER}` names (`scrap-ca` by default) — owned by `platform/cert-manager/`
+  and, when enabled, `capabilities/public-tls/` — the reason this Kustomization `dependsOn`
   that one.
 - The Gateway API `kubernetesGateway` provider as primary routing mechanism.
 - Traefik's own CRD provider stays enabled for exactly one reason: Gateway API has no standard
