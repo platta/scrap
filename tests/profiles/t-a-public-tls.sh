@@ -92,6 +92,22 @@ cp "$REPO_ROOT/capabilities/public-tls/cluster-secrets-kustomization.yaml" \
     "$LIVE_CLUSTER_DIR/capabilities/public-tls-secrets.yaml"
 
 sed -i 's|^\(  TLS_ISSUER: \).*|\1"scrap-acme-staging"|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
+# REAL BUG, found live via this script's own first two runs: the checked-
+# in reference ACME_EMAIL ("admin@example.internal") isn't just a
+# harmless placeholder once public-tls is actually enabled -- Let's
+# Encrypt's ACME server (even staging) validates the contact email's
+# domain has a real public-suffix TLD as part of ACCOUNT REGISTRATION,
+# before any Certificate/Order/Challenge exists at all. ".internal" fails
+# that check outright ("400 invalidContact: ... does not end with a
+# valid public suffix (TLD)"), confirmed live in the cert-manager
+# controller log -- meaning the whole flow was stopping at ClusterIssuer
+# setup, never reaching the DNS-01 stage this test actually exists to
+# exercise. Overridden here to a real public TLD (example.com, RFC 2606
+# reserved -- nobody needs to receive mail there; ACME's own check is
+# purely a format/TLD check, not a deliverability or ownership proof) so
+# the ONLY thing left broken is the RFC2136 nameserver below, which is
+# the actual claim under test.
+sed -i 's|^\(  ACME_EMAIL: \).*|\1"public-tls-test@example.com"|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
 # Deliberately WRONG nameserver -- unroutable TEST-NET address (RFC 5737),
 # guaranteed not to answer, so the DNS-01 challenge fails predictably and
 # quickly rather than hanging on a real-but-wrong server's own timeout

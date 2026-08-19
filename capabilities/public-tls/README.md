@@ -97,7 +97,10 @@ required — see the next section) rather than assumed from reading cert-manager
 
 ## Acceptance evidence
 
-**Structural / regression-tested, every push and PR, no external dependency:**
+Three distinct evidence levels, kept honestly separate — a green check at one level is never
+represented as proving the next:
+
+**1. Static/structural issuer-independence — every push and PR, no external dependency:**
 
 - `tests/assertions/check_no_cert_in_apps.py` — unchanged, still proves no app ever declares TLS.
 - `tests/assertions/check_tls_issuer_not_in_apps.py` — new: `${TLS_ISSUER}` itself never appears
@@ -108,19 +111,23 @@ required — see the next section) rather than assumed from reading cert-manager
   remain green, unmodified — the private-CA/minimal path is unaffected by this capability's
   existence.
 
-**Live, every push and PR, no external domain or DNS required (`tests/profiles/t-a-public-tls.sh`):**
-a from-zero bootstrap with `TLS_ISSUER` swapped to `scrap-acme-staging` and this capability enabled
-with **deliberately wrong** RFC2136 credentials, proving: the two `ClusterIssuer`s are
+**2. A real cert-manager ACME/DNS-01 attempt — every push and PR, no external domain or working DNS
+required (`tests/profiles/t-a-public-tls.sh`):** a from-zero bootstrap with `TLS_ISSUER` swapped to
+`scrap-acme-staging` and this capability enabled with a real, valid-format ACME contact email but
+**deliberately wrong** RFC2136 nameserver credentials, proving: the two `ClusterIssuer`s are
 capability-owned, never referenced by any application; the wildcard `Certificate`'s `issuerRef`
-genuinely resolves to the ACME issuer (not silently staying on the private CA); a real DNS-01
-`Order`/`Challenge` is attempted and its failure is visible via both the `Certificate`'s own `Ready`
-condition and a real event, never silent; and — reverting `TLS_ISSUER` back to `scrap-ca` in the
-same run — the private path recovers cleanly.
+genuinely resolves to the ACME issuer (not silently staying on the private CA); a real ACME account
+registers and a real `Order` object is created recording a genuine DNS-01 attempt against the
+(deliberately unreachable) nameserver; the resulting failure is visible via the `Certificate`'s own
+`Ready` condition with a specific, real reason, never silent; and — reverting `TLS_ISSUER` back to
+`scrap-ca` in the same run — the private path recovers cleanly. **Does not, and cannot, prove a
+certificate actually issues** — that needs a real, reachable DNS-01 solver, which is level 3.
 
-**Live, requires a real domain and working DNS-01 credentials — not CI-executed, operator-run**
-(`capabilities/public-tls/verify-live.sh`): the one thing that genuinely cannot be proven without
-external infrastructure this project doesn't control. Confirms a real Let's Encrypt staging
-certificate actually issues. See that script's own header for exactly what it does and does not
+**3. Actual public certificate issuance — requires a real domain and working DNS-01 credentials,
+not CI-executed, operator-run** (`capabilities/public-tls/verify-live.sh`): the one claim that
+genuinely cannot be tested without external infrastructure this project doesn't control and never
+will. Confirms a real Let's Encrypt staging certificate actually issues, by reading the served
+certificate's own issuer field. See that script's own header for exactly what it does and does not
 prove, and run it against your own domain before relying on the production issuer.
 
 ## New assumptions this introduces
