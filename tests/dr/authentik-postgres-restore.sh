@@ -258,31 +258,21 @@ if [ "$data_destroyed" = 1 ]; then
     DEPLOY_NAMES=$(kc get deployment -n authentik -o jsonpath='{.items[*].metadata.name}')
 
     kc scale -n authentik "statefulset/$STS_NAME" --replicas=0
-    # NEGATIVE CONTROL, DO NOT KEEP: deliberately skip scaling the
-    # application tier to zero -- reproducing, live, the exact historical
-    # bug docs/runbooks/README.md documents finding: leaving server/worker
-    # running while Postgres is wiped/reloaded lets their own startup/
-    # migration logic race the reload and corrupt Django's migration
-    # bookkeeping. This exists to prove the DR acceptance oracle actually
-    # turns red and names corrupt/unusable recovery, not just that a
-    # pod eventually reports Ready. Revert immediately after this run.
-    # for d in $DEPLOY_NAMES; do
-    #     kc scale -n authentik "deployment/$d" --replicas=0
-    # done
+    for d in $DEPLOY_NAMES; do
+        kc scale -n authentik "deployment/$d" --replicas=0
+    done
 
     quiesce_ok=1
     if [ "$(wait_for_pod_gone authentik "$(pod_selector_for statefulset authentik "$STS_NAME")")" != ok ]; then
         quiesce_ok=0
         echo "      --- postgres ($STS_NAME) did not confirm terminated within 60s ---"
     fi
-    # NEGATIVE CONTROL, DO NOT KEEP: see above -- not waiting for the
-    # application tier to terminate either, since it was never scaled down.
-    # for d in $DEPLOY_NAMES; do
-    #     if [ "$(wait_for_pod_gone authentik "$(pod_selector_for deployment authentik "$d")")" != ok ]; then
-    #         quiesce_ok=0
-    #         echo "      --- $d did not confirm terminated within 60s ---"
-    #     fi
-    # done
+    for d in $DEPLOY_NAMES; do
+        if [ "$(wait_for_pod_gone authentik "$(pod_selector_for deployment authentik "$d")")" != ok ]; then
+            quiesce_ok=0
+            echo "      --- $d did not confirm terminated within 60s ---"
+        fi
+    done
 
     if [ "$quiesce_ok" = 1 ]; then
         all_quiesced=1
