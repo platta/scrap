@@ -19,3 +19,15 @@ name — see `docs/core/recovery-model.md` and the DR-acceptance audit that sele
 ordering bug this rehearsal's quiesce step exists to prevent: it fails CI if the script is ever
 restructured so the tier is scaled to zero *after* the restore runs -- without needing to re-run a
 live corruption cycle on every commit to prove it.
+
+**The ordering lesson was verified as a live negative control, not just asserted.** A temporary,
+clearly-labelled commit skipped the application-tier scale-to-zero, leaving `authentik-server` and
+`authentik-worker` running while Postgres was wiped and reloaded -- reproducing the exact historical
+bug live. The DR acceptance oracle turned red: the worker's own log showed it had already
+reconnected to the freshly-reinitialized database and was processing tasks against it *before* the
+dump reload ran, and the reload itself failed with `ERROR: schema "template" already exists` (`psql
+-v ON_ERROR_STOP=1`, exit 3) -- a genuine, named diagnosis of corrupt recovery. Critically, the
+direct client query the reload step also runs (`SELECT 1`) still succeeded even in this broken run,
+demonstrating concretely why "the database answers a query" alone would not have been sufficient
+proof -- only the hard-checked reload caught it. The commit was reverted immediately afterward; see
+git history around this file's own introduction for the exact run.
