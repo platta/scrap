@@ -257,6 +257,37 @@ wait_for_job scrap-backup "${RESTORE_JOB}-backup" 24 >/dev/null
 echo "      --- backup-trigger job log (job/${RESTORE_JOB}-backup) ---"
 kc logs -n scrap-backup "job/${RESTORE_JOB}-backup" 2>&1 | sed 's/^/      /' || true
 
+# CORRECTION, found auditing this exact script (docs/core/recovery-model.md
+# DR-acceptance audit): every step above this point ran for real, but
+# nothing between here and the restic restore below ever actually
+# destroyed the canary. The pod was scaled to zero (which does not touch
+# local-path PVC content -- same node, same on-disk directory) and restic
+# restore was then pointed at the SAME never-touched data. A silently
+# no-op restore (wrong --path, wrong repo, an empty snapshot) would have
+# passed this test with a clean exit code, because the live data was
+# never actually gone to begin with -- exactly the "restic exited 0 is
+# not proof" failure this project's own DR-acceptance audit exists to
+# rule out. docs/runbooks/README.md's own procedure has always had a
+# step 3, "destroy the data for real"; this script skipped straight from
+# backup to restore. Fixed here: delete the key AND remove the on-disk
+# RDB file backing it, then mechanically confirm both are gone -- through
+# the app's own interface and by reading the filesystem directly -- before
+# any restore is attempted. Previously-shipped runs of this script that
+# reported "the exact canary value round-tripped through destroy -> restic
+# restore" never destroyed anything; that message was true only in that
+# the value survived the trip, not that anything had to survive it.
+kc exec -n scrap-examples deploy/p5-redis -- redis-cli DEL t-a-canary >/dev/null
+kc exec -n scrap-examples deploy/p5-redis -- rm -f /data/dump.rdb
+gone_in_app=$(kc exec -n scrap-examples deploy/p5-redis -- redis-cli GET t-a-canary 2>/dev/null || true)
+gone_on_disk=$(kc exec -n scrap-examples deploy/p5-redis -- sh -c '[ -f /data/dump.rdb ] && echo present || echo absent' 2>/dev/null || true)
+if [ -z "$gone_in_app" ] && [ "$gone_on_disk" = absent ]; then
+    data_destroyed=1
+    ok T-A/destructive-restore-destroy "the canary is genuinely gone -- absent from the app's own GET, and the on-disk RDB file that backed it no longer exists"
+else
+    data_destroyed=0
+    fail T-A/destructive-restore-destroy "destroy step didn't confirm real data loss (redis-cli GET returned '$gone_in_app', on-disk dump.rdb is '$gone_on_disk') -- restore would prove nothing, so it will not be attempted"
+fi
+
 PVC_NAME=p5-redis-data
 PV_NAME=$(kc get pvc -n scrap-examples "$PVC_NAME" -o jsonpath='{.spec.volumeName}')
 HOST_PATH=$(kc get pv "$PV_NAME" -o jsonpath='{.spec.local.path}')
@@ -279,23 +310,31 @@ STORAGE_ROOT="/var/lib/rancher/k3s/storage"
 MOUNT_ROOT="/hostdata"
 RESTORE_PATH=$(printf '%s' "$HOST_PATH" | sed "s#^$STORAGE_ROOT#$MOUNT_ROOT#")
 
-kc scale -n scrap-examples deploy/p5-redis --replicas=0
-# This is the actual synchronization boundary the whole procedure
-# depends on -- restoring while the old pod might still be attached to
-# the PVC is exactly the race docs/runbooks/README.md already documents
-# finding once ("Never restore into a PVC whose pod is still attached to
-# it"). Polls `kubectl get` directly (wait_for_pod_gone, lib.sh) rather
-# than trusting `kubectl wait --for=delete`, which this same
-# investigation found fails its own argument parsing intermittently in
-# this environment even with correct, valid arguments -- see
-# wait_for_pod_gone's own comment for the full evidence. A failure here
-# is a hard stop for the restore attempt, not a silently-ignored
-# possibility: restoring without confirmed termination would be unsound.
-if [ "$(wait_for_pod_gone scrap-examples app=p5-redis)" = ok ]; then
-    pod_terminated=1
+if [ "$data_destroyed" = 1 ]; then
+    kc scale -n scrap-examples deploy/p5-redis --replicas=0
+    # This is the actual synchronization boundary the whole procedure
+    # depends on -- restoring while the old pod might still be attached to
+    # the PVC is exactly the race docs/runbooks/README.md already documents
+    # finding once ("Never restore into a PVC whose pod is still attached to
+    # it"). Polls `kubectl get` directly (wait_for_pod_gone, lib.sh) rather
+    # than trusting `kubectl wait --for=delete`, which this same
+    # investigation found fails its own argument parsing intermittently in
+    # this environment even with correct, valid arguments -- see
+    # wait_for_pod_gone's own comment for the full evidence. A failure here
+    # is a hard stop for the restore attempt, not a silently-ignored
+    # possibility: restoring without confirmed termination would be unsound.
+    if [ "$(wait_for_pod_gone scrap-examples app=p5-redis)" = ok ]; then
+        pod_terminated=1
+    else
+        pod_terminated=0
+        echo "      --- old p5-redis pod did not confirm terminated within 60s -- restore NOT attempted ---"
+    fi
 else
+    # Nothing was genuinely destroyed above -- attempting a restore now
+    # would prove nothing (see the destroy-step failure already recorded).
+    # Don't scale anything down or run a restore Job against data that was
+    # never actually lost.
     pod_terminated=0
-    echo "      --- old p5-redis pod did not confirm terminated within 60s -- restore NOT attempted ---"
 fi
 
 if [ "$pod_terminated" = 1 ]; then
@@ -364,14 +403,16 @@ else
     pod_ready=0
 fi
 
-if [ "$pod_terminated" != 1 ]; then
+if [ "$data_destroyed" != 1 ]; then
+    fail T-A/destructive-restore "the destroy step (see T-A/destructive-restore-destroy above) never confirmed real data loss, so no restore was attempted -- see that check's own message for what it found"
+elif [ "$pod_terminated" != 1 ]; then
     fail T-A/destructive-restore "the old p5-redis pod never confirmed terminated within 60s after scaling to zero -- restore was not attempted, since restoring while it might still be attached to the PVC is exactly the race docs/runbooks/README.md warns against"
 elif [ "$pod_ready" != 1 ]; then
     fail T-A/destructive-restore "restic restore ran, but the redis pod never became Ready again within 60s afterward -- see: kubectl logs -n scrap-examples deploy/p5-redis"
 elif [ "$restore_result" = ok ]; then
     restored=$(kc exec -n scrap-examples deploy/p5-redis -- redis-cli GET t-a-canary 2>/dev/null || true)
     if [ "$restored" = "$CANARY" ]; then
-        ok T-A/destructive-restore "the exact canary value round-tripped through destroy -> restic restore -> the original app"
+        ok T-A/destructive-restore "the canary was genuinely destroyed (deleted from redis, its on-disk RDB removed, both confirmed gone) and the exact value came back through restic restore -> the original app's own interface"
     else
         fail T-A/destructive-restore "restore job succeeded but the canary value did not come back (got '$restored', wanted '$CANARY')"
         # `kubectl exec` here, in earlier runs of this same investigation,
