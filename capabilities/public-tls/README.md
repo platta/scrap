@@ -111,17 +111,22 @@ represented as proving the next:
   remain green, unmodified — the private-CA/minimal path is unaffected by this capability's
   existence.
 
-**2. A real cert-manager ACME/DNS-01 attempt — every push and PR, no external domain or working DNS
-required (`tests/profiles/t-a-public-tls.sh`):** a from-zero bootstrap with `TLS_ISSUER` swapped to
-`scrap-acme-staging` and this capability enabled with a real, valid-format ACME contact email but
-**deliberately wrong** RFC2136 nameserver credentials, proving: the two `ClusterIssuer`s are
-capability-owned, never referenced by any application; the wildcard `Certificate`'s `issuerRef`
+**2. A real cert-manager ACME issuance attempt — every push and PR, no external domain or working
+DNS required (`tests/profiles/t-a-public-tls.sh`):** a from-zero bootstrap with `TLS_ISSUER` swapped
+to `scrap-acme-staging` and this capability enabled with a real, valid, un-denylisted ACME contact
+email but **deliberately wrong** RFC2136 nameserver credentials, proving: the two `ClusterIssuer`s
+are capability-owned, never referenced by any application; the wildcard `Certificate`'s `issuerRef`
 genuinely resolves to the ACME issuer (not silently staying on the private CA); a real ACME account
-registers and a real `Order` object is created recording a genuine DNS-01 attempt against the
-(deliberately unreachable) nameserver; the resulting failure is visible via the `Certificate`'s own
-`Ready` condition with a specific, real reason, never silent; and — reverting `TLS_ISSUER` back to
-`scrap-ca` in the same run — the private path recovers cleanly. **Does not, and cannot, prove a
-certificate actually issues** — that needs a real, reachable DNS-01 solver, which is level 3.
+registers, and cert-manager reaches the real `Order` stage of issuance — a genuine network
+round-trip to Let's Encrypt's own ACME server, not a local pre-check — proven by reading the actual
+`Order` object's own status, not inferred; the resulting failure is visible via the `Certificate`'s
+own `Ready` condition with a specific, real reason, never silent; and — reverting `TLS_ISSUER` back
+to `scrap-ca` in the same run — the private path recovers cleanly. **Honest limit of this level:**
+with the reference instance's own placeholder `BASE_DOMAIN` (`example.internal`, not a real public
+domain), Let's Encrypt rejects the `Order` at identifier validation itself before ever reaching a
+DNS-01 `Challenge` naming the deliberately-wrong nameserver specifically — so this level proves a
+real ACME `Order` attempt reaches Let's Encrypt's own server, not that the DNS-01 solver itself gets
+exercised. Proving the solver is reached needs a real public domain, which is level 3.
 
 **3. Actual public certificate issuance — requires a real domain and working DNS-01 credentials,
 not CI-executed, operator-run** (`capabilities/public-tls/verify-live.sh`): the one claim that

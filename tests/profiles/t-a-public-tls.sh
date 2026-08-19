@@ -201,10 +201,25 @@ fi
 # pre-check reason, reported before any network call happens at all --
 # confirmed live, the first run of this exact script caught Ready=False
 # via IncorrectIssuer within seconds, well before cert-manager had
-# created any Order yet), but that a REAL DNS-01 attempt was actually
-# made against the (deliberately wrong) RFC2136 nameserver. Polled
-# separately, with its own budget, since creating the Order/Challenge
-# chain is a later reconcile step than the issuer-mismatch pre-check.
+# created any Order yet), but that cert-manager actually reached the
+# Order/Challenge stage of a real ACME issuance attempt -- a genuine
+# network round-trip to the ACME server, not a local pre-check. Polled
+# separately, with its own budget, since creating the Order is a later
+# reconcile step than the issuer-mismatch pre-check.
+#
+# What this can and cannot claim, precisely: with BASE_DOMAIN set to a
+# non-public placeholder (example.internal, the reference instance's own
+# default -- a real domain is exactly what capabilities/public-tls/
+# actually requires, and verify-live.sh is where that gets exercised),
+# Let's Encrypt's real ACME server rejects the Order at the identifier-
+# validation stage itself ("rejectedIdentifier: ... does not end with a
+# valid public suffix") -- confirmed live -- before ever reaching a
+# DNS-01 Challenge sub-object that would name the (deliberately wrong)
+# RFC2136 nameserver specifically. That's still a real, network-verified
+# ACME interaction reaching the Order stage, which is the evidence level
+# this check exists to prove without a real domain; it is NOT evidence
+# that the DNS-01 solver itself was reached, and the message below
+# doesn't claim that it was.
 order_seen=""
 i=0
 while [ "$i" -lt 24 ]; do
@@ -219,11 +234,12 @@ done
 echo "      --- Order/Challenge objects ---"
 kc get order,challenge -n traefik -o wide 2>&1 | sed 's/^/      /' || true
 kc describe order,challenge -n traefik 2>&1 | sed 's/^/      /' || true
+order_reason=$(kc get order -n traefik -o jsonpath='{.items[0].status.reason}' 2>/dev/null || true)
 
 if [ "$order_seen" = 1 ]; then
-    ok T-A-public-tls/dns01-attempted "cert-manager created a real Order (and, per the describe output above, attempted the actual DNS-01 challenge against the deliberately-wrong nameserver) -- not just an issuer-mismatch pre-check"
+    ok T-A-public-tls/dns01-attempted "cert-manager created a real Order via a genuine ACME network round-trip -- not just an issuer-mismatch pre-check (Order's own reason: '$order_reason')"
 else
-    fail T-A-public-tls/dns01-attempted "no Order object appeared within 2 minutes of the issuer swap -- cert-manager may not have progressed past the IncorrectIssuer pre-check to a real DNS-01 attempt"
+    fail T-A-public-tls/dns01-attempted "no Order object appeared within 2 minutes of the issuer swap -- cert-manager may not have progressed past the IncorrectIssuer pre-check to a real ACME issuance attempt"
 fi
 
 # 4d. Availability preserved: cert-manager's own native behavior keeps
