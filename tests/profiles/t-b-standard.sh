@@ -76,6 +76,20 @@ cp "$REPO_ROOT/capabilities/identity/cluster-secrets-kustomization.yaml" \
 cp "$REPO_ROOT/apps/examples/identity/cluster-kustomization.yaml" \
     "$REPO_ROOT/clusters/example/capabilities/identity-examples.yaml"
 
+# capabilities/grafana/README.md's own "Enabling this capability" --
+# both files, since this run wants OIDC integration proven, not just
+# local auth. This is Standard profile territory per the frozen
+# architecture (Grafana is documented "on by default" in Standard,
+# clusters/example/capabilities/README.md) -- T-B is where it belongs,
+# not a separate acceptance surface, and reusing T-B's already-built
+# authentik_login() helper against a SECOND relying party (Grafana,
+# after P2) is exactly what proves the OIDC contract generalizes rather
+# than happening to work for one hand-picked demo app.
+cp "$REPO_ROOT/capabilities/grafana/cluster-kustomization.yaml" \
+    "$REPO_ROOT/clusters/example/capabilities/grafana.yaml"
+cp "$REPO_ROOT/capabilities/grafana/cluster-secrets-kustomization.yaml" \
+    "$REPO_ROOT/clusters/example/capabilities/grafana-secrets.yaml"
+
 NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
 # ---------------------------------------------------------------------------
@@ -142,7 +156,7 @@ kc get secret -n cert-manager scrap-ca-key-pair -o jsonpath='{.data.tls\.crt}' 2
     | base64 -d > "$CA_CERT" || true
 
 AUTH_BASE="https://auth.${BASE_DOMAIN}"
-RESOLVE_ARGS="--resolve p2.${BASE_DOMAIN}:443:${NODE_IP} --resolve p3.${BASE_DOMAIN}:443:${NODE_IP} --resolve auth.${BASE_DOMAIN}:443:${NODE_IP}"
+RESOLVE_ARGS="--resolve p2.${BASE_DOMAIN}:443:${NODE_IP} --resolve p3.${BASE_DOMAIN}:443:${NODE_IP} --resolve auth.${BASE_DOMAIN}:443:${NODE_IP} --resolve grafana.${BASE_DOMAIN}:443:${NODE_IP}"
 
 # authentik_login <target_url> <cookiejar>
 #
@@ -447,6 +461,107 @@ if p3_final=$(authentik_login "https://p3.${BASE_DOMAIN}/" /tmp/t-b-p3-cookies);
     fi
 else
     fail T-B/p3-forward-auth "the scripted login against authentik's flow-executor API failed -- see the authentik_login diagnostic output above"
+fi
+
+# 3d. Grafana -- CA trust for its own backend OIDC calls, checked
+# directly and attributably, same reasoning as 3a-pre above:
+# extraConfigmapMounts/env reach the same real scrap-ca-bundle
+# components/ca-trust/ uses, through the chart's own native extension
+# points rather than the Kustomize component itself (which cannot attach
+# to a Helm-rendered Deployment -- see capabilities/grafana/README.md).
+grafana_pod=$(kc get pods -n monitoring -l app.kubernetes.io/name=grafana -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+grafana_ssl_cert_file=$(kc get pod -n monitoring "$grafana_pod" -o jsonpath='{.spec.containers[0].env[?(@.name=="SSL_CERT_FILE")].value}' 2>/dev/null || true)
+kc get configmap -n monitoring scrap-ca-bundle -o jsonpath='{.data.ca-bundle\.crt}' > /tmp/t-b-grafana-ca-bundle.pem 2>/dev/null || true
+grafana_ca_in_bundle=""
+if [ -s /tmp/t-b-grafana-ca-bundle.pem ]; then
+    grafana_ca_in_bundle=$(python3 -c "
+needle = open('$CA_CERT').read().strip()
+haystack = open('/tmp/t-b-grafana-ca-bundle.pem').read()
+print('yes' if needle and needle in haystack else 'no')
+" 2>/dev/null || echo no)
+fi
+if [ "$grafana_ssl_cert_file" = "/etc/ssl/scrap/ca-bundle.crt" ] && [ "$grafana_ca_in_bundle" = "yes" ]; then
+    ok T-B/grafana-ca-trust-wiring "capabilities/grafana/'s chart-native CA mounting wired SSL_CERT_FILE onto grafana's own pod, and the platform's real CA is genuinely present in the mounted scrap-ca-bundle ConfigMap"
+else
+    fail T-B/grafana-ca-trust-wiring "SSL_CERT_FILE='$grafana_ssl_cert_file' (expected /etc/ssl/scrap/ca-bundle.crt), CA present in bundle: '$grafana_ca_in_bundle' -- see capabilities/grafana/README.md"
+fi
+
+# 3e. Grafana is absent from T-A -- structural, not inferred: T-A's own
+# Kustomization tree (clusters/example/kustomization.yaml) never
+# references capabilities/grafana/ at all unless this script's own Phase
+# 1 copy-in added it, and T-A runs against a COMPLETELY SEPARATE cluster
+# with no such copy-in ever happening. Restated here as a live,
+# in-this-cluster fact for the record: this Grafana Deployment is a
+# capability object (kustomize.toolkit.fluxcd.io/name=grafana), not
+# something core -- deleting capabilities/grafana/ (T1) would remove
+# exactly this and nothing platform/observability/ itself owns.
+grafana_owner=$(kc get deployment -n monitoring grafana -o jsonpath='{.metadata.labels.kustomize\.toolkit\.fluxcd\.io/name}' 2>/dev/null || true)
+if [ "$grafana_owner" = "grafana" ]; then
+    ok T-B/grafana-capability-owned "the Grafana Deployment is owned by the capabilities/grafana/ Kustomization, not platform/observability/ -- T1 holds"
+else
+    fail T-B/grafana-capability-owned "expected the Grafana Deployment's owning Kustomization to be 'grafana', got '$grafana_owner'"
+fi
+
+# 3f. Grafana is actually connected to the platform's real Prometheus --
+# not just that a datasource OBJECT exists, but that querying THROUGH it
+# returns real, live platform telemetry. Local admin auth (the chart's
+# own auto-generated credential) drives this -- deliberately not the
+# OIDC session, since this is a claim about the datasource wiring, not
+# about identity.
+GRAFANA_ADMIN_PASS=$(kc get secret -n monitoring grafana -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d || true)
+ds_list=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
+    "https://grafana.${BASE_DOMAIN}/api/datasources" 2>/dev/null || true)
+ds_uid=$(echo "$ds_list" | jq -r '.[] | select(.type=="prometheus") | .uid' 2>/dev/null | head -1)
+if [ -n "$ds_uid" ]; then
+    query_result=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
+        "https://grafana.${BASE_DOMAIN}/api/datasources/proxy/uid/${ds_uid}/api/v1/query?query=up" 2>/dev/null || true)
+    result_count=$(echo "$query_result" | jq -r '.data.result | length' 2>/dev/null || echo 0)
+    if [ "${result_count:-0}" -gt 0 ]; then
+        ok T-B/grafana-real-prometheus-query "querying THROUGH Grafana's own Prometheus datasource returned $result_count real time series (the 'up' metric) -- not just that the datasource object exists"
+    else
+        fail T-B/grafana-real-prometheus-query "datasource found (uid=$ds_uid) but querying through it returned no time series: $(echo "$query_result" | head -c 500)"
+    fi
+else
+    fail T-B/grafana-real-prometheus-query "no prometheus-type datasource found via Grafana's own API: $(echo "$ds_list" | head -c 500)"
+fi
+
+# 3g. Anonymous access is genuinely off -- the adversarial check this
+# capability's own security claim depends on. An unauthenticated request
+# to a real API endpoint (not the login page, which always returns 200)
+# must be rejected, not silently served.
+anon_status=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -o /dev/null -w '%{http_code}' \
+    "https://grafana.${BASE_DOMAIN}/api/user" 2>/dev/null || true)
+if [ "$anon_status" = "401" ]; then
+    ok T-B/grafana-adversarial-anon "an unauthenticated request to a real Grafana API endpoint is rejected (401) -- no accidental anonymous bypass"
+else
+    fail T-B/grafana-adversarial-anon "expected 401 for an unauthenticated /api/user request, got '$anon_status' -- anonymous access may be accidentally enabled"
+fi
+
+# 3h. Native OIDC login through authentik, end to end, reusing the SAME
+# scripted flow-executor login P2/P3 already prove works -- against a
+# SECOND, independently-configured relying party, proving the contract
+# generalizes. The final response is Grafana's OWN redirect target after
+# its backend token exchange, not authentik's -- reading /api/user and
+# /api/user/orgs through the SAME session cookie is what proves Grafana
+# itself, not just authentik, recognizes this login.
+if authentik_login "https://grafana.${BASE_DOMAIN}/login/generic_oauth" /tmp/t-b-grafana-cookies >/dev/null; then
+    grafana_user=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -b /tmp/t-b-grafana-cookies \
+        "https://grafana.${BASE_DOMAIN}/api/user" 2>/dev/null || true)
+    grafana_orgs=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -b /tmp/t-b-grafana-cookies \
+        "https://grafana.${BASE_DOMAIN}/api/user/orgs" 2>/dev/null || true)
+    grafana_login_name=$(echo "$grafana_user" | jq -r '.login // empty' 2>/dev/null || true)
+    grafana_role=$(echo "$grafana_orgs" | jq -r '.[0].role // empty' 2>/dev/null || true)
+    echo "      --- grafana /api/user ---"
+    echo "$grafana_user" | sed 's/^/      /'
+    echo "      --- grafana /api/user/orgs ---"
+    echo "$grafana_orgs" | sed 's/^/      /'
+    if [ "$grafana_login_name" = "akadmin" ] && [ "$grafana_role" = "Admin" ]; then
+        ok T-B/grafana-native-oidc "a real login through authentik's own flow-executor ended with Grafana itself recognizing the exact user (login=akadmin) AND applying the expected role mapping (Admin, via the scrap-admins group's groups claim) -- not just that some session was created"
+    else
+        fail T-B/grafana-native-oidc "login completed but Grafana's own /api/user or /api/user/orgs didn't show the expected identity/role (login='$grafana_login_name', role='$grafana_role')"
+    fi
+else
+    fail T-B/grafana-native-oidc "the scripted login against authentik's flow-executor API failed for Grafana's own /login/generic_oauth -- see the authentik_login diagnostic output above"
 fi
 
 # ---------------------------------------------------------------------------

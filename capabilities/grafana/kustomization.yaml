@@ -1,0 +1,9 @@
+# No namespace.yaml here -- deliberately. This Deployment lands in
+# "monitoring", which platform/observability/ already creates
+# unconditionally (CORE, always present).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrepository.yaml
+  - helmrelease.yaml
+  - httproute.yaml

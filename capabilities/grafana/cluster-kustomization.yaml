@@ -1,0 +1,36 @@
+# Copy this file into clusters/<name>/capabilities/ to enable Grafana --
+# delete it to disable. One file, not two: this capability's own OAuth
+# client secret is OPTIONAL (grafana-secrets, below) -- Grafana runs with
+# local auth alone if that file is never copied in, so a credential-less
+# install genuinely needs only this one file, unlike capabilities/identity/
+# or capabilities/public-tls/.
+#
+# dependsOn platform-observability: the real Prometheus this ships a
+# datasource for. Not strictly required for the HelmRelease to APPLY
+# (cert-manager-config's own kustomization.yaml documents the actual
+# dry-run-time hazard this kind of dependsOn guards against; a Grafana
+# Deployment referencing a Service by DNS name has no such hazard --
+# Kubernetes Services resolve at request time, not apply time), but
+# stated anyway for the same reason T-A/T-B's own scripts already prefer
+# explicit, predictable ordering over relying on eventual consistency
+# where it costs nothing to be explicit.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/grafana
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-observability
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 5m0s

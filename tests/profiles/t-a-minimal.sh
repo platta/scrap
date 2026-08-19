@@ -154,6 +154,18 @@ else
 fi
 kc get kustomizations -A || true
 
+# 2a2. Grafana is genuinely absent from Minimal -- not inferred from "T-A
+# never copies capabilities/grafana/ in," but checked directly against
+# this live cluster: no Grafana workload exists anywhere, in any
+# namespace. Enabling capabilities/grafana/ (T-B's own extension) must
+# never leak into the minimal profile it's entirely separate from.
+grafana_present=$(kc get deployments -A -l app.kubernetes.io/name=grafana --no-headers 2>/dev/null | wc -l)
+if [ "${grafana_present:-0}" -eq 0 ]; then
+    ok T-A/grafana-absent "no Grafana workload exists anywhere in the minimal profile's cluster -- capabilities/grafana/ is genuinely optional, not silently on"
+else
+    fail T-A/grafana-absent "expected zero Grafana deployments in the minimal profile, found $grafana_present"
+fi
+
 # 2b. The gap tests/profiles/README.md itself already found: a live value
 # check, not just that Helm accepted the values without error.
 svc_type=$(kc get svc -n traefik traefik -o jsonpath='{.spec.type}' 2>/dev/null || true)

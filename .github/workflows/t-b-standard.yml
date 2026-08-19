@@ -14,7 +14,7 @@ on:
 
 jobs:
   t-b-standard:
-    name: T-B -- from-zero bootstrap with identity, P2/P3 verified live
+    name: T-B -- from-zero bootstrap with identity + Grafana, P2/P3 verified live
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -35,6 +35,8 @@ jobs:
           sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=server --tail=200 || true
           echo "--- authentik worker log tail ---"
           sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=worker --tail=200 || true
+          echo "--- grafana log tail ---"
+          sudo -E kubectl logs -n monitoring -l app.kubernetes.io/name=grafana --tail=200 || true
           echo "--- most recent cluster events ---"
           sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
           echo "--- k3s service status ---"

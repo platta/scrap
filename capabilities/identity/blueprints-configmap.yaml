@@ -45,6 +45,39 @@ data:
         attrs:
           is_superuser: false
 
+      # scrap-admins -- a SEPARATE group from scrap-users, deliberately:
+      # this exists specifically to give capabilities/grafana/'s role
+      # mapping something attributable to test against (is this specific
+      # user a member of THIS specific group), not to double as a general
+      # membership group. akadmin is added explicitly, by reference, not
+      # because every superuser is automatically a member -- Grafana's
+      # role mapping reads the OIDC groups claim, not authentik's own
+      # is_superuser flag, so membership has to be real and explicit.
+      - model: authentik_core.group
+        state: present
+        identifiers:
+          name: scrap-admins
+        attrs:
+          is_superuser: false
+          users:
+            - !Find [authentik_core.user, [username, akadmin]]
+
+      # authentik ships no default "groups" OAuth2 scope -- confirmed live
+      # (the managed scope-openid/-email/-profile mappings P2 already uses
+      # carry no group information at all). A custom scope mapping is
+      # authentik's own supported, native mechanism for this -- not a
+      # SCRAP workaround -- and is what capabilities/grafana/'s
+      # role_attribute_path reads to decide Admin vs Viewer.
+      - id: scrap-groups-scope
+        model: authentik_providers_oauth2.scopemapping
+        state: present
+        identifiers:
+          scope_name: groups
+          name: "SCRAP: groups claim"
+        attrs:
+          expression: |
+            return {"groups": [group.name for group in request.user.ak_groups.all()]}
+
       # client_secret below is a demo value -- protects nothing real,
       # exactly like clusters/example/secrets/'s published reference
       # keypair. A real application's client Secret is a genuine secret
@@ -141,6 +174,58 @@ data:
         attrs:
           name: "SCRAP forward-auth demo (P3)"
           provider: !KeyOf scrap-forward-auth-provider
+
+      # capabilities/grafana/'s OIDC client -- present unconditionally,
+      # exactly like the P2/P3 providers above: identity supplies this
+      # regardless of whether capabilities/grafana/ is separately enabled
+      # (an unused Provider/Application costs nothing), because grafana/
+      # itself must never reference identity, check whether it exists, or
+      # branch on it -- see capabilities/grafana/README.md. client_secret
+      # is a REAL secret, unlike P2's demo value: !Env reads it from this
+      # pod's own environment (GRAFANA_OIDC_CLIENT_SECRET, wired in
+      # helmrelease.yaml from identity-credentials.sops.yaml) rather than
+      # being written in plaintext into this ConfigMap -- authentik's own
+      # documented blueprint tag for exactly this, the same family as
+      # !Find/!KeyOf above, not a SCRAP-invented mechanism.
+      - id: scrap-grafana-oidc-provider
+        model: authentik_providers_oauth2.oauth2provider
+        state: present
+        identifiers:
+          name: scrap-grafana-oidc
+        attrs:
+          client_type: confidential
+          client_id: scrap-grafana
+          client_secret: !Env GRAFANA_OIDC_CLIENT_SECRET
+          redirect_uris:
+            - matching_mode: strict
+              redirect_uri_type: authorization
+              url: "https://grafana.${BASE_DOMAIN}/login/generic_oauth"
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          # Same three managed scopes P2 needs, PLUS the custom groups
+          # scope above -- Grafana's role_attribute_path (capabilities/
+          # grafana/helmrelease.yaml) reads the groups claim this adds.
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-openid"]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-email"]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, "goauthentik.io/providers/oauth2/scope-profile"]]
+            - !KeyOf scrap-groups-scope
+          # Same REAL BUG as scrap-p2-oidc-provider above (authentik
+          # 2026.5's Grant Types allow-list, empty by default on a
+          # Blueprint-created Provider) -- fixed proactively here rather
+          # than rediscovered live a second time.
+          grant_types:
+            - authorization_code
+            - refresh_token
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: scrap-grafana
+        attrs:
+          name: "Grafana"
+          provider: !KeyOf scrap-grafana-oidc-provider
 
       # Creating a Provider does not attach it to anything that actually
       # serves it -- found live: components/forward-auth/'s Middleware

@@ -66,6 +66,22 @@ spec:
             secretKeyRef:
               name: identity-credentials
               key: AUTHENTIK_POSTGRESQL__PASSWORD
+        # Consumed by blueprints-configmap.yaml's own Grafana OAuth2
+        # Provider entry via {{ env_var(...) }} -- NOT a plain container
+        # env var this repository's own code reads. capabilities/grafana/
+        # needs the SAME value, in ITS OWN namespace's Secret -- see that
+        # capability's README for why: Kubernetes Secrets are namespace-
+        # scoped, and there is no cross-namespace reference, so an
+        # operator enabling both capabilities together copies this same
+        # value into both places. Present unconditionally, exactly like
+        # the P2/P3 demo client_secret already is -- an unused OAuth2
+        # client sitting in authentik's own database costs nothing if
+        # capabilities/grafana/ never gets enabled.
+        - name: GRAFANA_OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: identity-credentials
+              key: GRAFANA_OIDC_CLIENT_SECRET
 
     authentik:
       # Intentionally blank -- see global.env above. NOT the same as

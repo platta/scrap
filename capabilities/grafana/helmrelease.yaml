@@ -1,0 +1,142 @@
+# The official, standalone grafana/grafana chart -- NOT kube-prometheus-
+# stack's bundled Grafana sub-chart (platform/observability/helmrelease.yaml
+# explicitly disables it: "capabilities/grafana/ owns Grafana entirely").
+# Re-enabling the bundled one would mean editing a platform/ file to
+# satisfy an optional capability -- exactly the dependency-direction
+# violation this project's architecture exists to prevent. A second,
+# separate HelmRelease costs one more chart install; it buys T1 staying
+# genuinely true (delete this whole directory, platform/observability/ is
+# completely unaffected) with no exception.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: grafana
+      version: "10.5.15"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: monitoring
+  install:
+    timeout: 5m
+  upgrade:
+    timeout: 5m
+  values:
+    # Local admin auth stays available unconditionally -- the chart's own
+    # default (auto-generates an admin password into a chart-managed
+    # Secret, "grafana"/data/admin-password) needs nothing from this
+    # repository. "Grafana without identity gets local auth" (this
+    # capability's own README) is true because nothing here disables it,
+    # not because of any extra step.
+    admin:
+      existingSecret: ""
+
+    # The real Prometheus this platform already runs (platform/observability/,
+    # CORE) -- "prometheus-operated" is the Prometheus Operator's own
+    # fixed Service name for any Prometheus custom resource it manages,
+    # independent of the kube-prometheus-stack release name (the same
+    # convention tests/profiles/t-a-minimal.sh already relies on for
+    # "alertmanager-operated"). One real datasource, provisioned
+    # declaratively -- not a placeholder, not left for an operator to
+    # click through.
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+            isDefault: true
+
+    # Dashboards: "any ConfigMap labeled grafana_dashboard: '1' in any
+    # namespace" -- this capability's own README's existing promise,
+    # implemented via the chart's own sidecar (a real, maintained upstream
+    # mechanism -- kiwigrid/k8s-sidecar -- not a SCRAP-authored watcher).
+    sidecar:
+      dashboards:
+        enabled: true
+        label: grafana_dashboard
+        labelValue: "1"
+        searchNamespace: ALL
+
+    # Workload CA trust: components/ca-trust/'s Kustomize component can't
+    # attach here -- it patches a raw Deployment object Kustomize builds
+    # directly (how apps/examples/p2-native-oidc/ uses it); this
+    # Deployment is chart-rendered by helm-controller, invisible to
+    # Kustomize's own patching. Same real mechanism, same real
+    # scrap-ca-bundle ConfigMap (platform/cert-manager-config/trust-bundle.yaml),
+    # same mount path and SSL_CERT_FILE value ca-trust's own patch uses --
+    # reached through the chart's native extraConfigmapMounts/env
+    # extension points instead of a Kustomize patch. Needed for exactly
+    # the same reason P2 needs it: Grafana's own backend OAuth token
+    # exchange calls https://auth.${BASE_DOMAIN}, private-CA-signed on
+    # the minimum path, and Grafana (a Go binary) resolves SSL_CERT_FILE
+    # the same way ca-trust's own README already documents.
+    extraConfigmapMounts:
+      - name: scrap-ca-bundle
+        mountPath: /etc/ssl/scrap
+        configMap: scrap-ca-bundle
+        readOnly: true
+
+    # GF_AUTH_GENERIC_OAUTH_ENABLED and _CLIENT_SECRET are sourced from an
+    # OPTIONAL Secret (clusters/<name>/secrets/grafana/, applied only when
+    # an operator enables identity integration too -- see this directory's
+    # README) so a missing Secret means OAuth stays fully disabled, not a
+    # dead login button. `optional: true` is the native Kubernetes
+    # mechanism for this (env.valueFrom.secretKeyRef.optional) -- nothing
+    # SCRAP-invented. Everything else about the OAuth client (it isn't
+    # sensitive) lives in grafana.ini below, always present, inert unless
+    # the enabled flag flips true.
+    envValueFrom:
+      GF_AUTH_GENERIC_OAUTH_ENABLED:
+        secretKeyRef:
+          name: grafana-oidc-credentials
+          key: GF_AUTH_GENERIC_OAUTH_ENABLED
+          optional: true
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+        secretKeyRef:
+          name: grafana-oidc-credentials
+          key: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+          optional: true
+
+    env:
+      SSL_CERT_FILE: /etc/ssl/scrap/ca-bundle.crt
+
+    grafana.ini:
+      server:
+        root_url: "https://grafana.${BASE_DOMAIN}/"
+      auth:
+        # Explicit, not relied-on-as-chart-default: an accidentally-
+        # enabled anonymous path would mean anyone reaching the Gateway
+        # sees real platform telemetry with no login at all. Stated here
+        # so a reader (and tests/profiles/t-b-standard.sh's own live
+        # check) doesn't have to trust the chart's own default stays this
+        # way across upgrades.
+        disable_login_form: false
+      "auth.anonymous":
+        enabled: false
+      "auth.generic_oauth":
+        enabled: false # flipped to true by GF_AUTH_GENERIC_OAUTH_ENABLED above, when identity integration is enabled
+        name: Authentik
+        client_id: scrap-grafana
+        scopes: "openid email profile groups"
+        auth_url: "https://auth.${BASE_DOMAIN}/application/o/authorize/"
+        token_url: "https://auth.${BASE_DOMAIN}/application/o/token/"
+        api_url: "https://auth.${BASE_DOMAIN}/application/o/userinfo/"
+        # JMESPath, evaluated against the token/userinfo claims -- standard
+        # Grafana generic-OAuth role mapping, not a SCRAP mechanism. The
+        # groups claim comes from capabilities/identity/'s own custom
+        # scope mapping (blueprints-configmap.yaml); scrap-admins is the
+        # group that mapping's membership check is written against.
+        role_attribute_path: "contains(groups, 'scrap-admins') && 'Admin' || 'Viewer'"
+        role_attribute_strict: false
+
+    resources:
+      requests: { cpu: 25m, memory: 128Mi }
+      limits: { memory: 256Mi }
