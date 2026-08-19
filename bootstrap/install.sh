@@ -199,7 +199,24 @@ if [ -z "${REPO_URL:-}" ]; then
         # always the small, freshly-cloned one (17 files / 10 dirs) --
         # never the large merged-in tree that made the old version of
         # this line the flake's most likely cause.
-        rm -rf "$WORKDIR/.git"
+        # DIAGNOSTIC ONLY, DO NOT KEEP: instrumenting a newly-deterministic
+        # (was: rare, 0/23) recurrence of "rm: cannot remove
+        # '$WORKDIR/.git': Directory not empty" at exactly this line, to
+        # root-cause with real evidence before guessing at a fix.
+        echo "DIAG: git --version: $(git --version)"
+        echo "DIAG: WORKDIR/.git listing before rm:"
+        find "$WORKDIR/.git" -mindepth 0 2>&1 || true
+        echo "DIAG: fsmonitor/lock files:"
+        find "$WORKDIR/.git" -name '*.lock' -o -name 'fsmonitor--daemon.ipc' 2>&1 || true
+        echo "DIAG: processes touching WORKDIR:"
+        (fuser -v "$WORKDIR/.git" 2>&1 || true)
+        (ps aux | grep -i fsmonitor | grep -v grep) || true
+        rm -rf "$WORKDIR/.git" || {
+            echo "DIAG: first rm FAILED. Listing again immediately after:"
+            find "$WORKDIR/.git" -mindepth 0 2>&1 || true
+            echo "DIAG: retrying rm after listing..."
+            rm -rf "$WORKDIR/.git"
+        }
 
         # clusters/example/secrets/ ships a structurally-real reference
         # secret, encrypted to a PUBLISHED (intentionally non-secret)
