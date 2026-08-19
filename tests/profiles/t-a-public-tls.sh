@@ -92,22 +92,32 @@ cp "$REPO_ROOT/capabilities/public-tls/cluster-secrets-kustomization.yaml" \
     "$LIVE_CLUSTER_DIR/capabilities/public-tls-secrets.yaml"
 
 sed -i 's|^\(  TLS_ISSUER: \).*|\1"scrap-acme-staging"|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
-# REAL BUG, found live via this script's own first two runs: the checked-
+# REAL BUG, found live via this script's own first THREE runs -- two
+# distinct failures from the same underlying cause, not one: the checked-
 # in reference ACME_EMAIL ("admin@example.internal") isn't just a
-# harmless placeholder once public-tls is actually enabled -- Let's
-# Encrypt's ACME server (even staging) validates the contact email's
-# domain has a real public-suffix TLD as part of ACCOUNT REGISTRATION,
-# before any Certificate/Order/Challenge exists at all. ".internal" fails
-# that check outright ("400 invalidContact: ... does not end with a
-# valid public suffix (TLD)"), confirmed live in the cert-manager
-# controller log -- meaning the whole flow was stopping at ClusterIssuer
-# setup, never reaching the DNS-01 stage this test actually exists to
-# exercise. Overridden here to a real public TLD (example.com, RFC 2606
-# reserved -- nobody needs to receive mail there; ACME's own check is
-# purely a format/TLD check, not a deliverability or ownership proof) so
-# the ONLY thing left broken is the RFC2136 nameserver below, which is
-# the actual claim under test.
-sed -i 's|^\(  ACME_EMAIL: \).*|\1"public-tls-test@example.com"|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
+# harmless placeholder once public-tls is actually enabled, because
+# Let's Encrypt's ACME server validates the contact email as part of
+# ACCOUNT REGISTRATION, before any Certificate/Order/Challenge exists at
+# all.
+#   Attempt 1: ".internal" isn't a real public-suffix TLD --
+#     "400 invalidContact: ... does not end with a valid public suffix".
+#   Attempt 2: switched to "example.com" (a real TLD) -- rejected anyway,
+#     for a DIFFERENT, more specific reason: "400 invalidContact: ...
+#     contact email has forbidden domain \"example.com\"". Let's Encrypt's
+#     server explicitly denylists the RFC 2606 documentation domains
+#     (example.com/.org/.net) BY NAME, precisely because they're the
+#     obvious fake-placeholder choice -- confirmed live, not assumed from
+#     the first fix's own reasoning, which stopped one layer too early.
+# Both attempts were guessing at which domain would pass an undocumented
+# denylist. The robust fix sidesteps the whole question: cert-manager's
+# ACME issuer `email` field is OPTIONAL. An empty value here means no
+# contact email is registered at all -- a real ACME account still
+# registers successfully (Let's Encrypt has always allowed this), and
+# nothing about the DNS-01 claim this test exists to exercise depends on
+# a contact email existing. A real operator enabling this capability for
+# real still sets their own real address, per this capability's own
+# README -- this empty override is specific to this test's own live-edit.
+sed -i 's|^\(  ACME_EMAIL: \).*|\1""|' "$LIVE_CLUSTER_DIR/instance-config.yaml"
 # Deliberately WRONG nameserver -- unroutable TEST-NET address (RFC 5737),
 # guaranteed not to answer, so the DNS-01 challenge fails predictably and
 # quickly rather than hanging on a real-but-wrong server's own timeout
