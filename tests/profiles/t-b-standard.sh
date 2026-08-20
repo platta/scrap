@@ -680,19 +680,7 @@ fi
 neg_idstage_pk=$(api_body "$(authentik_api GET /api/v3/stages/identification/)" | jq -r '.results[0].pk // empty')
 if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
     echo "      NEGATIVE CONTROL: binding recovery_flow=$neg_flow_pk onto identification stage $neg_idstage_pk"
-    # REAL FINDING, from this negative control's own third live run: a
-    # bare {"recovery_flow": ...} PATCH was rejected, HTTP 400,
-    # "When no user fields are selected, at least one source must be
-    # selected" -- authentik's own IdentificationStage serializer runs
-    # ITS full cross-field validator even on a PATCH, and evaluates it
-    # against the incoming payload rather than the fully-merged instance
-    # (user_fields WAS already ["email","username"] on the real object,
-    # confirmed via the anonymous probe's own captured challenge above --
-    # not actually empty). Not a SCRAP bug -- authentik's own API
-    # behavior for this endpoint -- worked around the same way a real
-    # admin UI form submission would, by sending the field explicitly
-    # rather than relying on partial-update semantics to preserve it.
-    bind_resp=$(authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\",\"user_fields\":[\"email\",\"username\"]}")
+    bind_resp=$(authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\"}")
     echo "      NEGATIVE CONTROL: bind response HTTP $(api_status "$bind_resp"): $(api_body "$bind_resp")"
     # Diagnostic: confirm the bind actually took, decoupled from whether
     # the two checks below can see it -- reads the SAME field the
