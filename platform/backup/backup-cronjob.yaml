@@ -47,6 +47,30 @@ spec:
                     secretKeyRef:
                       name: restic-credentials
                       key: RESTIC_PASSWORD
+                # restic's OWN generic S3-backend contract -- these are the
+                # AWS SDK's standard env var names, which every S3-compatible
+                # provider's client libraries (including restic's) reuse
+                # regardless of vendor; not an AWS-specific mechanism and not
+                # a SCRAP invention. `optional: true` (restic-credentials'
+                # own key, never a capabilities/-owned secret -- see
+                # capabilities/offsite-backup/README.md for why this
+                # capability needs no Kustomization file of its own) means a
+                # local/minimum-destination install's secret simply lacks
+                # these two keys and nothing here changes -- BACKUP_DESTINATION
+                # itself already fully determines behavior; these env vars
+                # are inert unless it actually points at an s3: URL.
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: AWS_ACCESS_KEY_ID
+                      optional: true
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                      optional: true
               volumeMounts:
                 - name: tools
                   mountPath: /tools

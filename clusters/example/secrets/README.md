@@ -16,10 +16,29 @@ filename, not a path. Every example below does this.
 
 ## `restic-credentials.sops.yaml`
 
-The one secret `platform/backup/` requires: `RESTIC_PASSWORD`, the password protecting the restic
-repository at `${BACKUP_DESTINATION}`. Only `stringData` is ciphertext — `kind`, `apiVersion`, and
-`metadata` stay plaintext (`encrypted_regex` in `.sops.yaml`) so Kustomize can still process the
-manifest structurally before Flux ever decrypts it.
+The secret `platform/backup/` reads: `RESTIC_PASSWORD` (always required — the password protecting
+the restic repository at `${BACKUP_DESTINATION}`), plus two more keys read **only** when
+`capabilities/offsite-backup/` is enabled: `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` — restic's
+own generic S3-backend credential contract (the AWS SDK's standard env var names, reused by every
+S3-compatible provider's client libraries, not an AWS-specific mechanism). Only `stringData` is
+ciphertext — `kind`, `apiVersion`, and `metadata` stay plaintext (`encrypted_regex` in `.sops.yaml`)
+so Kustomize can still process the manifest structurally before Flux ever decrypts it.
+
+**Enabling off-site backup needs no new Kustomization file.** Unlike identity/Grafana/public-TLS,
+`capabilities/offsite-backup/` applies no new Kubernetes resource at all — `platform/backup/`'s
+three CronJobs already read these two keys unconditionally (`optional: true`, inert when absent).
+Enabling it is exactly two edits: point `BACKUP_DESTINATION` (`clusters/<name>/instance-config.yaml`)
+at your provider's `s3:https://endpoint/bucket[/path]` URL, and add the two keys above to this file
+(`cd clusters/<name>/secrets && sops restic-credentials.sops.yaml` — same re-encrypt-on-save flow as
+`RESTIC_PASSWORD`). See `capabilities/offsite-backup/README.md` for the destination URL format and
+what this actually buys.
+
+**Escrow note:** `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` are credential material like
+`RESTIC_PASSWORD`, but **not** on the fatal-if-lost list (`docs/core/recovery-model.md`) — losing
+them costs a provider-side key rotation, not unrecoverable data, since the provider (not this file)
+is the source of truth for whether they're still valid. `RESTIC_PASSWORD` remains the one artifact
+in this file whose loss is permanent and irreversible; escrow it accordingly, regardless of which
+destination it protects.
 
 ## `PUBLISHED-NOT-SECRET-reference.agekey`
 

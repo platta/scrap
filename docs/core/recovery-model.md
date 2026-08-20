@@ -48,3 +48,13 @@ Every claim above with a listed unlocking capability is asserted by a CI profile
 *specific, recently-changed values*, never row counts alone, which is the exact distinction that
 mattered in a real incident during this platform's own design work. A claim without a corresponding
 test is not yet a guarantee, and this document will say so rather than implying otherwise.
+
+**R3/R4 specifically: implementing and testing each listed ingredient is not the same claim as
+proving the row.** `capabilities/offsite-backup/` is implemented and live-tested (`tests/profiles/t-a-offsite-backup.sh`)
+— it proves the recovery artifacts a frozen contract requires can genuinely be placed into storage
+whose failure domain is independent of the SCRAP host, using restic's own supported remote-backend
+mechanism. It does **not** prove that a blank machine plus only those surviving artifacts is
+sufficient for a working platform — that is T-E (host-loss rehearsal), **not yet implemented**, and
+R3/R4 remain untested rows in the table above until it runs. Treat "the ingredient exists and is
+tested" and "the recipe has been cooked" as genuinely separate evidence levels, not sequential
+confidence in the same claim.

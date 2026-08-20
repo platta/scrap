@@ -1,0 +1,47 @@
+name: T-A-offsite-backup (capabilities/offsite-backup/ live acceptance)
+
+# A separate from-zero bootstrap from T-A's own -- see
+# tests/profiles/t-a-offsite-backup.sh's own header for why. The
+# S3-compatible target is a real, ephemeral MinIO the script stands up
+# itself on this same runner -- no external account, no paid
+# infrastructure, and no SCRAP-specific mock: the genuine S3 wire
+# protocol restic's own backend speaks. Runs on every push/PR, the same
+# trigger tier as T-A and T-A-public-tls.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-offsite-backup:
+    name: T-A-offsite-backup -- real S3 write/read, credential isolation, adversarial bad-credential
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-offsite-backup against this runner as a fresh host
+        run: sh tests/profiles/t-a-offsite-backup.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- scrap-backup CronJobs, full describe ---"
+          sudo -E kubectl describe cronjob -n scrap-backup || true
+          echo "--- scrap-backup Jobs ---"
+          sudo -E kubectl get jobs -n scrap-backup -o wide || true
+          echo "--- restic-credentials Secret: key NAMES only, never values ---"
+          sudo -E kubectl get secret -n scrap-backup restic-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          echo "--- MinIO log tail ---"
+          tail -n 200 /tmp/t-a-offsite-minio.log 2>/dev/null || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

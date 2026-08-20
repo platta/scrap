@@ -49,6 +49,22 @@ spec:
                     secretKeyRef:
                       name: restic-credentials
                       key: RESTIC_PASSWORD
+                # restic's own generic S3-backend env vars -- see
+                # backup-cronjob.yaml's own comment at the identical two
+                # entries for the full reasoning. Optional: inert unless
+                # BACKUP_DESTINATION actually points at an s3: URL.
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: AWS_ACCESS_KEY_ID
+                      optional: true
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: restic-credentials
+                      key: AWS_SECRET_ACCESS_KEY
+                      optional: true
               volumeMounts:
                 - name: repo
                   mountPath: /var/lib/scrap-backup
