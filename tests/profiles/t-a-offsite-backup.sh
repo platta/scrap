@@ -234,7 +234,15 @@ fi
 # usable for recovery by any restic client with the right credentials,
 # not merely writable by the one pod that just wrote to it.
 if ! command -v restic >/dev/null 2>&1; then
-    sudo curl -sSL --connect-timeout 15 --max-time 120 \
+    # REAL BUG, found live: the download itself needs no privilege at
+    # all -- only the final install to /usr/local/bin does. `sudo curl`
+    # left /tmp/restic.bz2 root-owned; bunzip2, run as this unprivileged
+    # user next, failed ("Operation not permitted") trying to remove
+    # that root-owned source file after decompressing it -- /tmp's own
+    # sticky bit blocks a non-owner from deleting another user's file
+    # there even though the directory itself is world-writable. `sudo`
+    # moved to only the one step that actually needs it.
+    curl -sSL --connect-timeout 15 --max-time 120 \
         https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2 \
         -o /tmp/restic.bz2
     bunzip2 -f /tmp/restic.bz2
