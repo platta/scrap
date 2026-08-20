@@ -18,7 +18,12 @@ jobs:
   t-a-offsite-backup:
     name: T-A-offsite-backup -- real S3 write/read, credential isolation, adversarial bad-credential
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 wasn't enough margin once the negative control's own wait window
+    # grew to comfortably outlast platform/backup/'s new
+    # activeDeadlineSeconds: 600 (see that directory's own README) on top
+    # of a full bootstrap -- bumped for headroom, not because anything
+    # here is expected to routinely take this long.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 

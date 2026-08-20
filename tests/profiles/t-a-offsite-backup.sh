@@ -295,9 +295,21 @@ flux reconcile kustomization platform-secrets --with-source >/dev/null 2>&1 || t
 remote_objects_before=$remote_objects
 FAIL_JOB="t-a-offsite-backup-neg-$(date +%s)"
 kc create job -n scrap-backup "$FAIL_JOB" --from=cronjob/scrap-backup >/dev/null
-neg_result=$(wait_for_job scrap-backup "$FAIL_JOB" 24)
+# REAL FINDING, from this negative control's own first live run: a wrong
+# credential against a real S3 endpoint doesn't fail fast -- restic's
+# own retry/backoff kept the pod "Running" past the original 120s wait
+# here, with no sign of stopping on its own. That's what led to
+# platform/backup/'s new activeDeadlineSeconds: 600 (see that
+# directory's own README) -- 150 iterations * 5s = 750s comfortably
+# outlasts it, so this waits for the REAL terminal state (Job Failed,
+# reason DeadlineExceeded) rather than guessing at a shorter window that
+# would have just reproduced the same ambiguous timeout this comment is
+# explaining.
+neg_result=$(wait_for_job scrap-backup "$FAIL_JOB" 150)
 echo "      --- negative-control job log (deliberately wrong credential) ---"
 kc logs -n scrap-backup "job/$FAIL_JOB" 2>&1 | sed 's/^/      /' || true
+echo "      --- negative-control job status ---"
+kc get job -n scrap-backup "$FAIL_JOB" -o wide 2>&1 | sed 's/^/      /' || true
 remote_objects_after=$(mc ls --recursive "localminio/${MINIO_BUCKET}" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$neg_result" = fail ] && [ "${remote_objects_after:-0}" -eq "${remote_objects_before:-0}" ]; then
     ok T-A-offsite-backup/adversarial-bad-credential "a backup job with a deliberately wrong AWS_SECRET_ACCESS_KEY genuinely FAILED (job status Failed, not a timeout) with no new objects written -- no silent success, no silent fallback"

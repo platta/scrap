@@ -71,6 +71,20 @@ buys -- SCRAP states this as a tested, progressive guarantee, never a blanket "w
 genuinely singular: there is no per-application variant of either, and no application manifest ever
 references them.
 
+## Every job here is bounded, not just scheduled
+
+**REAL BUG, found live via `capabilities/offsite-backup/`'s own negative control**: with a
+genuinely wrong credential against a real S3 endpoint, restic's own retry/backoff behavior doesn't
+fail fast -- a pod sat `Running` for minutes with no sign of terminating on its own, and nothing
+here previously bounded that. `backoffLimit` alone doesn't help; it bounds pod *restarts* after a
+container exits, not how long one attempt is allowed to keep running. `concurrencyPolicy: Forbid`
+on all three CronJobs means an unbounded hang here also silently blocks every future scheduled run
+from ever starting -- a stuck backup becomes "no backups at all," which is worse than a fast,
+visible failure. Every CronJob here sets `activeDeadlineSeconds: 600` -- generous for this
+platform's own real workloads (confirmed live: a real backup completes in single-digit seconds),
+short enough that a genuinely stuck attempt still resolves to a visible `Job` failure
+(`DeadlineExceeded`) instead of running forever.
+
 ## Credential isolation
 
 A backup credential must be scoped so it **cannot** modify another installation's backups, even by

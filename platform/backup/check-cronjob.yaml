@@ -16,6 +16,10 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 1
+      # A bounded ceiling on one attempt's runtime -- see
+      # backup-cronjob.yaml's own comment at the identical field for the
+      # real hang this was found through and fixes.
+      activeDeadlineSeconds: 600
       template:
         spec:
           restartPolicy: Never
