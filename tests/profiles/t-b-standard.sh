@@ -681,7 +681,7 @@ neg_idstage_pk=$(api_body "$(authentik_api GET /api/v3/stages/identification/)" 
 if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
     echo "      NEGATIVE CONTROL: binding recovery_flow=$neg_flow_pk onto identification stage $neg_idstage_pk"
     bind_resp=$(authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\"}")
-    echo "      NEGATIVE CONTROL: bind response HTTP $(api_status "$bind_resp"): $(api_body "$bind_resp")"
+    echo "      NEGATIVE CONTROL: bind response HTTP $(api_status "$bind_resp")"
     # Diagnostic: confirm the bind actually took, decoupled from whether
     # the two checks below can see it -- reads the SAME field the
     # structural check itself reads, immediately after the write.
