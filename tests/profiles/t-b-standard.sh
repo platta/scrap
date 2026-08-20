@@ -648,6 +648,25 @@ api_body()   { echo "$1" | sed '$d'; }
 # default one" by name/slug guesswork: a fresh, Blueprint-only install
 # ships exactly one of each, and checking the full list is both simpler
 # and correct regardless of what authentik names them internally).
+# NEGATIVE CONTROL, DO NOT KEEP: proving the oracle can actually turn
+# red for the exact violation it exists to catch, the same discipline
+# already applied to grafana-adversarial-anon. Binds a real,
+# stock-shipped recovery-designated Flow to the default
+# IdentificationStage -- mechanically the SAME action Part 17.6's real
+# production bug involved ("re-enabling the admin 'Create recovery
+# link' feature... reintroduced exposure... via the identification
+# stage's own recovery_flow field") -- via the live admin API, on this
+# CI-provisioned instance only. Reverted immediately below, in the same
+# run, before either check gets a chance to observe the reverted state.
+neg_flow_pk=$(api_body "$(authentik_api GET '/api/v3/flows/instances/?designation=recovery')" | jq -r '.results[0].pk // empty')
+neg_idstage_pk=$(api_body "$(authentik_api GET /api/v3/stages/identification/)" | jq -r '.results[0].pk // empty')
+if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
+    echo "      NEGATIVE CONTROL: binding recovery_flow=$neg_flow_pk onto identification stage $neg_idstage_pk"
+    authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\"}" >/dev/null
+else
+    echo "      NEGATIVE CONTROL: skipped -- no recovery-designated flow ($neg_flow_pk) or identification stage ($neg_idstage_pk) found to bind"
+fi
+
 brands_resp=$(authentik_api GET /api/v3/core/brands/)
 idstages_resp=$(authentik_api GET /api/v3/stages/identification/)
 brands_bound=$(api_body "$brands_resp" | jq -r '[.results[]? | select(.flow_recovery != null) | .domain] | join(",")' 2>/dev/null || true)
@@ -716,6 +735,14 @@ else
     else
         fail T-B/identity-adversarial-recovery "an anonymous request was shown a recovery-related field: identification stage=$id_leak, password stage=$pw_leak -- see the raw challenges above"
     fi
+fi
+
+# NEGATIVE CONTROL, DO NOT KEEP: revert, same run, immediately after
+# both checks above have had their one chance to observe the bound
+# state.
+if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
+    echo "      NEGATIVE CONTROL: reverting recovery_flow on identification stage $neg_idstage_pk"
+    authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" '{"recovery_flow":null}' >/dev/null
 fi
 
 # ---------------------------------------------------------------------------
