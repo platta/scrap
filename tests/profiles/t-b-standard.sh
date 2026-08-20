@@ -62,6 +62,20 @@ if [ -z "$AKADMIN_PASSWORD" ]; then
     exit 1
 fi
 
+# Same secret, the API bootstrap token -- same mechanism
+# tests/dr/authentik-postgres-restore.sh already uses this for, needed
+# here for the recovery-flow-exposure check's own structural
+# corroboration (reading the Brand/IdentificationStage objects directly,
+# not just what an anonymous request is shown).
+AUTHENTIK_TOKEN=$(cd "$REPO_ROOT/clusters/example/secrets/identity" && \
+    SOPS_AGE_KEY_FILE=../PUBLISHED-NOT-SECRET-reference.agekey \
+    sops -d --extract '["stringData"]["AUTHENTIK_BOOTSTRAP_TOKEN"]' identity-credentials.sops.yaml)
+if [ -z "$AUTHENTIK_TOKEN" ]; then
+    echo "FAIL  T-B: could not decrypt the reference AUTHENTIK_BOOTSTRAP_TOKEN -- see"
+    echo "      clusters/example/secrets/README.md. Nothing bootstrapped yet; exiting."
+    exit 1
+fi
+
 # ---------------------------------------------------------------------------
 log "T-B: Phase 1/4: enable the identity capability -- exactly the documented path"
 # capabilities/identity/README.md's own "Enabling this capability"
@@ -590,6 +604,96 @@ if authentik_login "https://grafana.${BASE_DOMAIN}/login/generic_oauth" /tmp/t-b
     fi
 else
     fail T-B/grafana-native-oidc "the scripted login against authentik's flow-executor API failed for Grafana's own /login/generic_oauth -- see the authentik_login diagnostic output above"
+fi
+
+# 3i/3j. Identity's own still-open obligation
+# (docs/decisions/0002-identity-implementation.md: "Authentik's own
+# recovery flows need adversarial testing, not just functional
+# testing"). Not a general Authentik penetration test -- SCRAP is
+# responsible for proving its OWN configuration doesn't violate the
+# frozen security contract, not for re-auditing Authentik itself. This
+# targets one specific, non-hypothetical invariant: a real account-
+# takeover bug found live, twice, against production identity (recorded
+# for context, not reproduced here) -- an unauthenticated party who
+# knows only a username reaching a "set a new password" form with no
+# possession-of-factor challenge at all, through TWO independent public
+# entry points (the identification stage's own recovery_flow field, and
+# the password stage's separate fallback to the Brand's flow_recovery).
+# capabilities/identity/blueprints-configmap.yaml never touches either
+# field -- SCRAP's shipped configuration is silent on self-service
+# recovery, which is a different claim from proven safe. Checked two
+# independent ways, deliberately not just one:
+
+# authentik_api <method> <path> [json-body] -- same pattern as
+# tests/dr/authentik-postgres-restore.sh's own helper of the same name
+# (a direct, authenticated REST call using the bootstrap token as a
+# Bearer credential). Not duplicated from lib.sh: this is the only place
+# in THIS script that needs authenticated admin API access, the same
+# reasoning tests/profiles/t-b-standard.sh's own authentik_login already
+# documents for keeping flow-executor specifics local rather than
+# shared.
+authentik_api() {
+    method="$1"; path="$2"; body="${3:-}"
+    curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS \
+        -X "$method" -H "Authorization: Bearer $AUTHENTIK_TOKEN" -H "Content-Type: application/json" \
+        -w '\n%{http_code}' ${body:+-d "$body"} "${AUTH_BASE}${path}" 2>/dev/null || true
+}
+api_status() { echo "$1" | tail -1; }
+api_body()   { echo "$1" | sed '$d'; }
+
+# 3i. Structural: ground truth, read directly from the objects
+# themselves rather than inferred from what a client is shown -- every
+# Brand's flow_recovery, and every IdentificationStage's own
+# recovery_flow, across the whole instance (not filtered to "the
+# default one" by name/slug guesswork: a fresh, Blueprint-only install
+# ships exactly one of each, and checking the full list is both simpler
+# and correct regardless of what authentik names them internally).
+brands_resp=$(authentik_api GET /api/v3/core/brands/)
+idstages_resp=$(authentik_api GET /api/v3/stages/identification/)
+brands_bound=$(api_body "$brands_resp" | jq -r '[.results[]? | select(.flow_recovery != null) | .domain] | join(",")' 2>/dev/null || true)
+idstages_bound=$(api_body "$idstages_resp" | jq -r '[.results[]? | select(.recovery_flow != null) | .name] | join(",")' 2>/dev/null || true)
+if [ "$(api_status "$brands_resp")" = "200" ] && [ "$(api_status "$idstages_resp")" = "200" ] \
+    && [ -z "$brands_bound" ] && [ -z "$idstages_bound" ]; then
+    ok T-B/identity-no-recovery-flow-configured "no Brand's flow_recovery and no IdentificationStage's recovery_flow is bound to anything, read directly from the objects themselves -- the exact two fields Part 17.6/18.2's real production account-takeover bug went through"
+else
+    fail T-B/identity-no-recovery-flow-configured "a recovery flow is bound somewhere: brands with flow_recovery set=[$brands_bound], identification stages with recovery_flow set=[$idstages_bound] (brands HTTP $(api_status "$brands_resp"), stages HTTP $(api_status "$idstages_resp"))"
+fi
+
+# 3j. Behavioral: what an actual anonymous client sees, reaching the
+# SAME two live entry points the real bug was found through -- the
+# identification stage's own initial challenge, and the password stage
+# reached immediately after submitting nothing but a username, no
+# password ever sent. Deliberately its own small sequence, not a reuse
+# of authentik_login()'s internals: that function's helper closures
+# (flow_stage, csrf, ...) rely on plain, non-`local` shell variables
+# left over from whichever call last ran, and this probe needs to be
+# correct in isolation. Scans EVERY key anywhere in each stage's own
+# JSON challenge for anything recovery-related, rather than a single
+# guessed field name -- robust to not knowing authentik's exact
+# response shape in advance, and this is the same data authentik's own
+# frontend SPA renders the login page's links from, so a real bound
+# recovery flow has to surface here in SOME form or the frontend
+# couldn't render a link to it either.
+recovery_jar=/tmp/t-b-recovery-probe-cookies
+rm -f "$recovery_jar"
+id_url="${AUTH_BASE}/api/v3/flows/executor/default-authentication-flow/"
+id_stage=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS \
+    -H 'Accept: application/json' -c "$recovery_jar" -b "$recovery_jar" "$id_url" 2>/dev/null || true)
+id_csrf=$(awk -F'\t' '$6=="authentik_csrf"{v=$7} END{print v}' "$recovery_jar")
+pw_stage=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS \
+    -H 'Accept: application/json' -H 'Content-Type: application/json' \
+    -H "X-CSRFToken: $id_csrf" -H "Referer: ${AUTH_BASE}/if/flow/default-authentication-flow/" \
+    -c "$recovery_jar" -b "$recovery_jar" -d '{"uid_field":"akadmin"}' "$id_url" 2>/dev/null || true)
+echo "      --- anonymous probe: identification-stage challenge ---"
+echo "$id_stage" | sed 's/^/      /'
+echo "      --- anonymous probe: password-stage challenge (username submitted, no password) ---"
+echo "$pw_stage" | sed 's/^/      /'
+id_leak=$(echo "$id_stage" | jq -c '[.. | objects | to_entries[]? | select(.key | test("recover"; "i")) | select(.value != null and .value != "" and .value != false)]' 2>/dev/null || echo '["parse error"]')
+pw_leak=$(echo "$pw_stage" | jq -c '[.. | objects | to_entries[]? | select(.key | test("recover"; "i")) | select(.value != null and .value != "" and .value != false)]' 2>/dev/null || echo '["parse error"]')
+if [ "$id_leak" = "[]" ] && [ "$pw_leak" = "[]" ]; then
+    ok T-B/identity-adversarial-recovery "an anonymous request reaching both real entry points (identification stage, then password stage after submitting only a username) is shown no recovery affordance in either stage's own challenge -- no unauthenticated path to a password-set form"
+else
+    fail T-B/identity-adversarial-recovery "an anonymous request was shown a recovery-related field: identification stage=$id_leak, password stage=$pw_leak -- see the raw challenges above"
 fi
 
 # ---------------------------------------------------------------------------
