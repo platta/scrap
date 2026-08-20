@@ -680,7 +680,13 @@ fi
 neg_idstage_pk=$(api_body "$(authentik_api GET /api/v3/stages/identification/)" | jq -r '.results[0].pk // empty')
 if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
     echo "      NEGATIVE CONTROL: binding recovery_flow=$neg_flow_pk onto identification stage $neg_idstage_pk"
-    authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\"}" >/dev/null
+    bind_resp=$(authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\"}")
+    echo "      NEGATIVE CONTROL: bind response HTTP $(api_status "$bind_resp")"
+    # Diagnostic: confirm the bind actually took, decoupled from whether
+    # the two checks below can see it -- reads the SAME field the
+    # structural check itself reads, immediately after the write.
+    confirm_resp=$(authentik_api GET "/api/v3/stages/identification/${neg_idstage_pk}/")
+    echo "      NEGATIVE CONTROL: confirmed recovery_flow now reads back as: $(api_body "$confirm_resp" | jq -r '.recovery_flow // "null"' 2>/dev/null)"
 else
     echo "      NEGATIVE CONTROL: skipped -- no recovery flow ($neg_flow_pk) or identification stage ($neg_idstage_pk) available to bind"
 fi
