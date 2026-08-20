@@ -39,7 +39,18 @@ status=0
 MINIO_ROOT_USER="scrap-test-minio-user"
 MINIO_ROOT_PASSWORD="scrap-test-minio-password-not-secret-16ch"
 MINIO_BUCKET="scrap-offsite-test"
-MINIO_PORT=9000
+# REAL BUG, found live via this script's own first run: 9000, MinIO's own
+# documented default, collides with platform/ingress/reserved-ports.yaml's
+# own entry for THIS SAME PORT NUMBER (P4's raw-TCP demo,
+# docs/patterns/README.md#p4) -- preflight's check-ports.sh correctly
+# failed the whole bootstrap ("TCP port 9000 is already in use") because
+# THIS script's own MinIO, started in Phase 1 before bootstrap runs, was
+# already bound to it. Not a SCRAP defect -- a genuine port collision in
+# this script's own choice of port, caught by the exact mechanism
+# reserved-ports.yaml exists to catch. 19000 is well outside SCRAP's own
+# reserved range (80/443/6443/9000) and isn't a host port SCRAP claims
+# anywhere, so it needs no entry of its own there.
+MINIO_PORT=19000
 
 # ---------------------------------------------------------------------------
 log "T-A-offsite-backup: Phase 0/5: environment prerequisites"
