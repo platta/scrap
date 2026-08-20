@@ -659,12 +659,30 @@ api_body()   { echo "$1" | sed '$d'; }
 # CI-provisioned instance only. Reverted immediately below, in the same
 # run, before either check gets a chance to observe the reverted state.
 neg_flow_pk=$(api_body "$(authentik_api GET '/api/v3/flows/instances/?designation=recovery')" | jq -r '.results[0].pk // empty')
+# REAL FINDING, from this negative control's own first live run: this
+# instance -- a fresh, Blueprint-only install, current authentik version
+# -- ships NO recovery-designated flow at all by default. Confirms
+# T-B/identity-no-recovery-flow-configured's own passing result wasn't a
+# coincidence of an empty filter matching nothing to bind in the first
+# place: there is genuinely nothing pre-existing for an accidental
+# Blueprint edit to point at either. Since there's nothing to reuse, this
+# creates one -- mirroring what a real operator enabling self-service
+# recovery would have to do first -- deleted again in the revert below.
+neg_flow_created=""
+if [ -z "$neg_flow_pk" ]; then
+    echo "      NEGATIVE CONTROL: no existing recovery-designated flow on this instance -- for the record, what IS shipped:"
+    api_body "$(authentik_api GET /api/v3/flows/instances/)" | jq -r '.results[]? | "        \(.slug)  designation=\(.designation)"' 2>/dev/null | sed 's/^/      /' || true
+    create_resp=$(authentik_api POST /api/v3/flows/instances/ '{"name":"scrap-negative-control-recovery","slug":"scrap-negative-control-recovery","title":"SCRAP negative control (temporary)","designation":"recovery"}')
+    neg_flow_pk=$(api_body "$create_resp" | jq -r '.pk // empty')
+    neg_flow_created=1
+    echo "      NEGATIVE CONTROL: created a temporary recovery-designated flow, HTTP $(api_status "$create_resp"), pk=$neg_flow_pk"
+fi
 neg_idstage_pk=$(api_body "$(authentik_api GET /api/v3/stages/identification/)" | jq -r '.results[0].pk // empty')
 if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
     echo "      NEGATIVE CONTROL: binding recovery_flow=$neg_flow_pk onto identification stage $neg_idstage_pk"
     authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" "{\"recovery_flow\":\"${neg_flow_pk}\"}" >/dev/null
 else
-    echo "      NEGATIVE CONTROL: skipped -- no recovery-designated flow ($neg_flow_pk) or identification stage ($neg_idstage_pk) found to bind"
+    echo "      NEGATIVE CONTROL: skipped -- no recovery flow ($neg_flow_pk) or identification stage ($neg_idstage_pk) available to bind"
 fi
 
 brands_resp=$(authentik_api GET /api/v3/core/brands/)
@@ -739,10 +757,16 @@ fi
 
 # NEGATIVE CONTROL, DO NOT KEEP: revert, same run, immediately after
 # both checks above have had their one chance to observe the bound
-# state.
+# state. Unbinds first, then deletes the temporary flow if one was
+# created above -- deleting it first would leave the identification
+# stage briefly pointing at a nonexistent flow.
 if [ -n "$neg_flow_pk" ] && [ -n "$neg_idstage_pk" ]; then
     echo "      NEGATIVE CONTROL: reverting recovery_flow on identification stage $neg_idstage_pk"
     authentik_api PATCH "/api/v3/stages/identification/${neg_idstage_pk}/" '{"recovery_flow":null}' >/dev/null
+fi
+if [ -n "$neg_flow_created" ]; then
+    echo "      NEGATIVE CONTROL: deleting the temporary recovery flow $neg_flow_pk"
+    authentik_api DELETE "/api/v3/flows/instances/${neg_flow_pk}/" >/dev/null
 fi
 
 # ---------------------------------------------------------------------------
