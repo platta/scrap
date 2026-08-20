@@ -680,7 +680,17 @@ id_url="${AUTH_BASE}/api/v3/flows/executor/default-authentication-flow/"
 id_stage=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS \
     -H 'Accept: application/json' -c "$recovery_jar" -b "$recovery_jar" "$id_url" 2>/dev/null || true)
 id_csrf=$(awk -F'\t' '$6=="authentik_csrf"{v=$7} END{print v}' "$recovery_jar")
-pw_stage=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS \
+# REAL BUG, found live via this check's own first run: the identification
+# POST came back completely empty. Same documented behavior
+# authentik_login()'s own flow_stage() already handles a few hundred
+# lines up (its own comment: "the identification POST's first-ever real
+# response was a bare 302, Location pointing right back at this same
+# executor URL -- a POST/Redirect/GET pattern") -- this probe's first
+# version didn't follow it. `-L` fixes it here without reimplementing
+# flow_stage()'s own loop: curl's default redirect handling already
+# converts a POST to a GET on a 301/302/303, which is exactly the
+# semantics needed to reach the password stage's own GET-able state.
+pw_stage=$(curl -s -L --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS \
     -H 'Accept: application/json' -H 'Content-Type: application/json' \
     -H "X-CSRFToken: $id_csrf" -H "Referer: ${AUTH_BASE}/if/flow/default-authentication-flow/" \
     -c "$recovery_jar" -b "$recovery_jar" -d '{"uid_field":"akadmin"}' "$id_url" 2>/dev/null || true)
@@ -688,12 +698,24 @@ echo "      --- anonymous probe: identification-stage challenge ---"
 echo "$id_stage" | sed 's/^/      /'
 echo "      --- anonymous probe: password-stage challenge (username submitted, no password) ---"
 echo "$pw_stage" | sed 's/^/      /'
-id_leak=$(echo "$id_stage" | jq -c '[.. | objects | to_entries[]? | select(.key | test("recover"; "i")) | select(.value != null and .value != "" and .value != false)]' 2>/dev/null || echo '["parse error"]')
-pw_leak=$(echo "$pw_stage" | jq -c '[.. | objects | to_entries[]? | select(.key | test("recover"; "i")) | select(.value != null and .value != "" and .value != false)]' 2>/dev/null || echo '["parse error"]')
-if [ "$id_leak" = "[]" ] && [ "$pw_leak" = "[]" ]; then
-    ok T-B/identity-adversarial-recovery "an anonymous request reaching both real entry points (identification stage, then password stage after submitting only a username) is shown no recovery affordance in either stage's own challenge -- no unauthenticated path to a password-set form"
+# REAL BUG, found live via this check's own first run: jq on genuinely
+# EMPTY input prints nothing at all and still exits 0 (zero JSON values
+# in, the filter runs zero times) -- neither "[]" nor a caught error, so
+# a probe request that came back empty (this DID happen, before -L was
+# added above) would leave *_leak as an empty string, distinguishable
+# from "[]" but with no clear diagnosis of WHY. Guarded explicitly now,
+# so an empty response fails with an attributable reason rather than a
+# blank one.
+if [ -z "$id_stage" ] || [ -z "$pw_stage" ]; then
+    fail T-B/identity-adversarial-recovery "got no response body from the probe (identification stage empty: $([ -z "$id_stage" ] && echo yes || echo no), password stage empty: $([ -z "$pw_stage" ] && echo yes || echo no)) -- see the raw challenges above, this is a probe defect, not evidence either way"
 else
-    fail T-B/identity-adversarial-recovery "an anonymous request was shown a recovery-related field: identification stage=$id_leak, password stage=$pw_leak -- see the raw challenges above"
+    id_leak=$(echo "$id_stage" | jq -c '[.. | objects | to_entries[]? | select(.key | test("recover"; "i")) | select(.value != null and .value != "" and .value != false)]' 2>/dev/null || echo '["parse error"]')
+    pw_leak=$(echo "$pw_stage" | jq -c '[.. | objects | to_entries[]? | select(.key | test("recover"; "i")) | select(.value != null and .value != "" and .value != false)]' 2>/dev/null || echo '["parse error"]')
+    if [ "$id_leak" = "[]" ] && [ "$pw_leak" = "[]" ]; then
+        ok T-B/identity-adversarial-recovery "an anonymous request reaching both real entry points (identification stage, then password stage after submitting only a username) is shown no recovery affordance in either stage's own challenge -- no unauthenticated path to a password-set form"
+    else
+        fail T-B/identity-adversarial-recovery "an anonymous request was shown a recovery-related field: identification stage=$id_leak, password stage=$pw_leak -- see the raw challenges above"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
