@@ -17,10 +17,14 @@
 # Proves capabilities/identity/ enabled, and P2 (native OIDC) + P3
 # (forward-auth) end to end, including the adversarial claim P3's own
 # README makes: an unauthenticated request must never reach the
-# protected application. This is NOT yet the full "Standard" profile
-# tests/profiles/README.md originally sketched (Grafana, logs, a
-# recovery-flow-abuse test) -- see that file's own status note for
-# exactly what's covered here and what's still open.
+# protected application. Also proves Grafana (dashboards + native OIDC +
+# its own adversarial anonymous-access claim) and identity's own
+# recovery-flow-abuse obligation (docs/decisions/0002-identity-implementation.md)
+# -- no unauthenticated path to a password-set form, checked both
+# structurally and behaviorally. This is NOT yet the full "Standard"
+# profile tests/profiles/README.md originally sketched (logs is still
+# open) -- see that file's own status note for exactly what's covered
+# here and what's still open.
 #
 # A human can run this identically on their own scratch VM:
 #   sh tests/profiles/t-b-standard.sh

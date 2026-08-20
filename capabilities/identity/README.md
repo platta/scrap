@@ -171,10 +171,23 @@ implements it now; see that file and `platform/ingress/README.md` for the full s
 CoreDNS syntax mistake that briefly took cluster DNS down entirely during validation, caught and
 fixed before ever reaching `main`.
 
+## Recovery-flow adversarial testing — closed
+
+`docs/decisions/0002-identity-implementation.md`'s own stated obligation ("Authentik's own recovery
+flows need adversarial testing, not just functional testing") targets one specific, non-hypothetical
+invariant: production identity's own real account-takeover bug — an unauthenticated party who knows
+only a username reaching a password-set form with zero verification, through two independent public
+entry points on the login page. This capability's Blueprint never touches a Brand's `flow_recovery`
+or an `IdentificationStage`'s `recovery_flow` — SCRAP ships **no self-service recovery path at all**,
+operator-mediated only (an admin resets a password directly via the API/UI). `tests/profiles/t-b-standard.sh`
+proves this two independent ways: `T-B/identity-no-recovery-flow-configured` reads the live objects
+directly (ground truth); `T-B/identity-adversarial-recovery` reaches the same two entry points an
+anonymous browser would and confirms neither exposes a recovery affordance. Both were negative-
+controlled live — binding a real recovery flow to the identification stage made both turn red, with
+the anonymous check catching the exact `recovery_url` field a real login page would render a link
+from — then reverted.
+
 ## What's not here yet
 
-- **Adversarial auth-flow testing** (`docs/decisions/0002-identity-implementation.md`'s own stated
-  obligation) — this milestone proved the declarative contract and the backup/restore contract;
-  it did not attempt account-takeover or recovery-flow abuse scenarios.
 - Metrics integration (`observability.scrap.io/scrape`) — not wired here; a reasonable, small
   follow-up, not attempted in this pass to keep scope bounded.

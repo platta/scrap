@@ -281,7 +281,15 @@ if [ -z "${REPO_URL:-}" ]; then
         # `|| true`, not a retry/sleep loop: this isn't papering over
         # unexplained flakiness, it's declaring a best-effort cleanup step
         # non-fatal now that evidence shows its failure has no bearing on
-        # bootstrap correctness.
+        # bootstrap correctness. Scoped narrowly on purpose: this is
+        # best-effort cleanup of disposable POST-PUSH STAGING STATE only
+        # (a mktemp -d workdir whose one real job -- landing the initial
+        # commit in $BARE_REPO -- already succeeded before this line
+        # runs), not a precedent for suppressing failures anywhere else
+        # in this script that could actually affect whether bootstrap
+        # left the system correctly configured. Nothing else in
+        # install.sh should copy this pattern without the same evidence
+        # this exact line has.
         rm -rf "$WORKDIR" || true
     fi
 
