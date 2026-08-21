@@ -1,0 +1,121 @@
+# Loki, single-binary deployment mode, filesystem storage -- no object
+# storage backend needed (capabilities/logs/README.md's own stated design).
+# SingleBinary is the upstream chart's own smallest deployment shape
+# ("useful for small installs ... up to a few tens of GB/day" -- the
+# chart's own values.yaml), matching this project's "smallest supported
+# capability" scope: no MinIO, no memcached, no separate read/write/backend
+# targets, on a single PersistentVolumeClaim.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: loki
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: loki
+      version: "7.3.0"
+      sourceRef:
+        kind: HelmRepository
+        name: loki-alloy
+        namespace: monitoring
+  install:
+    timeout: 5m
+  upgrade:
+    timeout: 5m
+  values:
+    deploymentMode: SingleBinary
+
+    loki:
+      # Single instance, single tenant -- no gateway, no per-tenant auth
+      # header for Alloy/Grafana to carry. This is an in-cluster-only
+      # capability (no HTTPRoute, no external exposure -- see this
+      # directory's own README), so there is no untrusted caller to
+      # authenticate against in the first place.
+      auth_enabled: false
+      commonConfig:
+        replication_factor: 1
+      storage:
+        type: filesystem
+      schemaConfig:
+        configs:
+          - from: "2024-01-01"
+            store: tsdb
+            object_store: filesystem
+            schema: v13
+            index:
+              prefix: index_
+              period: 24h
+      # Retention: a fixed 7 days, the same "hardcode a sensible operational
+      # tuning value" convention platform/observability/helmrelease.yaml
+      # already uses for Prometheus (retention: 14d) -- not an
+      # instance-specific value like a domain or IP
+      # (docs/core/configuration-model.md's substitution mechanism is
+      # for those), a tuning default any operator can change in this
+      # file directly.
+      # Unbounded log growth on a single PVC is a real, previously-observed
+      # failure mode this project exists to avoid -- see this directory's
+      # own README for the honest limitation this doesn't yet cover
+      # (retention deletes chunks, not orphaned index entries; no
+      # alert fires on approaching disk pressure).
+      limits_config:
+        reject_old_samples: true
+        reject_old_samples_max_age: 168h
+        retention_period: 168h
+      compactor:
+        retention_enabled: true
+        delete_request_store: filesystem
+        working_directory: /var/loki/compactor
+
+    singleBinary:
+      replicas: 1
+      persistence:
+        enabled: true
+        size: 10Gi
+        storageClass: local-path
+      resources:
+        requests: { cpu: 25m, memory: 128Mi }
+        limits: { memory: 512Mi }
+
+    # Nothing here needs a second cache tier, a canary DaemonSet (Alloy's
+    # own DaemonSet already proves the write path live, and the
+    # acceptance evidence proves a real record end to end), a
+    # self-test job, or the nginx read/write-routing gateway (single
+    # binary's own Service already exposes one endpoint,
+    # loki.monitoring.svc.cluster.local:3100, both push and query) --
+    # each would add a workload and a failure mode without adding a
+    # capability this design intends to offer.
+    resultsCache:
+      enabled: false
+    chunksCache:
+      enabled: false
+    gateway:
+      enabled: false
+    lokiCanary:
+      enabled: false
+    test:
+      enabled: false
+    minio:
+      enabled: false
+
+    # The chart's own validation refuses to render with a non-zero
+    # replica count on both SingleBinary AND Simple-Scalable-Deployment
+    # (SSD) targets at once (loki/templates/validate.yaml -- confirmed by
+    # actually running `helm template` against these values without
+    # this: it fails, not silently ignores). SingleBinary's own "all"
+    # target module already runs every function these would (including
+    # compaction), so every SSD-mode target is explicitly zeroed, per the
+    # upstream chart's own documented single-binary-values.yaml example.
+    backend: { replicas: 0 }
+    read: { replicas: 0 }
+    write: { replicas: 0 }
+    ingester: { replicas: 0 }
+    querier: { replicas: 0 }
+    queryFrontend: { replicas: 0 }
+    queryScheduler: { replicas: 0 }
+    distributor: { replicas: 0 }
+    compactor: { replicas: 0 }
+    indexGateway: { replicas: 0 }
+    bloomCompactor: { replicas: 0 }
+    bloomGateway: { replicas: 0 }

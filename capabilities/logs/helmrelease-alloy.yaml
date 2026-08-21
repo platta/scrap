@@ -1,0 +1,115 @@
+# Grafana Alloy, as a DaemonSet (capabilities/logs/README.md's own stated
+# design), discovering every pod via the Kubernetes API
+# (discovery.kubernetes, role=pod) and tailing its stdout the same way --
+# via loki.source.kubernetes, which reads through the Kubernetes API
+# itself (the kubelet's own pods/log subresource, exactly what `kubectl
+# logs` uses), not by mounting the host's /var/log. Deliberate: it means
+# this DaemonSet needs no hostPath volume and no privileged/root
+# container -- one fewer host-level assumption for a capability whose own
+# README already promises "no new assumptions beyond platform/".
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: alloy
+      version: "1.11.1"
+      sourceRef:
+        kind: HelmRepository
+        name: loki-alloy
+        namespace: monitoring
+  install:
+    timeout: 5m
+  upgrade:
+    timeout: 5m
+  values:
+    # This capability doesn't use loki.source.podlogs (the CRD-based
+    # collection API) -- discovery.kubernetes + loki.source.kubernetes
+    # below needs no CRD at all. Installing the chart's bundled
+    # monitoring.grafana.com/PodLogs CRD anyway would be exactly the
+    # unused-CRD-management surface platform/crds/'s own separation from
+    # platform/cert-manager-config/ (and platform/observability's own
+    # split from platform/observability-config/) exists to avoid taking
+    # on when nothing consumes it.
+    crds:
+      create: false
+
+    controller:
+      type: daemonset
+
+    alloy:
+      configMap:
+        create: true
+        content: |
+          logging {
+            level  = "info"
+            format = "logfmt"
+          }
+
+          // Every pod on every node, discovered live via the Kubernetes
+          // API -- no static list, no per-application opt-in. Matches
+          // this capability's own README: "An application would do
+          // nothing to participate beyond logging to stdout, which every
+          // well-behaved container image already does."
+          discovery.kubernetes "pods" {
+            role = "pod"
+          }
+
+          // Promote the identifying metadata into real Loki stream
+          // labels (namespace/pod/container/node) -- the underlying
+          // __meta_kubernetes_* labels loki.source.kubernetes itself
+          // needs to address each target stay present untouched; this
+          // only ADDS the queryable labels an operator (or this
+          // capability's own acceptance check) filters on, e.g.
+          // {namespace="monitoring",pod="..."}.
+          discovery.relabel "pods" {
+            targets = discovery.kubernetes.pods.targets
+
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label  = "namespace"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              target_label  = "pod"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_container_name"]
+              target_label  = "container"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_node_name"]
+              target_label  = "node"
+            }
+          }
+
+          // Tails via the Kubernetes API (kubelet's own pods/log
+          // subresource) -- no hostPath, no privileged container. See
+          // this file's own header comment for why.
+          loki.source.kubernetes "pods" {
+            targets    = discovery.relabel.pods.output
+            forward_to = [loki.write.default.receiver]
+          }
+
+          // capabilities/logs/'s own Loki, single-binary mode --
+          // capabilities/logs/helmrelease-loki.yaml. Same namespace,
+          // Service name "loki" (the chart's own singleBinary fullname
+          // when the release is named "loki" -- see that file's own
+          // sourceRef comment), so no instance-config substitution
+          // token is needed: this is an internal Service DNS name, not
+          // an instance-specific value
+          // (docs/core/configuration-model.md's substitution mechanism
+          // is for the latter).
+          loki.write "default" {
+            endpoint {
+              url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+            }
+          }
+
+      resources:
+        requests: { cpu: 20m, memory: 64Mi }
+        limits: { memory: 200Mi }
