@@ -801,18 +801,59 @@ grafana_ds_list=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "ad
     "https://grafana.${BASE_DOMAIN}/api/datasources" 2>/dev/null || true)
 loki_ds_uid=$(echo "$grafana_ds_list" | jq -r '.[] | select(.type=="loki") | .uid' 2>/dev/null | head -1)
 
+# loki_query <logql> <body-out-file> -- queries Loki through Grafana's
+# own datasource proxy, writes the raw response body to <body-out-file>,
+# and echoes the number of matching log lines to stdout -- or nothing
+# (empty stdout) if either the HTTP call itself failed/timed out OR the
+# body didn't parse into the expected streams shape. Callers MUST treat
+# empty stdout as "inconclusive", never as zero.
+#
+# REAL BUG, found live via this exact check's own first CI run: the
+# original version wrapped its curl call in a blanket `|| true` and
+# folded a jq parse failure into `|| echo 0` -- so a slow Loki query
+# genuinely timing out under CI resource contention (14+ pods starting
+# cold on a shared runner) was silently indistinguishable from "queried
+# successfully, found nothing yet". Confirmed live: the FAIL message's
+# own truncated dump of the last attempt showed the real marker text
+# already present in what curl HAD received before its own --max-time
+# cut the transfer short -- proof the underlying collection/storage path
+# worked and only the query itself was too tight on time, not that the
+# marker "never appeared". This is exactly the failure-to-empty-output
+# class PLAT-13 hardened elsewhere (t-a-minimal.sh's Grafana-absence
+# check) -- caught here by this capability's own negative control
+# actually being exercised for real during development, not assumed
+# sound.
+# This whole function must ALWAYS return exit status 0 (see the `|| true`
+# / explicit `return 0` below) -- under this script's own `set -eu`, a
+# non-zero exit from a function called as `x=$(f)` aborts the WHOLE
+# script immediately, not just the function, which would defeat the
+# entire point of distinguishing "inconclusive" from "genuinely zero" by
+# INSTEAD crashing the script outright the first time a query is slow.
+# Confirmed live in isolation (dash, `set -eu`) before relying on it here.
+# "Inconclusive" is communicated to the caller via empty STDOUT only,
+# never via this function's own exit code.
+loki_query() {
+    logql="$1"; out_file="$2"
+    q=$(urlencode "$logql")
+    range_start=$(( $(date +%s) - 300 ))000000000
+    range_end=$(( $(date +%s) + 60 ))000000000
+    if curl -sf --max-time 30 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
+        "https://grafana.${BASE_DOMAIN}/api/datasources/proxy/uid/${loki_ds_uid}/loki/api/v1/query_range?query=${q}&start=${range_start}&end=${range_end}&limit=10" \
+        -o "$out_file" 2>/dev/null; then
+        jq -e '[.data.result[]?.values[]?[1]] | length' "$out_file" 2>/dev/null || true
+    else
+        echo "(curl itself failed or timed out against the Loki datasource proxy)" > "$out_file"
+    fi
+    return 0
+}
+
 if [ -n "$loki_ds_uid" ]; then
-    marker_query=$(urlencode "{namespace=\"default\"} |= \"${LOG_MARKER}\"")
     marker_found=""
-    marker_result=""
+    marker_lines=""
     i=0
-    while [ "$i" -lt 18 ]; do
-        range_start=$(( $(date +%s) - 300 ))000000000
-        range_end=$(( $(date +%s) + 60 ))000000000
-        marker_result=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
-            "https://grafana.${BASE_DOMAIN}/api/datasources/proxy/uid/${loki_ds_uid}/loki/api/v1/query_range?query=${marker_query}&start=${range_start}&end=${range_end}&limit=10" 2>/dev/null || true)
-        marker_lines=$(echo "$marker_result" | jq -r '[.data.result[]?.values[]?[1]] | length' 2>/dev/null || echo 0)
-        if [ "${marker_lines:-0}" -gt 0 ]; then
+    while [ "$i" -lt 12 ]; do
+        marker_lines=$(loki_query "{namespace=\"default\"} |= \"${LOG_MARKER}\"" /tmp/t-b-logs-marker-response)
+        if [ -n "$marker_lines" ] && [ "$marker_lines" -gt 0 ]; then
             marker_found=1
             break
         fi
@@ -821,27 +862,28 @@ if [ -n "$loki_ds_uid" ]; then
     done
     if [ -n "$marker_found" ]; then
         ok T-B/logs-marker-ingested-and-queried "a real workload's own stdout marker ($LOG_MARKER) was shipped by Alloy, stored in Loki, and retrieved THROUGH Grafana's own configured Loki datasource -- the full collection/storage/query path, not just component Ready status"
+    elif [ -z "$marker_lines" ]; then
+        fail T-B/logs-marker-ingested-and-queried "the Loki query itself never succeeded/parsed after 60s of retries -- inconclusive, not evidence the marker is genuinely absent: $(head -c 500 /tmp/t-b-logs-marker-response)"
     else
-        fail T-B/logs-marker-ingested-and-queried "marker $LOG_MARKER never appeared via Grafana's Loki datasource after 90s: $(echo "$marker_result" | head -c 500)"
+        fail T-B/logs-marker-ingested-and-queried "the query succeeded every time but marker $LOG_MARKER never appeared after 60s: $(head -c 500 /tmp/t-b-logs-marker-response)"
     fi
 
-    # 3m. Negative control -- the SAME query mechanism, for a marker that
-    # was never emitted anywhere, proving this oracle can actually turn
-    # red rather than a query that always reports "found something" (the
-    # PLAT-13-hardened class of defect this project already corrected
-    # once: distinguish a genuine empty result from a broken/always-
-    # succeeding check).
+    # 3m. Negative control -- the SAME query mechanism (loki_query,
+    # above), for a marker that was never emitted anywhere, proving this
+    # oracle can actually turn red rather than a query that always
+    # reports "found something". A curl/parse failure here must NOT read
+    # as a pass -- that would itself be a vacuous negative control (the
+    # same class of mistake this function's own header comment just
+    # described) -- so an inconclusive query result is reported as its
+    # own distinct outcome, never silently folded into "0 lines found".
     absent_marker="scrap-tb-logs-marker-NEVER-EMITTED-$$-$(date +%s)"
-    absent_query=$(urlencode "{namespace=\"default\"} |= \"${absent_marker}\"")
-    range_start=$(( $(date +%s) - 300 ))000000000
-    range_end=$(( $(date +%s) + 60 ))000000000
-    absent_result=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
-        "https://grafana.${BASE_DOMAIN}/api/datasources/proxy/uid/${loki_ds_uid}/loki/api/v1/query_range?query=${absent_query}&start=${range_start}&end=${range_end}&limit=10" 2>/dev/null || true)
-    absent_lines=$(echo "$absent_result" | jq -r '[.data.result[]?.values[]?[1]] | length' 2>/dev/null || echo 0)
-    if [ "${absent_lines:-0}" -eq 0 ]; then
-        ok T-B/logs-negative-control "querying for a marker that was never emitted anywhere returns zero log lines through the identical query path -- the positive result above is attributable, not a query that always reports 'found'"
+    absent_lines=$(loki_query "{namespace=\"default\"} |= \"${absent_marker}\"" /tmp/t-b-logs-absent-response)
+    if [ -z "$absent_lines" ]; then
+        fail T-B/logs-negative-control "the Loki query itself never succeeded/parsed for the never-emitted marker either -- inconclusive, not a genuine negative-control pass: $(head -c 500 /tmp/t-b-logs-absent-response)"
+    elif [ "$absent_lines" -eq 0 ]; then
+        ok T-B/logs-negative-control "querying for a marker that was never emitted anywhere returns zero log lines through the identical, successfully-parsed query path -- the positive result above is attributable, not a query that always reports 'found'"
     else
-        fail T-B/logs-negative-control "expected zero results for a never-emitted marker, got $absent_lines -- the query oracle may be vacuous: $(echo "$absent_result" | head -c 500)"
+        fail T-B/logs-negative-control "expected zero results for a never-emitted marker, got $absent_lines -- the query oracle may be vacuous: $(head -c 500 /tmp/t-b-logs-absent-response)"
     fi
 else
     fail T-B/logs-marker-ingested-and-queried "no loki-type datasource found via Grafana's own API: $(echo "$grafana_ds_list" | head -c 500)"
