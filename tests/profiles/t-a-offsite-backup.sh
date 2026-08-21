@@ -350,6 +350,20 @@ sed -i 's|^\(  BACKUP_DESTINATION: \).*|\1"local:/var/lib/scrap-backup"|' "$LIVE
 rm -rf "$LIVEDIR3"
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
+# REAL BUG, found live by this exact check failing on a real run: this
+# revert step was missing the `flux reconcile kustomization
+# platform-backup --with-source` call that the forward Phase-3 swap
+# (above) has always had. platform-backup is the Kustomization that
+# actually owns the scrap-backup CronJob and does the
+# postBuild.substituteFrom templating of ${BACKUP_DESTINATION} --
+# without forcing it, the revert relies on Flux's own default
+# reconcile interval to notice the new git commit, which is not
+# bounded by anything this script waits for. The read below then races
+# a Kustomization that hasn't reconciled yet, exactly the way Finding
+# 1's old vacuous readiness oracle would have masked: before that fix,
+# "not ready" could never be detected here either, so this asymmetry
+# could have been silently racy for as long as the file has existed.
+flux reconcile kustomization platform-backup --with-source >/dev/null 2>&1 || true
 flux reconcile kustomization platform-secrets --with-source >/dev/null 2>&1 || true
 
 reverted_dest=$(kc get cronjob -n scrap-backup scrap-backup -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].env[?(@.name=="RESTIC_REPOSITORY")].value}' 2>/dev/null || true)
