@@ -193,11 +193,23 @@ kc get kustomizations -A || true
 # this live cluster: no Grafana workload exists anywhere, in any
 # namespace. Enabling capabilities/grafana/ (T-B's own extension) must
 # never leak into the minimal profile it's entirely separate from.
-grafana_present=$(kc get deployments -A -l app.kubernetes.io/name=grafana --no-headers 2>/dev/null | wc -l)
-if [ "${grafana_present:-0}" -eq 0 ]; then
-    ok T-A/grafana-absent "no Grafana workload exists anywhere in the minimal profile's cluster -- capabilities/grafana/ is genuinely optional, not silently on"
+#
+# REAL BUG, found via an independent review (PLAT-11): the same
+# pipeline-loses-exit-status class `wait_for_pod_gone` (lib.sh) was
+# fixed for -- piping `kc get ... | wc -l` loses kubectl's OWN exit
+# status, so a failed query (API hiccup, RBAC error) produced empty
+# stdout, `wc -l` reported "0", and that read as "genuinely absent"
+# indistinguishable from a real empty result. Fixed the same way:
+# kubectl's own exit status gates the check directly, so a query
+# failure is reported as inconclusive (fail, not "absent").
+if grafana_deployments=$(kc get deployments -A -l app.kubernetes.io/name=grafana --no-headers 2>/dev/null); then
+    if [ -z "$grafana_deployments" ]; then
+        ok T-A/grafana-absent "no Grafana workload exists anywhere in the minimal profile's cluster -- capabilities/grafana/ is genuinely optional, not silently on"
+    else
+        fail T-A/grafana-absent "expected zero Grafana deployments in the minimal profile, found: $grafana_deployments"
+    fi
 else
-    fail T-A/grafana-absent "expected zero Grafana deployments in the minimal profile, found $grafana_present"
+    fail T-A/grafana-absent "kubectl query for Grafana deployments failed -- command/API failure is not proof of absence"
 fi
 
 # 2b. The gap tests/profiles/README.md itself already found: a live value

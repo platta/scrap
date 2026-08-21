@@ -48,6 +48,17 @@ def run(root: Path) -> list[str]:
             continue
         readme = entry / "README.md"
         if not readme.exists():
+            # REAL BUG, found via an independent review (PLAT-11): silently
+            # skipping a capability directory with no README.md at all let
+            # a capability evade this check entirely -- the honesty gate
+            # this file exists to enforce requires *some* README to bear
+            # one of the two markers, so a missing README is itself a
+            # release-truth violation, not a reason to look away.
+            violations.append(
+                f"{rel(root, entry)}: no README.md -- capability status is "
+                f"unstated; must contain either '{IMPLEMENTED_MARKER}' or "
+                f"'{PENDING_MARKER}'"
+            )
             continue
         try:
             text = _normalize(readme.read_text())

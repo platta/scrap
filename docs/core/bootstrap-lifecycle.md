@@ -1,8 +1,10 @@
 # Bootstrap lifecycle
 
 **CORE.** Implemented (`bootstrap/`) — this is the documented sequence the implementation follows,
-exercised end-to-end (steps 1–6) by every `tests/profiles/` from-zero run, every push/PR; see
-`docs/release-readiness.md`.
+exercised end-to-end (steps 1–7) by every `tests/profiles/` from-zero run, every push/PR; see
+`docs/release-readiness.md`. One honest exception, in step 7 below: `bootstrap/postflight.sh`
+itself does not verify a restore — see the note under step 7 for what actually discharges that
+line of the frozen spec, and where.
 
 ## Minimum / offline path
 
@@ -24,6 +26,21 @@ exercised end-to-end (steps 1–6) by every `tests/profiles/` from-zero run, eve
    instructions printed; a backup ran; **a restore was verified**, not merely attempted; the
    alerting-receiver state is reported explicitly — including, honestly, "no receiver configured,
    you will not be told if backups stop" when that's true.
+
+   **Deliberate deviation from the frozen wording, found implementing `bootstrap/postflight.sh`:**
+   a fresh install has no application data yet, so postflight cannot verify *a restore* without
+   restoring something real — there is nothing backed up to restore. `postflight.sh` proves only
+   that the backup *engine* runs (it triggers an immediate job and waits for it to succeed) and
+   says so plainly, under its own "HONEST LIMIT" heading, rather than implying more. The frozen
+   requirement is still discharged, just not by this script: `tests/profiles/t-a-minimal.sh`
+   destructively deletes real data (application-level delete *and* the on-disk file, so the
+   destroy step can't be a no-op) and restores it via restic, verified through the original
+   application pod by the exact value that was destroyed — every push/PR, not merely attempted.
+   The same procedure is documented for a real operator's first backed-up application in
+   `docs/runbooks/README.md`. `bootstrap/install.sh` also discards `postflight.sh`'s own exit
+   status (`|| true`, `bootstrap/install.sh:382`) by design — the postflight report is meant to
+   inform the operator, not gate the install; only CI machine-checks its postconditions, in
+   `t-a-minimal.sh`.
 
 ## Additional steps introduced by supported capabilities
 
