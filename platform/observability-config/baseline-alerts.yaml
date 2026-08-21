@@ -37,7 +37,19 @@ spec:
     - name: golden-path.node
       rules:
         - alert: NodeDown
-          expr: up{job="kube-prometheus-stack-prometheus-node-exporter"} == 0
+          # REAL DEFECT, found via an independent review, confirmed by
+          # rendering the pinned chart (kube-prometheus-stack 88.3.0)
+          # locally with `helm template` and reading the actual
+          # ServiceMonitor: it sets `jobLabel: jobLabel`, meaning
+          # Prometheus takes the job label's VALUE from whichever label
+          # ON THE SERVICE is keyed "jobLabel" -- which the chart sets to
+          # the literal string "node-exporter", not
+          # "kube-prometheus-stack-prometheus-node-exporter" (the naive
+          # release-name+chart-name guess this used to say). With the old
+          # selector this alert could never match a single real time
+          # series -- a silent, permanent no-op, exactly the class of bug
+          # this milestone exists to find.
+          expr: up{job="node-exporter"} == 0
           for: 5m
           labels: { severity: critical }
           annotations:

@@ -566,6 +566,31 @@ if [ -n "$ds_uid" ]; then
     else
         fail T-B/grafana-real-prometheus-query "datasource found (uid=$ds_uid) but querying through it returned no time series: $(echo "$query_result" | head -c 500)"
     fi
+
+    # 3f2. The golden-path NodeDown alert's own selector, queried live,
+    # the same way Prometheus itself evaluates it.
+    #
+    # REAL BUG, found by an independent review and confirmed by
+    # rendering the pinned kube-prometheus-stack chart locally with
+    # `helm template`: platform/observability-config/baseline-alerts.yaml
+    # used to select up{job="kube-prometheus-stack-prometheus-node-exporter"}
+    # -- a guess at the chart's fullname convention. The node-exporter
+    # ServiceMonitor actually sets `jobLabel: jobLabel`, which tells
+    # Prometheus to read the job value from the Service's own "jobLabel"
+    # label, whose value the chart sets to the literal "node-exporter".
+    # The old selector could never match a single real time series --
+    # a silently permanent no-op, structurally identical to Finding 1's
+    # vacuous readiness check. This assertion is the oracle that would
+    # have caught it: it queries the alert's exact selector against the
+    # real running cluster and requires it to match something.
+    nodedown_query_result=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
+        "https://grafana.${BASE_DOMAIN}/api/datasources/proxy/uid/${ds_uid}/api/v1/query?query=up%7Bjob%3D%22node-exporter%22%7D" 2>/dev/null || true)
+    nodedown_result_count=$(echo "$nodedown_query_result" | jq -r '.data.result | length' 2>/dev/null || echo 0)
+    if [ "${nodedown_result_count:-0}" -gt 0 ]; then
+        ok T-B/grafana-nodedown-selector-matches "the NodeDown alert's exact selector, up{job=\"node-exporter\"}, matches $nodedown_result_count real time series -- the alert can actually fire"
+    else
+        fail T-B/grafana-nodedown-selector-matches "up{job=\"node-exporter\"} matched zero live time series -- the NodeDown alert is a silent no-op: $(echo "$nodedown_query_result" | head -c 500)"
+    fi
 else
     fail T-B/grafana-real-prometheus-query "no prometheus-type datasource found via Grafana's own API: $(echo "$ds_list" | head -c 500)"
 fi
