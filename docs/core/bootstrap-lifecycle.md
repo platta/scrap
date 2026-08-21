@@ -1,7 +1,8 @@
 # Bootstrap lifecycle
 
-**CORE.** Not yet implemented (`bootstrap/`) — this is the documented sequence the implementation
-must follow.
+**CORE.** Implemented (`bootstrap/`) — this is the documented sequence the implementation follows,
+exercised end-to-end (steps 1–6) by every `tests/profiles/` from-zero run, every push/PR; see
+`docs/release-readiness.md`.
 
 ## Minimum / offline path
 
