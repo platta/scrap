@@ -175,8 +175,27 @@ wait_for_pod_gone() {
     ns="$1"; selector="$2"; iterations="${3:-12}"
     i=0
     while [ "$i" -lt "$iterations" ]; do
-        count=$(kc get pods -n "$ns" -l "$selector" --no-headers 2>/dev/null | wc -l)
-        [ "${count:-1}" -eq 0 ] 2>/dev/null && { echo ok; return 0; }
+        # REAL BUG, found live via an independent review: piping
+        # `kc get pods ... | wc -l` loses kubectl's OWN exit status --
+        # the pipeline's exit code is wc's (always 0), not kubectl's. A
+        # failed kubectl invocation (API server hiccup, RBAC error,
+        # transient network issue) produces empty stdout on its own
+        # `2>/dev/null`-discarded failure, which `wc -l` then reports as
+        # "0 lines" -- indistinguishable from "kubectl succeeded and
+        # genuinely found nothing". That let a real API failure
+        # green-light "pod gone" and, downstream, a restore proceeding
+        # while a pod might still actually own/use the PVC -- precisely
+        # the race this helper exists to prevent. Fixed by running
+        # kubectl directly in the `if` condition (no pipe to wc at all):
+        # its own exit status is what gates the "ok" path now, so a
+        # failure is treated as inconclusive (retry), never as
+        # confirmation.
+        if output=$(kc get pods -n "$ns" -l "$selector" --no-headers 2>/dev/null); then
+            if [ -z "$output" ]; then
+                echo ok
+                return 0
+            fi
+        fi
         sleep 5
         i=$((i + 1))
     done

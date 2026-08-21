@@ -94,7 +94,29 @@ data:
             pod=$(kubectl get pod -n "$ns" -l "$selector" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
             if [ -n "$pod" ]; then
                 echo "==> $ns/$name: running consistency command in pod $pod: $cmd"
-                kubectl exec -n "$ns" "$pod" -- sh -c "$cmd"
+                # REAL BUG, found live via an independent review: this was
+                # a bare, unguarded statement under the script's own
+                # top-level `set -eu`. A failing consistency command (a
+                # real, expected failure mode -- e.g. the target database
+                # briefly unavailable) would trip `errexit` and abort the
+                # ENTIRE discovery loop immediately, silently skipping
+                # every PVC ordered after this one in the same run -- no
+                # attributable FAIL record for them, no backup attempt
+                # either, while prune continued aging out their older
+                # snapshots regardless. The restic invocation a few lines
+                # below already has the right shape (`if ! restic ...;
+                # then echo FAIL; status=1; fi`) -- this now matches it:
+                # a failure here is recorded and counted, but the loop
+                # continues on to the next PVC, and this PVC's own
+                # `restic backup` call still runs (matching the existing
+                # "no pod found" WARN-and-continue precedent immediately
+                # below -- an inconsistent-but-present backup beats none
+                # at all, and either way it's this instance's decision to
+                # make, not this script's, once it's visible).
+                if ! kubectl exec -n "$ns" "$pod" -- sh -c "$cmd"; then
+                    echo "FAIL  $ns/$name: consistency command failed -- backing up without a consistent snapshot"
+                    status=1
+                fi
             else
                 echo "WARN  $ns/$name: consistency-pod-selector '$selector' matched no pod -- backing up without it"
             fi

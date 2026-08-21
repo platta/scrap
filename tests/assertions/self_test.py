@@ -39,11 +39,13 @@ FIXTURES = REPO_ROOT / "tests" / "fixtures" / "violations"
 FIXTURE_CASES = [
     ("core-boundary", check_core_boundary),
     ("floating-tag", check_image_pinning),
+    ("helm-split-image", check_image_pinning),
     ("cert-in-apps", check_no_cert_in_apps),
     ("tls-issuer-in-apps", check_tls_issuer_not_in_apps),
     ("unreserved-port", check_reserved_ports),
     ("undefined-var", check_instance_literals),
     ("ip-literal", check_instance_literals),
+    ("ip-literal-in-url", check_instance_literals),
     ("cyclic-dag", check_kustomization_dag),
     ("issuer-ordering", check_kustomization_dag),
     ("issuer-ordering-template-token", check_kustomization_dag),

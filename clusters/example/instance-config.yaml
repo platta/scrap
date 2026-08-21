@@ -81,6 +81,21 @@ data:
   # docs/core/recovery-model.md for exactly what each choice buys.
   BACKUP_DESTINATION: "local:/var/lib/scrap-backup"
 
+  # A ceiling on how long one backup/prune/check attempt is allowed to run
+  # before Kubernetes itself kills it and marks the Job Failed
+  # (reason=DeadlineExceeded) -- see platform/backup/README.md's own "Every
+  # job here is bounded, not just scheduled" section for the real hang
+  # this was found through. 600 (10 minutes) is generous for this
+  # reference instance's own tiny example workloads (confirmed live: a
+  # real backup here completes in single-digit seconds); a real install
+  # with a genuinely large first off-site backup, or a slow prune/check
+  # against a large repository, may legitimately need longer -- raise
+  # this instance-config value rather than editing platform/backup/
+  # directly, which would defeat the point of it being an instance
+  # setting at all (T2: adding an app, or tuning an instance value, never
+  # requires editing platform/).
+  BACKUP_JOB_DEADLINE_SECONDS: "600"
+
   # apps/examples/p6-external-proxy/'s demonstration backend -- a NAS, a
   # router admin UI, a hypervisor console, anything real on your LAN with
   # no identity or TLS of its own. RFC 5737 documentation address below:

@@ -30,11 +30,13 @@ spec:
       # visible failure. This is the direct fix: Kubernetes itself kills
       # the pod and marks the Job Failed (reason DeadlineExceeded) if one
       # attempt runs this long, converting an unbounded hang into a
-      # bounded, visible failure. 10 minutes is generous for this
-      # instance's own real workloads (a real backup here completes in
-      # single-digit seconds -- confirmed live) while still being a real
-      # ceiling, not a rubber stamp.
-      activeDeadlineSeconds: 600
+      # bounded, visible failure. Instance-configurable, not hardcoded --
+      # see clusters/example/instance-config.yaml's own
+      # BACKUP_JOB_DEADLINE_SECONDS comment for why a fixed platform-code
+      # value would have made this uneditable through any supported
+      # instance seam for a real install whose backups genuinely take
+      # longer than this reference instance's own tiny example workloads.
+      activeDeadlineSeconds: ${BACKUP_JOB_DEADLINE_SECONDS}
       template:
         spec:
           serviceAccountName: scrap-backup

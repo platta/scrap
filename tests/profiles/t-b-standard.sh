@@ -154,7 +154,17 @@ log "T-B: Phase 3/4: T-B postconditions"
 kustomizations_ready=""
 i=0
 while [ "$i" -lt 90 ]; do
-    not_ready=$(kc get kustomizations -A --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$5); if ($5!="True") print $2}')
+    # REAL BUG, found live: the previous awk -F'\t' ... $5 parsing of
+    # kubectl's SPACE-padded (not tab-separated) table output was vacuous
+    # -- always reported every Kustomization Ready regardless of true
+    # state. See tests/profiles/t-a-minimal.sh's own comment at the
+    # identical fix for the full root-cause writeup.
+    not_ready=$(kc get kustomizations -A -o json | jq -r '
+        .items[] |
+        (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+        select($ready != "True") |
+        "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+    ')
     if [ -z "$not_ready" ]; then
         kustomizations_ready=1
         break

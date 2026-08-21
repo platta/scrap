@@ -92,7 +92,17 @@ setup_kubeconfig
 kustomizations_ready=""
 i=0
 while [ "$i" -lt 90 ]; do
-    not_ready=$(kc get kustomizations -A --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$5); if ($5!="True") print $2}')
+    # REAL BUG, found live: the previous awk -F'\t' ... $5 parsing of
+    # kubectl's SPACE-padded (not tab-separated) table output was vacuous
+    # -- always reported every Kustomization Ready regardless of true
+    # state. See tests/profiles/t-a-minimal.sh's own comment at the
+    # identical fix for the full root-cause writeup.
+    not_ready=$(kc get kustomizations -A -o json | jq -r '
+        .items[] |
+        (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+        select($ready != "True") |
+        "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+    ')
     if [ -z "$not_ready" ]; then
         kustomizations_ready=1
         break
@@ -375,8 +385,26 @@ if [ "$restore_result" = ok ]; then
         # just becomes the condition's own result, which is exactly what
         # this needs to check without killing the script on the very
         # failure it exists to detect and report.
+        # REAL BUG, found live via an independent review: the original
+        # single `sh -c 'gunzip -c ... | psql ...'` pipeline's own exit
+        # status is POSIX-defined as the LAST command's (psql's) exit
+        # status only -- neither dash nor a real POSIX sh enables
+        # pipefail by default, and this pod's own shell isn't ours to
+        # configure. A gunzip failure partway through (a truncated or
+        # corrupted .gz) would still let psql process whatever partial
+        # SQL text it received; if that truncation happened to land on a
+        # clean statement boundary, psql could exit 0 having genuinely
+        # run every statement it was ever given, with no ERROR line and
+        # a fully-functional (but silently incomplete) database --
+        # passing every check below despite real data loss. Split into
+        # two SEQUENTIAL, independently-checked steps under `set -eu`
+        # instead of one piped command: gunzip decompresses to a real
+        # file first, and its own exit code is checked BEFORE psql ever
+        # runs at all -- no pipefail needed, portable to whatever /bin/sh
+        # this container actually ships (POSIX `set -e` on a plain
+        # command sequence needs no shell-specific extension).
         if reload_log=$(kc exec -n authentik "$new_pg_pod" -- sh -c \
-            'gunzip -c /bitnami/postgresql/scrap-backup/pg_dump.sql.gz | PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE")" psql -U authentik -d authentik -v ON_ERROR_STOP=1' 2>&1); then
+            'set -eu; gunzip -c /bitnami/postgresql/scrap-backup/pg_dump.sql.gz > /tmp/pg_dump_reload.sql; PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE")" psql -U authentik -d authentik -v ON_ERROR_STOP=1 -f /tmp/pg_dump_reload.sql' 2>&1); then
             reload_exit=0
         else
             reload_exit=$?

@@ -84,10 +84,17 @@ here previously bounded that. `backoffLimit` alone doesn't help; it bounds pod *
 container exits, not how long one attempt is allowed to keep running. `concurrencyPolicy: Forbid`
 on all three CronJobs means an unbounded hang here also silently blocks every future scheduled run
 from ever starting -- a stuck backup becomes "no backups at all," which is worse than a fast,
-visible failure. Every CronJob here sets `activeDeadlineSeconds: 600` -- generous for this
-platform's own real workloads (confirmed live: a real backup completes in single-digit seconds),
-short enough that a genuinely stuck attempt still resolves to a visible `Job` failure
-(`DeadlineExceeded`) instead of running forever.
+visible failure. Every CronJob here sets `activeDeadlineSeconds: ${BACKUP_JOB_DEADLINE_SECONDS}` --
+an **instance-configurable** value (`clusters/<name>/instance-config.yaml`, default 600 = 10
+minutes), not a value hardcoded into this platform-owned manifest. That distinction matters: a
+fixed platform-code value would have meant a real install whose off-site backups (or a prune/check
+against a genuinely large repository) legitimately need longer than this reference instance's own
+tiny example workloads (confirmed live: a real backup here completes in single-digit seconds) could
+only raise the ceiling by editing `platform/` directly -- exactly the instance-configuration
+violation `docs/core/configuration-model.md` exists to prevent. Raise
+`BACKUP_JOB_DEADLINE_SECONDS` in your own instance config instead; short enough by default that a
+genuinely stuck attempt still resolves to a visible `Job` failure (`DeadlineExceeded`) instead of
+running forever.
 
 ## Credential isolation
 

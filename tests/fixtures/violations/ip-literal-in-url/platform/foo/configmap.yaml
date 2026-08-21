@@ -1,0 +1,11 @@
+# VIOLATION: a literal IP address inside a URL path, outside clusters/.
+# check_instance_literals.py must catch this -- the specific bypass an
+# independent review found: an IP immediately followed by a URL path
+# separator ("/api") was wrongly exempted by a regex meant only to exempt
+# CIDR notation ("10.0.0.0/8"). See that check's own comment for the fix.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: foo
+data:
+  upstream: "http://10.43.4.7/api"

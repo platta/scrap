@@ -22,7 +22,15 @@ from pathlib import Path
 from common import find_repo_root, iter_yaml_files, iter_yaml_docs, rel
 
 VAR_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
-IPV4_RE = re.compile(r"(?<![\w.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?!/)(?![\w.])")
+# REAL BUG, found live via an independent review, confirmed by actually
+# running the old pattern: the trailing lookahead was `(?!/)` -- meant to
+# exempt CIDR notation ("10.0.0.0/8"), but a bare "not followed by a
+# slash" ALSO exempts any IP immediately followed by a URL path, e.g.
+# "http://10.43.4.7/api" -- confirmed live, that string produced zero
+# matches under the old regex. Narrowed to `(?!/\d)`: only a slash
+# immediately followed by a digit (a real CIDR prefix length) is exempt
+# now; a slash followed by anything else (a path, or nothing) is not.
+IPV4_RE = re.compile(r"(?<![\w.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?!/\d)(?![\w.])")
 EXEMPT_IPS = {"127.0.0.1", "0.0.0.0"}
 SCAN_DIRS = ("platform", "capabilities", "apps", "components", "bootstrap")
 

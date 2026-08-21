@@ -146,13 +146,103 @@ log "T-A: Phase 3/4: T-A postconditions"
 # already waited for this; re-check explicitly here so a CI failure names
 # this specific postcondition rather than relying on postflight's exit
 # code (which install.sh deliberately ignores with '|| true').
-not_ready=$(kc get kustomizations -A --no-header 2>/dev/null | awk -F'\t' '{gsub(/ /,"",$5); if ($5!="True") print $2}')
+#
+# REAL BUG, found live via an independent review and confirmed against
+# this exact repository's own CI log bytes (not assumed): kubectl's
+# human-readable table output pads columns with SPACES, not tab
+# characters -- `cat -A` on a real captured T-A run's own
+# `kc get kustomizations -A` output showed zero ^I markers anywhere.
+# The previous version of this line (`awk -F'\t' ... $5 ...`) therefore
+# never found more than one field on any row; `$5` was always empty,
+# `gsub` a no-op on it, and `$5!="True"` was true for every single
+# Kustomization every time, unconditionally -- awk printed one blank
+# line per Kustomization ($2 was equally always-empty), and since that
+# entire captured stdout consisted of NOTHING BUT newlines, shell
+# command substitution's own trailing-newline-stripping collapsed it
+# to a completely empty string. `not_ready` was therefore ALWAYS empty
+# and this check could never have failed, regardless of the real
+# Kustomization state -- a vacuous oracle, not a working one. Replaced
+# with real JSON and a real Ready-condition lookup: the same object
+# model `kc get certificate ... -o jsonpath='...status.conditions...'`
+# already relies on elsewhere in this exact script, not a second,
+# fragile text-table parser. A Kustomization with no Ready condition at
+# all (not yet reconciled) reads as "Unknown", not "True" -- fails open,
+# not open-by-accident.
+not_ready=$(kc get kustomizations -A -o json | jq -r '
+    .items[] |
+    (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+    select($ready != "True") |
+    "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+')
 if [ -z "$not_ready" ]; then
     ok T-A/kustomizations-ready "every Flux Kustomization is Ready"
 else
     fail T-A/kustomizations-ready "not Ready: $not_ready"
 fi
 kc get kustomizations -A || true
+
+# NEGATIVE CONTROL, DO NOT KEEP: proving the corrected readiness oracle
+# above can actually turn red, the same discipline already applied
+# elsewhere in this project. The OLD oracle (awk -F'\t' text-table
+# parsing) could never fail regardless of real state -- see this
+# check's own comment a few lines up for the full root-cause writeup.
+# Deliberately breaks a REAL, live Kustomization (points apps-examples at
+# a path that doesn't exist), confirms the SAME jq-based check above now
+# genuinely reports it not_ready, then reverts and confirms recovery --
+# never leaving live breakage behind.
+neg_orig_path=$(kc get kustomization -n flux-system apps-examples -o jsonpath='{.spec.path}')
+kc patch kustomization -n flux-system apps-examples --type=merge \
+    -p '{"spec":{"path":"./this-path-does-not-exist-negative-control"}}' >/dev/null
+flux reconcile kustomization apps-examples --with-source >/dev/null 2>&1 || true
+neg_seen=""
+i=0
+while [ "$i" -lt 24 ]; do
+    neg_check=$(kc get kustomizations -A -o json | jq -r '
+        .items[] |
+        (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+        select($ready != "True") |
+        "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+    ')
+    if [ -n "$neg_check" ]; then
+        neg_seen=1
+        break
+    fi
+    sleep 5
+    i=$((i + 1))
+done
+echo "      --- negative control: readiness check while apps-examples is deliberately broken ---"
+echo "      $neg_check"
+if [ -n "$neg_seen" ]; then
+    ok T-A/kustomizations-ready-negative-control "the corrected readiness oracle genuinely turned red for a real, live NotReady Kustomization (apps-examples: $neg_check)"
+else
+    fail T-A/kustomizations-ready-negative-control "the readiness oracle STILL reported nothing wrong with apps-examples deliberately broken -- the oracle cannot turn red"
+fi
+
+# Revert -- same mechanism, reversed.
+kc patch kustomization -n flux-system apps-examples --type=merge \
+    -p "{\"spec\":{\"path\":\"$neg_orig_path\"}}" >/dev/null
+flux reconcile kustomization apps-examples --with-source >/dev/null 2>&1 || true
+neg_reverted=""
+i=0
+while [ "$i" -lt 24 ]; do
+    neg_check2=$(kc get kustomizations -A -o json | jq -r '
+        .items[] |
+        (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+        select($ready != "True") |
+        "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+    ')
+    if [ -z "$neg_check2" ]; then
+        neg_reverted=1
+        break
+    fi
+    sleep 5
+    i=$((i + 1))
+done
+if [ -n "$neg_reverted" ]; then
+    ok T-A/kustomizations-ready-negative-control-revert "reverting apps-examples's path brought every Kustomization back to Ready"
+else
+    fail T-A/kustomizations-ready-negative-control-revert "apps-examples did not recover to Ready after reverting its path -- got: $neg_check2"
+fi
 
 # 2a2. Grafana is genuinely absent from Minimal -- not inferred from "T-A
 # never copies capabilities/grafana/ in," but checked directly against
@@ -242,6 +332,71 @@ else
     fail T-A/backup-runs "backup job did not succeed -- see: kubectl logs -n scrap-backup job/$BACKUP_JOB"
     kc logs -n scrap-backup "job/$BACKUP_JOB" || true
 fi
+
+# NEGATIVE CONTROL, DO NOT KEEP: proving platform/backup/'s discovery
+# loop genuinely continues past a FAILING consistency command to reach a
+# later PVC, rather than aborting the whole run under the script's own
+# `set -eu` -- see platform/backup/scripts-configmap.yaml's own comment
+# at the fix for the full root-cause writeup. A temporary, live-only PVC
+# ("negctl-pvc", named to sort alphabetically BEFORE p5-redis-data within
+# the same namespace, so discovery reaches it first) with a consistency
+# command guaranteed to fail ("false"), backed by a real, bound
+# local-path PV (a minimal Pod actually mounts it, forcing
+# WaitForFirstConsumer binding) -- never committed to any file, applied
+# directly against the live cluster and deleted again below.
+kc apply -f - >/dev/null <<'NEGCTL_EOF'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: negctl-pvc
+  namespace: scrap-examples
+  labels:
+    backup.scrap.io/enabled: "true"
+  annotations:
+    backup.scrap.io/consistency-command: "false"
+    backup.scrap.io/consistency-pod-selector: "app=negctl"
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 64Mi } }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: negctl-pod
+  namespace: scrap-examples
+  labels: { app: negctl }
+spec:
+  containers:
+    - name: negctl
+      image: alpine:3.20
+      command: ["sleep", "infinity"]
+      volumeMounts:
+        - { name: data, mountPath: /data }
+  volumes:
+    - name: data
+      persistentVolumeClaim: { claimName: negctl-pvc }
+NEGCTL_EOF
+neg5_pod_ready=$(wait_for_pod_ready scrap-examples app=negctl 24)
+if [ "$neg5_pod_ready" != ok ]; then
+    fail T-A/backup-discovery-negative-control "the temporary negctl pod never became Ready -- can't run this negative control"
+    kc describe pod -n scrap-examples negctl-pod 2>&1 | tail -30 || true
+else
+    NEG5_JOB="t-a-negctl-backup-$(date +%s)"
+    kc create job -n scrap-backup "$NEG5_JOB" --from=cronjob/scrap-backup >/dev/null
+    neg5_result=$(wait_for_job scrap-backup "$NEG5_JOB" 24)
+    neg5_log=$(kc logs -n scrap-backup "job/$NEG5_JOB" 2>&1 || true)
+    echo "      --- negative-control backup job log (negctl's consistency command deliberately fails) ---"
+    echo "$neg5_log" | sed 's/^/      /'
+    neg5_attributed=$(echo "$neg5_log" | grep -c "FAIL  scrap-examples/negctl-pvc: consistency command failed" || true)
+    neg5_p5_ran=$(echo "$neg5_log" | grep -c "scrap-examples/p5-redis-data: backing up" || true)
+    if [ "${neg5_attributed:-0}" -ge 1 ] && [ "${neg5_p5_ran:-0}" -ge 1 ]; then
+        ok T-A/backup-discovery-negative-control "negctl-pvc's failing consistency command was logged as an attributable FAIL, AND discovery continued on to back up p5-redis-data in the SAME run -- one bad PVC no longer aborts the whole discovery loop"
+    else
+        fail T-A/backup-discovery-negative-control "expected an attributable FAIL for negctl-pvc (found $neg5_attributed) AND p5-redis-data still being processed (found $neg5_p5_ran) in the same run -- see the job log above"
+    fi
+fi
+kc delete pod -n scrap-examples negctl-pod --ignore-not-found >/dev/null 2>&1 || true
+kc delete pvc -n scrap-examples negctl-pvc --ignore-not-found >/dev/null 2>&1 || true
 
 # 2f. Destructive restore, verified by a specific named value -- exactly
 # docs/runbooks/README.md's "Single-application destructive restore"

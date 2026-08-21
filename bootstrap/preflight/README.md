@@ -7,7 +7,7 @@ per line.
 
 | Script | Checks | Blocks on failure? |
 |---|---|---|
-| `check-prerequisites.sh` | `curl`, `git`, `age-keygen` are installed | yes |
+| `check-prerequisites.sh` | `curl`, `git`, `age-keygen`, `sops` are installed; if `REPO_URL` is unset (the D5 local-git minimum path), an SSH server is actually listening on port 22 -- Flux's own ongoing reconciliation depends on it, not just this script's one-time seeding | yes |
 | `check-arch.sh` | x86-64 or arm64 | yes |
 | `check-cgroups.sh` | cgroup v2 (unified hierarchy) active | yes |
 | `check-disk.sh` | ≥10GB free on the filesystem `/var/lib` will live on | yes |

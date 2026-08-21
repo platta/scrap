@@ -147,7 +147,30 @@ if [ -z "${REPO_URL:-}" ]; then
     echo "'$GIT_USER' (the D5 minimum path: no hosted Git, no internet required): $BARE_REPO"
 
     mkdir -p "$(dirname "$BARE_REPO")"
-    if [ ! -d "$BARE_REPO" ]; then
+    # REAL BUG, found live via an independent review: gating this whole
+    # seeding block on the BARE REPO DIRECTORY'S EXISTENCE, not on
+    # whether seeding actually finished, meant `git init --bare` (which
+    # creates that directory as its very first action) made the
+    # directory exist well before the branch was ever pushed into it. A
+    # bootstrap interrupted anywhere between that `git init` and the
+    # final `git push` a few lines down -- network hiccup, disk full,
+    # the process killed -- would, on RERUN, see the directory already
+    # there and skip seeding entirely, leaving Flux bootstrapped against
+    # a genuinely empty repository. Nothing downstream turns that into a
+    # hard failure: postflight.sh's own "wait for Kustomizations Ready"
+    # loop requires `$total -gt 0` to ever report "ok", so on zero
+    # Kustomizations it just spins for its own 5-minute deadline and
+    # falls through to WARN-only checks -- and install.sh calls
+    # postflight with `|| true`, discarding its exit code regardless.
+    # The net result: a silently hollow "successful" install. The real
+    # durable marker of successful seeding is the branch ref actually
+    # existing in the bare repo, which only happens after a completed
+    # push -- not the directory existing, which happens before any of
+    # the real work. `git init --bare` on an already-existing bare
+    # repository is safe and idempotent (confirmed: real git behavior,
+    # no data loss), so re-entering this block on a previously-
+    # interrupted, partially-seeded repo is safe.
+    if ! git --git-dir="$BARE_REPO" rev-parse --verify --quiet "refs/heads/$REPO_BRANCH" >/dev/null 2>&1; then
         git init --bare -b "$REPO_BRANCH" "$BARE_REPO" >/dev/null
         chown -R "$GIT_USER" "$(dirname "$BARE_REPO")"
         # WORKDIR is created by `mktemp -d` as root (this script runs under
