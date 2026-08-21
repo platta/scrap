@@ -27,6 +27,8 @@ python3 tests/assertions/self_test.py     # proves each check catches its fixtur
 | `check_kustomization_dag.py` | The Flux `Kustomization` dependency graph is acyclic; no `Certificate` names an `issuerRef` that isn't guaranteed to exist by the dependency graph |
 | `check_helm_strict.py` | Every `HelmRelease` renders under `helm template` and passes `helm lint --strict` — see the script's own docstring for what this does and does **not** guarantee, found by actually running it |
 | `check_bootstrap_git_snapshot.py` | `bootstrap/install.sh`'s Git-source seeding step never blindly copies this checkout's own `.git` directory (`cp -a "$X/." "$Y/"`) into the fresh instance's working directory — the pattern a real, root-caused bootstrap flake ("Directory not empty") traced back to |
+| `check_dr_quiesce_ordering.py` | A DR restore script scales the full DB-connected tier to zero *before* running `restic restore`, never after — the ordering a real corruption incident traced back to |
+| `check_capability_status_honesty.py` | Every `capabilities/<name>/README.md` self-declares its current implementation status via an explicit `IMPLEMENTED, LIVE-TESTED` or `DESIGNED, NOT YET IMPLEMENTED` marker — not both, not neither — so a design document can never silently read as a shipped feature (see `docs/release-readiness.md`) |
 
 ## Why each check has a fixture
 

@@ -1,14 +1,17 @@
 # capabilities/public-ingress/
 
-**FULLY SUPPORTED.** Depends on `platform/ingress/`. Strongly recommended alongside
-`capabilities/public-tls/`, though not required by it (see that directory's README — public trust
-and public exposure are independent choices).
+**Architectural classification: FULLY SUPPORTED.** **Current implementation status: DESIGNED, NOT
+YET IMPLEMENTED** — this directory contains only this README; no `Kustomization`, `HelmRelease`, or
+other manifest exists yet, so there is nothing to enable. See `docs/release-readiness.md` for the
+current, repository-wide proven/unproven/deferred snapshot.
 
-Makes the platform Gateway reachable from the public internet: router port-forwarding, or a tunnel
-provider for users behind CGNAT or without router control. Includes split-horizon DNS guidance so
-that LAN clients and internet clients resolving the same hostname do not depend on router NAT
-hairpin behavior working correctly — a real, previously undiagnosed dependency in the reference
-implementation.
+Once built, this is intended to depend on `platform/ingress/` and to be strongly recommended
+alongside `capabilities/public-tls/` (though not required by it — public trust and public exposure
+are independent choices, see that directory's own README). The design: make the platform Gateway
+reachable from the public internet via router port-forwarding, or a tunnel provider for users
+behind CGNAT or without router control, with split-horizon DNS guidance so that LAN clients and
+internet clients resolving the same hostname don't depend on router NAT hairpin behavior working
+correctly — a real, previously undiagnosed dependency in the reference implementation.
 
 ## New assumptions this introduces
 

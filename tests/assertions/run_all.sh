@@ -19,6 +19,7 @@ CHECKS=(
   check_helm_strict
   check_bootstrap_git_snapshot
   check_dr_quiesce_ordering
+  check_capability_status_honesty
 )
 
 FAIL=0

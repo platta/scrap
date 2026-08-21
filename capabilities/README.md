@@ -1,9 +1,14 @@
 # capabilities/
 
-**FULLY SUPPORTED.** Every capability here is designed, configured, documented, tested, and
-maintained by this project — a failure here is a SCRAP bug, exactly like a failure in `platform/`.
-None of them are required. Several are on by default in the documented `standard` profile
-(`clusters/example/capabilities/`); all are off by default in the `minimal` profile.
+**FULLY SUPPORTED, architecturally** — every capability listed here is *intended* to be designed,
+configured, documented, tested, and maintained by this project, and a failure in an *implemented*
+one is a SCRAP bug, exactly like a failure in `platform/`. That classification is about intent, not
+a claim that every row below already has manifests behind it — see the Status column: several are
+implemented and live-tested today; others are currently README-only design documents with no
+manifests to enable at all. `docs/release-readiness.md` is the authoritative current snapshot; this
+table is kept in sync with it. None of these capabilities are required. Several implemented ones
+are on by default in the documented `standard` profile (`clusters/example/capabilities/`); all are
+off by default in the `minimal` profile.
 
 **Enabling a capability is copying its Flux `Kustomization` file(s) into
 `clusters/<name>/capabilities/`. Disabling it is deleting them.** One file for a capability with no
@@ -22,18 +27,21 @@ observability stack. CI checks this on every pull request (`tests/assertions/`).
 
 ## Capabilities
 
-| Directory | Provides | Default in `standard` profile |
-|---|---|---|
-| [`grafana/`](grafana/) | Dashboards over the core Prometheus | on |
-| [`logs/`](logs/) | Centralized pod logs (Loki + Alloy), correlated with metrics | on |
-| [`identity/`](identity/) | Centralized SSO — Authentik: native OIDC + gateway forward-auth | off |
-| [`public-tls/`](public-tls/) | Publicly-trusted certificates via ACME/DNS-01 — the same wildcard shape as the private CA | off |
-| [`public-ingress/`](public-ingress/) | Reachable from the public internet | off |
-| [`offsite-backup/`](offsite-backup/) | S3-compatible off-site backup destination — buys site-loss recovery | off |
-| [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off |
-| [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off |
-| [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off |
+| Directory | Provides | Default in `standard` profile | Status |
+|---|---|---|---|
+| [`grafana/`](grafana/) | Dashboards over the core Prometheus | on | **Implemented, live-tested** |
+| [`identity/`](identity/) | Centralized SSO — Authentik: native OIDC + gateway forward-auth | off | **Implemented, live-tested** |
+| [`public-tls/`](public-tls/) | Publicly-trusted certificates via ACME/DNS-01 — the same wildcard shape as the private CA | off | **Implemented, live-tested** (real-domain certificate issuance is operator-verified, not CI — see the directory's own README) |
+| [`offsite-backup/`](offsite-backup/) | S3-compatible off-site backup destination — places recovery artifacts off-host, one of R3's two required ingredients | off | **Implemented, live-tested** (proves artifact placement, not host-loss recovery itself — see `docs/release-readiness.md`) |
+| [`logs/`](logs/) | Centralized pod logs (Loki + Alloy), correlated with metrics | on *(intended)* | **Designed, not yet implemented** — README only, no manifests |
+| [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Designed, not yet implemented** — README only, no manifests |
+| [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Designed, not yet implemented** — README only, no manifests |
+| [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Designed, not yet implemented** — README only, no manifests |
+| [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off | **Designed, not yet implemented** — README only, no manifests |
 
-Each directory's `README.md` states exactly what enabling it adds and what new external
-assumptions it introduces — see `docs/supported/` for the consolidated version of the same
-information, organized for a reader deciding what to enable rather than for a contributor.
+For the five "designed, not yet implemented" rows: the directory contains only a `README.md`
+describing the intended mechanism — there is no `Kustomization` file to copy in yet, so "enabling"
+one today has no effect. Each directory's `README.md` states exactly what enabling it is intended
+to add and what new external assumptions it will introduce — see `docs/supported/` for the
+consolidated version of the same information, organized for a reader deciding what to enable rather
+than for a contributor.

@@ -1,8 +1,12 @@
 # capabilities/offsite-backup/
 
-**FULLY SUPPORTED.** Depends on `platform/backup/` only — this directory configures a
-*destination*, it does not implement a second backup mechanism, and it applies **no new Kubernetes
-resource of its own** — see "Enabling this capability" below.
+**FULLY SUPPORTED. Current implementation status: IMPLEMENTED, LIVE-TESTED** (proves artifact
+placement, not host-loss recovery itself — see `docs/release-readiness.md`). Depends on
+`platform/backup/` only — this directory configures a *destination*, it does not implement a
+second backup mechanism, and it applies **no new Kubernetes resource of its own** — see "Enabling
+this capability" below. (This directory genuinely contains no manifest of its own, by design — see
+that section — which is exactly why its status is stated explicitly here rather than inferred from
+what files exist.)
 
 Points the platform-owned restic engine at an off-site, S3-compatible endpoint. **Any**
 S3-compatible provider — this is a generic contract, not an AWS-specific one; the two credential

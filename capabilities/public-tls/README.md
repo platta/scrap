@@ -1,6 +1,8 @@
 # capabilities/public-tls/
 
-**FULLY SUPPORTED.** Depends on `platform/cert-manager/` only.
+**FULLY SUPPORTED. Current implementation status: IMPLEMENTED, LIVE-TESTED** (real-domain
+certificate issuance is operator-verified, not CI — see `verify-live.sh` below) — see
+`docs/release-readiness.md`. Depends on `platform/cert-manager/` only.
 
 Adds two `ClusterIssuer`s that get a real, publicly-trusted certificate from Let's Encrypt via
 **ACME DNS-01** — the same wildcard shape `platform/cert-manager-config/`'s private CA already

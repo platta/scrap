@@ -44,9 +44,10 @@ why the dependency between them runs in the direction it does (not always the sa
 A "profile" is just a documented, named set of which capability files are present:
 
 - **`minimal`** — `clusters/example/` as checked in: no capability files. The tested floor.
-- **`standard`** — adds `grafana`, `logs`, typically alert delivery. What most installs will
-  actually run.
-- **`connected`** — adds off-site backup, public TLS, external heartbeat, external Git hosting.
-  What most installs converge to over time.
+- **`standard`** — adds `grafana` (implemented) plus, once built, `logs` and alert delivery — see
+  `docs/release-readiness.md` for which of these exist today. What most installs will actually run.
+- **`connected`** — adds off-site backup and public TLS (both implemented), external Git hosting
+  (already available today via `bootstrap/install.sh`'s own `REPO_URL`, no capability file needed),
+  and, once built, external heartbeat. What most installs converge to over time.
 
 Profiles are documentation, not a mechanism — there is no `profile: standard` setting anywhere.

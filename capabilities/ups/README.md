@@ -1,11 +1,15 @@
 # capabilities/ups/
 
-**FULLY SUPPORTED.** No dependency on other capabilities.
+**Architectural classification: FULLY SUPPORTED.** **Current implementation status: DESIGNED, NOT
+YET IMPLEMENTED** — this directory contains only this README; no `Kustomization`, `HelmRelease`, or
+other manifest exists yet, so there is nothing to enable. See `docs/release-readiness.md` for the
+current, repository-wide proven/unproven/deferred snapshot.
 
-NUT (Network UPS Tools) integration for graceful shutdown on power loss — real corruption
-protection for stateful applications with local-disk databases, which is most of what SCRAP hosts.
-An unclean shutdown is a realistic and previously-observed failure mode for a single-node,
-single-disk install.
+Once built, this is intended to have no dependency on other capabilities, and to provide NUT
+(Network UPS Tools) integration for graceful shutdown on power loss — real corruption protection
+for stateful applications with local-disk databases, which is most of what SCRAP hosts. An unclean
+shutdown is a realistic and previously-observed failure mode for a single-node, single-disk
+install.
 
 ## New assumptions this introduces
 

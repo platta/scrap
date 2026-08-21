@@ -1,6 +1,7 @@
 # capabilities/grafana/
 
-**FULLY SUPPORTED.** Depends on `platform/observability/` (reads the core Prometheus) only.
+**FULLY SUPPORTED. Current implementation status: IMPLEMENTED, LIVE-TESTED** — see
+`docs/release-readiness.md`. Depends on `platform/observability/` (reads the core Prometheus) only.
 
 Grafana, via the official standalone `grafana/grafana` chart — **not** kube-prometheus-stack's own
 bundled Grafana sub-chart, which `platform/observability/helmrelease.yaml` explicitly disables

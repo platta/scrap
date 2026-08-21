@@ -18,6 +18,7 @@ attractive.
 | [0008](0008-abstract-decisions-not-technologies.md) | Transparency principle | No plugin system, no proprietary manifest, no hidden control plane |
 | [0009](0009-repository-topology.md) | Repository topology | Fork/clone (monorepo) or a separate operator repo pinned to an upstream release — both native Flux multi-source, no fork required to configure an install |
 | [0010](0010-backup-credential-isolation.md) | Backup credential isolation | An authorization boundary (`--host`, per-instance credentials), not a naming convention |
+| [0011](0011-release-candidate-policy.md) | Release-candidate policy | A candidate may leave explicitly-marked, still-mandatory v1 requirements unproven (e.g. T-E/R3); qualification failures produce another candidate, not a redefinition of what's required |
 
 ## Format
 

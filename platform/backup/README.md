@@ -59,7 +59,11 @@ contract:
   `prune-cronjob.yaml`, and `check-cronjob.yaml` all mount `/var/lib/scrap-backup` on the host to
   serve this default; if you relocate the local destination, update those mounts to match.
 - **Fully supported**: a LAN target (a second machine, a NAS) or an off-site S3-compatible endpoint
-  (`capabilities/offsite-backup/`) -- buys host-loss and site-loss recovery respectively.
+  (`capabilities/offsite-backup/`, implemented and live-tested -- see that directory's own README)
+  -- places the backup artifacts off the single host, one of the two ingredients host-loss (R3) and
+  site-loss (R4) recovery need. Placing the artifact is not the same claim as proving the recovery:
+  R3/R4 themselves are proven only by a host-loss rehearsal (T-E), not yet implemented -- see
+  `docs/core/recovery-model.md`'s own "R3/R4 specifically" section and `docs/release-readiness.md`.
 
 See `docs/core/recovery-model.md` for exactly which failure class each destination choice actually
 buys -- SCRAP states this as a tested, progressive guarantee, never a blanket "we have backups."

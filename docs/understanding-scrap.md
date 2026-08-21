@@ -231,8 +231,10 @@ specific: **backup without alerting is not a safety system.** A platform that qu
 something up and never tells you has reproduced the exact failure it exists to prevent. So
 Prometheus, Alertmanager, kube-state-metrics, and node-exporter are core — along with the
 `PodMonitor`/`PrometheusRule` contract applications opt into. Grafana and centralized log shipping
-(Loki + Alloy) are *not* core — genuinely valuable, fully supported, on by default in the
-`standard` profile, but not load-bearing for the recovery story, so they don't inflate the minimum.
+(Loki + Alloy) are *not* core — genuinely valuable, not load-bearing for the recovery story, so they
+don't inflate the minimum. Grafana is implemented and live-tested today; Loki + Alloy is designed
+but not yet built — see `docs/release-readiness.md` for the current status of every optional
+capability.
 
 **Contract to the next layer:** a pod labeled `observability.scrap.io/scrape: "true"` with a port
 named `metrics` gets scraped by the one cluster-wide `PodMonitor` — no application ever ships its

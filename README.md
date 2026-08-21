@@ -21,10 +21,17 @@ restore of identity's own multi-tier Authentik + PostgreSQL, including quiescenc
 logical-dump consistency method, and stable-primary-key preservation — see `tests/dr/`. Identity's recovery-flow-abuse obligation is closed the same way, adversarially: no unauthenticated
 path to a password-set form, proven both structurally (the live Brand/`IdentificationStage` objects)
 and behaviorally (a genuinely anonymous request reaching both real login-page entry points), with a
-passing negative control. What's still missing before a v1 release candidate: off-site backup,
-minimal release/versioning packaging, and (before final v1, not RC) logs, public ingress, heartbeat,
-the Topology B onboarding generator, the host-loss rehearsal (R3, T-E), and T-C/T-D/T-F.
-See [Roadmap](#roadmap) below.
+passing negative control. Off-site (S3-compatible) backup is proven the same way: a real remote
+write, an independent read using the intended recovery credentials, and a genuine, bounded, visible
+failure on bad credentials — see `tests/profiles/t-a-offsite-backup.sh`. That proves recovery
+artifacts can genuinely be placed off-host; it does **not** prove host-loss recovery (R3) itself —
+that is the host-loss rehearsal (T-E), still open. See
+[`docs/release-readiness.md`](docs/release-readiness.md) for the exact, current boundary between
+what's proven and what a release candidate may still leave open under
+[`docs/decisions/0011-release-candidate-policy.md`](docs/decisions/0011-release-candidate-policy.md)
+— in short: logs, public ingress, heartbeat, dyndns, UPS, alert delivery, and the Topology B
+onboarding generator are designed but not yet implemented; T-E/R3, R4, T-C, T-D (arm64), and T-F
+remain unproven and must not be claimed. See [Roadmap](#roadmap) below.
 
 ## What SCRAP actually is
 
@@ -52,16 +59,19 @@ Both are enforced by CI on every pull request, not merely documented. See
 
 ## What SCRAP requires, and what it doesn't
 
-**Minimum:** one Linux host (x86-64 or arm64), 2 cores, 4 GB RAM, 32 GB SSD, a stable way for
-clients to reach it, a correct clock, and internet access **once, at install time**, to pull
-images. Nothing else.
+**Minimum:** one Linux host, 2 cores, 4 GB RAM, 32 GB SSD, a stable way for clients to reach it, a
+correct clock, and internet access **once, at install time**, to pull images. Nothing else.
+x86-64 is the CI-tested architecture; arm64 is an accepted architecture target (preflight permits
+it) but is **not yet CI-verified** — see `docs/release-readiness.md`.
 
 **Explicitly not required for the minimum platform:** a public IP, public DNS, a registered
 domain, Let's Encrypt or any ACME provider, a cloud account, S3/object storage, hosted Git, an
 identity provider, SMTP, a password manager, multiple machines, or virtualization.
 
-Richer configurations — publicly-trusted TLS, off-site backup, centralized identity, public
-ingress — are fully supported, first-class, and tested, but every one of them is optional and
+Richer configurations — publicly-trusted TLS, off-site backup, centralized identity — are fully
+supported, first-class, and tested; public ingress and several other optional capabilities are
+designed but not yet implemented (see `docs/release-readiness.md` for exactly which). Every one of
+them is optional and
 composable, never a hidden prerequisite of the core.
 
 See [`docs/core/`](docs/core/), [`docs/supported/`](docs/supported/),
@@ -112,10 +122,10 @@ add a new one.
 2. ~~Bootstrap: preflight checks, pinned k3s install, `install.sh`~~ — **done**
 3. ~~Platform core: Gateway API CRDs, cert-manager + private CA + wildcard `Certificate`, Traefik/Gateway, local-path storage, observability core, backup engine~~ — **done**
 4. ~~Example applications (`apps/examples/`) proving the six application patterns~~ — **done, all six**
-5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; ~~ACME/DNS-01 (public TLS)~~ **done** (`capabilities/public-tls/` — the two ACME `ClusterIssuer`s are capability-owned, the wildcard certificate's issuer swap is live-verified with no diff under `apps/`, misconfiguration fails visibly rather than silently reusing the private CA; see `tests/profiles/t-a-public-tls.sh`); ~~Grafana~~ **done** (`capabilities/grafana/` — its own separate `HelmRelease`, never the kube-prometheus-stack's bundled sub-chart; a real Prometheus datasource proven by querying live time series through it, not just that the object exists; declarative Authentik OIDC integration with a real, attributable `Admin` role mapping via a dedicated `scrap-admins` group; anonymous access explicitly off and adversarially checked; see `tests/profiles/t-b-standard.sh`); Loki, off-site backup, alert delivery, external heartbeat still open
+5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; ~~ACME/DNS-01 (public TLS)~~ **done** (`capabilities/public-tls/` — the two ACME `ClusterIssuer`s are capability-owned, the wildcard certificate's issuer swap is live-verified with no diff under `apps/`, misconfiguration fails visibly rather than silently reusing the private CA; see `tests/profiles/t-a-public-tls.sh`); ~~Grafana~~ **done** (`capabilities/grafana/` — its own separate `HelmRelease`, never the kube-prometheus-stack's bundled sub-chart; a real Prometheus datasource proven by querying live time series through it, not just that the object exists; declarative Authentik OIDC integration with a real, attributable `Admin` role mapping via a dedicated `scrap-admins` group; anonymous access explicitly off and adversarially checked; see `tests/profiles/t-b-standard.sh`); ~~off-site backup~~ **done** (`capabilities/offsite-backup/` — a real S3-compatible remote write, an independent read using the intended recovery credentials, ADR-0010 host-isolation unaffected by destination, and a genuine, bounded, visible failure on bad credentials; proves artifact placement, not host-loss recovery itself — see `docs/release-readiness.md`; `tests/profiles/t-a-offsite-backup.sh`); logs, alert delivery, external heartbeat, dyndns, UPS, and public ingress still open — each is currently README-only, no manifests exist
 6. Topology B onboarding: a generator producing a minimal, ordinary Flux/Kustomize/SOPS operator repository pinned to a released SCRAP version, host-agnostic (no GitHub requirement), plus an automated test proving a generated repo bootstraps/reconciles a clean install (`docs/decisions/0009-repository-topology.md`)
-7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); ~~T-B for identity + P2/P3 + Grafana + recovery-flow-abuse~~ **done** (`tests/profiles/t-b-standard.sh` — a genuinely separate from-zero bootstrap, `components/ca-trust/` checked directly and attributably for both P2 and Grafana, real scripted OIDC logins the relying-party apps themselves exchange, forward-auth proven both ways including a passing negative control, Grafana proven behaviorally (real datasource query, real OIDC role mapping, adversarial anonymous-access check), identity's recovery flow proven adversarially both structurally and behaviorally with a passing negative control; logs remains open, an unimplemented **capability**, not a T-B gap); ~~T-A-public-tls~~ **done** (`tests/profiles/t-a-public-tls.sh` — its own separate from-zero bootstrap; the operator-run, real-domain-requiring counterpart is `capabilities/public-tls/verify-live.sh`, deliberately not CI-executed); T-C through T-F still open — see `tests/profiles/README.md`
-8. ~~Disaster-recovery acceptance: R1 (Authentik/PostgreSQL destructive restore)~~ **done** (`tests/dr/authentik-postgres-restore.sh`, nightly — genuine destruction, full-tier quiescence ordering proven both positively and by a reverted live negative control, restore through the real recovery mechanism, documented-procedure reload with hard error checking, stable-primary-key recovery proven through authentik's own API); R3 host-loss rehearsal (T-E) still open — see `tests/dr/README.md`
+7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); T-B **implemented for identity + P2/P3 + Grafana + recovery-flow-abuse** (`tests/profiles/t-b-standard.sh` — a genuinely separate from-zero bootstrap, `components/ca-trust/` checked directly and attributably for both P2 and Grafana, real scripted OIDC logins the relying-party apps themselves exchange, forward-auth proven both ways including a passing negative control, Grafana proven behaviorally (real datasource query, real OIDC role mapping, adversarial anonymous-access check), identity's recovery flow proven adversarially both structurally and behaviorally with a passing negative control) — **note:** the originally-scoped T-B definition also included logs; that piece remains open because the `logs` capability itself doesn't exist yet, not because of a gap in T-B's own implementation; ~~T-A-public-tls~~ **done** (`tests/profiles/t-a-public-tls.sh` — its own separate from-zero bootstrap; the operator-run, real-domain-requiring counterpart is `capabilities/public-tls/verify-live.sh`, deliberately not CI-executed); ~~T-A-offsite-backup~~ **done** (`tests/profiles/t-a-offsite-backup.sh` — real S3 write/read against an ephemeral MinIO target, credential-isolation and bad-credential negative-control checks; proves artifact placement, not R3 — see `docs/release-readiness.md`); T-C, T-D, T-E, T-F still open — see `tests/profiles/README.md`
+8. ~~Disaster-recovery acceptance: R1 (Authentik/PostgreSQL destructive restore)~~ **done** (`tests/dr/authentik-postgres-restore.sh`, nightly — genuine destruction, full-tier quiescence ordering proven both positively and by a reverted live negative control, restore through the real recovery mechanism, documented-procedure reload with hard error checking, stable-primary-key recovery proven through authentik's own API); R3 host-loss rehearsal (T-E) still open and **must not be claimed as proven by off-site backup alone** — see `docs/core/recovery-model.md` and `docs/decisions/0011-release-candidate-policy.md`
 9. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
 
 ## License

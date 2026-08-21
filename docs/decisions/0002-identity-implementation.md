@@ -74,7 +74,10 @@ optional.
 
 **Authentik's own recovery flows need adversarial testing**, not just functional testing — a
 lighter-provider evaluation like this one is exactly the kind of scrutiny an identity provider's
-account-recovery paths deserve before being shipped as a default.
+account-recovery paths deserve before being shipped as a default. **This obligation is now
+closed**: `tests/profiles/t-b-standard.sh`'s `identity-adversarial-recovery` and
+`identity-no-recovery-flow-configured` checks prove SCRAP's shipped configuration exposes no
+unauthenticated recovery path, structurally and behaviorally, with a passing negative control.
 
 ## Why this isn't a rout for Authelia
 

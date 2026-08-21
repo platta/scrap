@@ -3,7 +3,8 @@
 **FULLY SUPPORTED implementation: Authentik. Identity itself is OPTIONAL** — a SCRAP install must
 be complete and useful with this directory absent entirely (T1). Alternative identity providers
 (Authelia, Keycloak, an external IdP) are documented **extension points**, not supported
-implementations — see `docs/extensions/identity.md`.
+implementations — see `docs/extensions/identity.md`. **Current implementation status:
+IMPLEMENTED, LIVE-TESTED** — see `docs/release-readiness.md`.
 
 ## Why Authentik, specifically
 

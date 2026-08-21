@@ -20,23 +20,25 @@ technology underneath. Read it before anything else here.
 ## The capability matrix
 
 What you get, what it costs, and which recovery guarantee it unlocks. Full detail:
-[`core/recovery-model.md`](core/recovery-model.md).
+[`core/recovery-model.md`](core/recovery-model.md) for recovery classes, and
+[`release-readiness.md`](release-readiness.md) for the current, authoritative
+proven/unproven/deferred snapshot behind the "Implemented?" column below.
 
-| Capability | Status | New assumptions it introduces | Unlocks |
-|---|---|---|---|
-| Kubernetes, Flux, secrets, storage, routing, TLS, backup engine, observability core | **CORE** | Internet once, at install | R0 (workload) · R1 (app data) · R2 (disk loss) |
-| Grafana | SUPPORTED | none beyond core | — (operational only) |
-| Logs (Loki + Alloy) | SUPPORTED | none beyond core | — (operational only) |
-| Alert delivery (SMTP/ntfy/webhook) | SUPPORTED | a reachable receiver | makes existing alerts actionable |
-| Public TLS (ACME/DNS-01) | SUPPORTED | domain + DNS zone + provider API + internet | client/workload trust, no CA to install |
-| Public ingress | SUPPORTED | public IP or tunnel, router control, larger threat model | public reachability |
-| Off-site backup | SUPPORTED | S3-compatible endpoint + credential + internet | **R3 (host loss)**, contributes to R4 |
-| External Git hosting | SUPPORTED | account + internet | **R3 (host loss)** of the source of truth |
-| External heartbeat | SUPPORTED | internet + free account | tells you the *cluster* is down |
-| Identity (Authentik) | SUPPORTED, OPTIONAL | ~1 GB RAM, a Postgres to back up | SSO, self-service recovery, passkeys |
-| UPS (NUT) | SUPPORTED | a UPS with a data connection | corruption protection on power loss |
-| Alternative identity, storage, ingress, issuer, backup engine, K8s distro | EXTENSION | varies — see `extensions/` | varies, and untested |
-| Multi-node, HA, multi-cluster, distributed storage, multi-tenancy | OUT OF SCOPE | — | not guaranteed; see `out-of-scope/` |
+| Capability | Status | Implemented? | New assumptions it introduces | Unlocks |
+|---|---|---|---|---|
+| Kubernetes, Flux, secrets, storage, routing, TLS, backup engine, observability core | **CORE** | Yes, live-tested | Internet once, at install | R0 (workload) · R1 (app data) · R2 (disk loss) |
+| Grafana | SUPPORTED | Yes, live-tested | none beyond core | — (operational only) |
+| Public TLS (ACME/DNS-01) | SUPPORTED | Yes, live-tested (real-domain issuance is operator-verified, not CI) | domain + DNS zone + provider API + internet | client/workload trust, no CA to install |
+| Off-site backup | SUPPORTED | Yes, live-tested | S3-compatible endpoint + credential + internet | Places recovery artifacts off-host — **one of R3's two required ingredients, not R3 itself.** R3 (host loss) is proven only by a host-loss rehearsal (T-E), not yet implemented |
+| External Git hosting | SUPPORTED | Yes, via `bootstrap/install.sh`'s `REPO_URL` (no dedicated capability file) | account + internet | Moves the source of truth off-host — the *other* of R3's two required ingredients, same caveat as above |
+| Identity (Authentik) | SUPPORTED, OPTIONAL | Yes, live-tested | ~1 GB RAM, a Postgres to back up | SSO via native OIDC and forward-auth. **Operator-mediated account recovery only** — the shipped configuration specifically proves no unauthenticated self-service recovery path exists, and passkey/WebAuthn login is neither configured nor tested |
+| Logs (Loki + Alloy) | SUPPORTED | **Not yet implemented** — README only | none beyond core | — (operational only) |
+| Alert delivery (SMTP/ntfy/webhook) | SUPPORTED | **Not yet implemented** — Alertmanager ships with its default `null` receiver | a reachable receiver | makes existing alerts actionable |
+| Public ingress | SUPPORTED | **Not yet implemented** — README only | public IP or tunnel, router control, larger threat model | public reachability |
+| External heartbeat | SUPPORTED | **Not yet implemented** — README only | internet + free account | tells you the *cluster* is down |
+| UPS (NUT) | SUPPORTED | **Not yet implemented** — README only | a UPS with a data connection | corruption protection on power loss |
+| Alternative identity, storage, ingress, issuer, backup engine, K8s distro | EXTENSION | n/a — contract only | varies — see `extensions/` | varies, and untested |
+| Multi-node, HA, multi-cluster, distributed storage, multi-tenancy | OUT OF SCOPE | n/a | — | not guaranteed; see `out-of-scope/` |
 
 ## Everything else
 

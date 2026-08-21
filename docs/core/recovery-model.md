@@ -1,7 +1,10 @@
 # Recovery model
 
 **CORE.** "We have backups" is not a recovery guarantee. SCRAP states, per configuration, exactly
-which failure class is actually tested — not one all-or-nothing claim.
+which failure class is actually tested — not one all-or-nothing claim. See
+`docs/release-readiness.md` for the current, repository-wide proven/unproven/deferred snapshot, and
+`docs/decisions/0011-release-candidate-policy.md` for why an unproven row here can still ship in a
+release candidate, provided it's stated as unproven rather than implied otherwise.
 
 ## The three-way split
 
