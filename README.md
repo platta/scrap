@@ -11,11 +11,12 @@ the applications from durable, tested backups.
 
 **Status: pre-release implementation.** The architecture is frozen (see
 [`docs/decisions/`](docs/decisions/)); the platform core, backup engine, observability core, the
-identity capability, public TLS via ACME/DNS-01, and Grafana are implemented and live-validated on a
-real cluster, including P1–P6 of the application contract. It is installable end to end via
-`bootstrap/install.sh` against a fresh host, and that install path plus P1/P4/P5/P6 (minimal
-profile), identity/P2/P3/Grafana (standard profile), and the public-TLS issuer swap are now
-mechanically proven from zero on every push/PR by `tests/profiles/`, not just validated by hand.
+identity capability, public TLS via ACME/DNS-01, Grafana, off-site backup, and logs (Loki + Alloy)
+are implemented and live-validated on a real cluster, including P1–P6 of the application contract.
+It is installable end to end via `bootstrap/install.sh` against a fresh host, and that install path
+plus P1/P4/P5/P6 (minimal profile), identity/P2/P3/Grafana (standard profile), and the public-TLS
+issuer swap are now mechanically proven from zero on every push/PR by `tests/profiles/`, not just
+validated by hand.
 Disaster recovery (R1) is proven the same way, nightly, not just documented: a genuinely destructive
 restore of identity's own multi-tier Authentik + PostgreSQL, including quiescence ordering, a real
 logical-dump consistency method, and stable-primary-key preservation — see `tests/dr/`. Identity's recovery-flow-abuse obligation is closed the same way, adversarially: no unauthenticated

@@ -33,7 +33,7 @@ observability stack. CI checks this on every pull request (`tests/assertions/`).
 | [`identity/`](identity/) | Centralized SSO — Authentik: native OIDC + gateway forward-auth | off | **Implemented, live-tested** |
 | [`public-tls/`](public-tls/) | Publicly-trusted certificates via ACME/DNS-01 — the same wildcard shape as the private CA | off | **Implemented, live-tested** (real-domain certificate issuance is operator-verified, not CI — see the directory's own README) |
 | [`offsite-backup/`](offsite-backup/) | S3-compatible off-site backup destination — places recovery artifacts off-host, one of R3's two required ingredients | off | **Implemented, live-tested** (proves artifact placement, not host-loss recovery itself — see `docs/release-readiness.md`) |
-| [`logs/`](logs/) | Centralized pod logs (Loki + Alloy), correlated with metrics | on *(intended)* | **Implemented, live-tested** |
+| [`logs/`](logs/) | Centralized pod logs (Loki + Alloy), correlated with metrics | on | **Implemented, live-tested** |
 | [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Designed, not yet implemented** — README only, no manifests |
 | [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Designed, not yet implemented** — README only, no manifests |
 | [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Designed, not yet implemented** — README only, no manifests |
