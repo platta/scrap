@@ -1,0 +1,32 @@
+# Copy this file into clusters/<name>/capabilities/ to enable centralized
+# logs -- delete it to disable. One file, not two: this capability needs no
+# credential of its own (no internet, no account -- see this directory's
+# own README), the same reasoning capabilities/grafana/'s own
+# cluster-kustomization.yaml gives for being a single-file capability.
+#
+# dependsOn platform-observability: the "monitoring" namespace this
+# capability's own workloads land in (platform/observability/namespace.yaml
+# creates it unconditionally, CORE) -- same dependency
+# capabilities/grafana/cluster-kustomization.yaml already declares, and the
+# same reasoning: not strictly required for either HelmRelease to APPLY
+# (Loki and Alloy don't reference platform/observability/'s own Prometheus
+# at all), but explicit, predictable ordering costs nothing and this
+# capability's Alloy DaemonSet writing into a namespace that might not
+# exist yet is exactly the kind of eventually-consistent race worth
+# ruling out up front.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: logs
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/logs
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-observability
+  wait: true
+  timeout: 5m0s

@@ -25,6 +25,7 @@ Each of these is backed by a live, automated, CI-gated acceptance profile — no
 | P2 native OIDC and P3 forward-auth, both positive and adversarial | `tests/profiles/t-b-standard.sh` |
 | CA-trust wiring for private-CA backend calls | `tests/profiles/t-b-standard.sh` |
 | Grafana as an optional capability: real Prometheus query through it, real OIDC login, group→role mapping, anonymous-access adversarially rejected | `tests/profiles/t-b-standard.sh` |
+| Logs (Loki + Alloy) as an optional capability: a real workload's stdout marker shipped, stored, and retrieved through Grafana's own configured Loki data source, with a passing negative control | `tests/profiles/t-b-standard.sh` |
 | Identity's recovery-flow-abuse invariant: no unauthenticated path to a password-set form, checked structurally and behaviorally, with a passing negative control | `tests/profiles/t-b-standard.sh` |
 | Public TLS issuer-independence, and a real ACME network round-trip (Order stage) reached, failing visibly on bad DNS-01 credentials | `tests/profiles/t-a-public-tls.sh` |
 | Off-site (S3-compatible) backup: **artifact placement only** — a real remote write (independently confirmed via the destination's own listing), an independent read via a separate client using the intended recovery credentials, ADR-0010 host-isolation unaffected by destination, and a genuine, bounded, visible failure on bad credentials | `tests/profiles/t-a-offsite-backup.sh` |
@@ -39,8 +40,7 @@ Each row names the exact claim a release candidate **must not make** until the c
 | **R3 — host-loss recovery**: a blank machine, given only the artifacts the recovery model says survive, can be rebuilt into a working platform | T-E (host-loss rehearsal) — not yet implemented. Off-site backup proves one *ingredient* (artifacts reach independent storage); it does not prove the recipe works. See `docs/core/recovery-model.md`'s own "R3/R4 specifically" section. | Yes — mandatory before final v1, not before `rc.1` (`docs/decisions/0011`) |
 | **R4 — site-loss recovery** | Depends on R3 being proven first | Yes |
 | **arm64 is a tested platform target at the same evidence level as x86-64** | T-D (arm64 minimal, nightly) — not yet implemented. The *minimum requirement description* names arm64 as an accepted architecture (and `bootstrap/preflight/check-arch.sh` genuinely permits it), but no CI run has ever exercised it. | Yes |
-| **Logs (Loki + Alloy) is an implemented, working capability** | `capabilities/logs/` contains only a README describing the intended mechanism — no manifests exist. This is also part of the *frozen* T-B acceptance definition (identity + Grafana + logs); the currently-implemented T-B tests identity + Grafana + the adversarial checks, not logs, because logs doesn't exist yet. | Yes |
-| **Heartbeat, dyndns, UPS, public-ingress are implemented, working capabilities** | Same as logs — README-only, no manifests, in every case | Yes |
+| **Heartbeat, dyndns, UPS, public-ingress are implemented, working capabilities** | README-only, no manifests, in every case | Yes |
 | **Alert delivery (a configured SMTP/ntfy/webhook receiver) is an implemented capability** | Alertmanager is deliberately left at its default `null` receiver (`platform/observability/helmrelease.yaml`'s own comment) — alert *evaluation* and a *visible surface* are CORE and proven; a configured delivery receiver is not built | Yes |
 | **Topology B (separate operator repository) has been exercised end to end** | The generator and its own bootstrap/reconcile test (`docs/decisions/0009-repository-topology.md`, "Required for v1") do not exist yet. Topology A (monorepo) is what's actually tested. | Yes |
 | **T-C (Connected profile, nightly)** | Not yet implemented; depends in part on heartbeat, which doesn't exist yet | Yes |
@@ -70,6 +70,6 @@ Recorded here rather than silently decided one way or the other:
   decision, not reinterpreted quietly.
 - **Whether the Topology B generator is release-candidate-blocking or final-v1-blocking** —
   `docs/decisions/0009-repository-topology.md` says "Required for v1" without an explicit RC/final
-  split. This document places it at final-v1 on the same reasoning as logs/heartbeat/etc. (not
+  split. This document places it at final-v1 on the same reasoning as heartbeat/dyndns/etc. (not
   part of the minimum product envelope tested via Topology A), but that ADR's own wording does not
   hand this an explicit RC exemption — flagged, not resolved, here.

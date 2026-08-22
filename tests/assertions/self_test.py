@@ -52,6 +52,7 @@ FIXTURE_CASES = [
     ("bootstrap-git-snapshot", check_bootstrap_git_snapshot),
     ("dr-quiesce-ordering", check_dr_quiesce_ordering),
     ("capability-status-mismatch", check_capability_status_honesty),
+    ("capability-status-missing-readme", check_capability_status_honesty),
 ]
 
 # Every check with a real `run(root)` -- excludes check_app_addition_boundary,

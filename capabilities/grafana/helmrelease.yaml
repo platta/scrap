@@ -44,6 +44,19 @@ spec:
     # "alertmanager-operated"). One real datasource, provisioned
     # declaratively -- not a placeholder, not left for an operator to
     # click through.
+    # Loki -- capabilities/logs/, an OPTIONAL capability, not CORE like
+    # Prometheus above. Provisioned unconditionally anyway, the same
+    # dependency direction capabilities/identity/'s own Blueprint already
+    # uses for Grafana's OAuth Provider (see this file's own README, "The
+    # dependency direction that matters"): this capability's own directory
+    # never references capabilities/logs/, checks whether it's enabled, or
+    # branches on it. If capabilities/logs/ is never enabled, this
+    # datasource object exists and simply has nothing to answer queries --
+    # inert, not broken, the same "an unused Provider costs nothing" logic
+    # this README already applies to OIDC. Service name "loki" --
+    # capabilities/logs/helmrelease-loki.yaml's own sourceRef comment
+    # explains why (the chart's singleBinary fullname when the release is
+    # named "loki").
     datasources:
       datasources.yaml:
         apiVersion: 1
@@ -53,6 +66,11 @@ spec:
             access: proxy
             url: http://prometheus-operated.monitoring.svc.cluster.local:9090
             isDefault: true
+          - name: Loki
+            type: loki
+            access: proxy
+            url: http://loki.monitoring.svc.cluster.local:3100
+            isDefault: false
 
     # Dashboards: "any ConfigMap labeled grafana_dashboard: '1' in any
     # namespace" -- this capability's own README's existing promise,
