@@ -34,14 +34,15 @@ observability stack. CI checks this on every pull request (`tests/assertions/`).
 | [`public-tls/`](public-tls/) | Publicly-trusted certificates via ACME/DNS-01 — the same wildcard shape as the private CA | off | **Implemented, live-tested** (real-domain certificate issuance is operator-verified, not CI — see the directory's own README) |
 | [`offsite-backup/`](offsite-backup/) | S3-compatible off-site backup destination — places recovery artifacts off-host, one of R3's two required ingredients | off | **Implemented, live-tested** (proves artifact placement, not host-loss recovery itself — see `docs/release-readiness.md`) |
 | [`logs/`](logs/) | Centralized pod logs (Loki + Alloy), correlated with metrics | on | **Implemented, live-tested** |
+| [`alert-delivery/`](alert-delivery/) | A real Alertmanager receiver (webhook — ntfy, or anything Alertmanager itself supports) | on | **Implemented, live-tested** |
 | [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Designed, not yet implemented** — README only, no manifests |
-| [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Designed, not yet implemented** — README only, no manifests |
+| [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Implemented, live-tested** |
 | [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Designed, not yet implemented** — README only, no manifests |
 | [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off | **Designed, not yet implemented** — README only, no manifests |
 
-For the four remaining "designed, not yet implemented" rows: the directory contains only a `README.md`
-describing the intended mechanism — there is no `Kustomization` file to copy in yet, so "enabling"
-one today has no effect. Each directory's `README.md` states exactly what enabling it is intended
-to add and what new external assumptions it will introduce — see `docs/supported/` for the
+For the three remaining "designed, not yet implemented" rows: the directory contains only a
+`README.md` describing the intended mechanism — there is no `Kustomization` file to copy in yet, so
+"enabling" one today has no effect. Each directory's `README.md` states exactly what enabling it is
+intended to add and what new external assumptions it will introduce — see `docs/supported/` for the
 consolidated version of the same information, organized for a reader deciding what to enable rather
 than for a contributor.

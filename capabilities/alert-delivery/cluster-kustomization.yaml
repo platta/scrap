@@ -1,0 +1,41 @@
+# Copy this file (and cluster-secrets-kustomization.yaml, next to it) into
+# clusters/<name>/capabilities/ to enable alert delivery -- delete both to
+# disable. See capabilities/README.md and docs/core/configuration-model.md
+# for why a capability needing credentials is a two-file copy, not one:
+# the secret lives under clusters/<name>/secrets/, never under
+# capabilities/, so it stays out of what Topology B's operator repository
+# treats as pinned, shared upstream content
+# (docs/decisions/0009-repository-topology.md).
+#
+# dependsOn platform-observability: the "monitoring" namespace (CORE,
+# always present) this object lands in, the AlertmanagerConfig CRD itself,
+# and the cluster-wide alertmanagerConfigSelector/MatcherStrategy settings
+# platform/observability/helmrelease.yaml sets. dependsOn
+# alert-delivery-secrets too: unlike platform-backup's CronJob-only
+# secretKeyRef (resolved lazily, on a schedule), the Prometheus Operator
+# reads an AlertmanagerConfig's urlSecret eagerly on reconcile -- same
+# reasoning capabilities/public-tls/cluster-kustomization.yaml's own
+# comment gives for its own dependsOn order. Getting this backwards isn't
+# a hard failure the way identity's was (a missing urlSecret makes the
+# operator mark THIS AlertmanagerConfig object's own status
+# Accepted=False and exclude it from the merged config -- it does not
+# crash Alertmanager itself, which keeps running on whatever config
+# already merged successfully), but there's no reason to depend on that
+# forgiving behavior when explicit ordering costs nothing.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: alert-delivery
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/alert-delivery
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-observability
+    - name: alert-delivery-secrets
+  wait: true
+  timeout: 5m0s
