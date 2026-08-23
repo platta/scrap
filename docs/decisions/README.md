@@ -19,6 +19,7 @@ attractive.
 | [0009](0009-repository-topology.md) | Repository topology | Fork/clone (monorepo) or a separate operator repo pinned to an upstream release — both native Flux multi-source, no fork required to configure an install |
 | [0010](0010-backup-credential-isolation.md) | Backup credential isolation | An authorization boundary (`--host`, per-instance credentials), not a naming convention |
 | [0011](0011-release-candidate-policy.md) | Release-candidate policy | A candidate may leave explicitly-marked, still-mandatory v1 requirements unproven (e.g. T-E/R3); qualification failures produce another candidate, not a redefinition of what's required |
+| [0012](0012-rc-implementation-envelope.md) | RC implementation envelope | A candidate may defer proof, never existence: every mandatory-v1 behavior must be implemented before `rc.1` — heartbeat, dyndns, UPS, public ingress, alert delivery, and the Topology B generator are all pre-RC work |
 
 ## Format
 

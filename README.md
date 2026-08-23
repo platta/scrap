@@ -30,9 +30,12 @@ that is the host-loss rehearsal (T-E), still open. See
 [`docs/release-readiness.md`](docs/release-readiness.md) for the exact, current boundary between
 what's proven and what a release candidate may still leave open under
 [`docs/decisions/0011-release-candidate-policy.md`](docs/decisions/0011-release-candidate-policy.md)
+and [`docs/decisions/0012-rc-implementation-envelope.md`](docs/decisions/0012-rc-implementation-envelope.md)
 — in short: public ingress, heartbeat, dyndns, UPS, alert delivery, and the Topology B onboarding
-generator are designed but not yet implemented; T-E/R3, R4, T-C, T-D (arm64), and T-F remain
-unproven and must not be claimed. See [Roadmap](#roadmap) below.
+generator are designed but not yet implemented and must be built **before** `rc.1` (a candidate
+may defer proof, never existence — ADR-0012); T-E/R3, R4, T-C, T-D (arm64), and T-F remain
+unproven, must not be claimed, and are what the RC qualification window itself exists for. See
+[Roadmap](#roadmap) below.
 
 ## What SCRAP actually is
 

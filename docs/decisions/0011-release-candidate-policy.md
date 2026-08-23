@@ -70,6 +70,12 @@ This ADR is scoped to the RC/final-v1 semantic boundary only. It does not specif
 - how many candidates a given release cycle will need, or what "qualification" consists of beyond
   the frozen acceptance profiles (`tests/profiles/`, `tests/dr/`) already defined.
 
+**Addendum (2026-08-22):** this ADR's deferral allowance is written for requirements that remain
+*unproven*; it was later asked whether that stretches to behavior that is still *unimplemented*.
+It does not — that boundary is decided explicitly by
+[`0012-rc-implementation-envelope.md`](0012-rc-implementation-envelope.md): a candidate may defer
+proof, never existence.
+
 ## Consistent with
 
 `docs/decisions/0008-abstract-decisions-not-technologies.md` (this is a release-process

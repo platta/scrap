@@ -6,7 +6,10 @@ what is **INTENDED FOR v1 BUT NOT YET PROVEN**, and what is **DEFERRED / OPTIONA
 without having to reconstruct that boundary from commit history or memory. See
 `docs/decisions/0011-release-candidate-policy.md` for the policy that makes "intended but not yet
 proven" a legitimate state for a release candidate to ship in, provided it's stated here, not
-implied elsewhere as settled.
+implied elsewhere as settled — and `docs/decisions/0012-rc-implementation-envelope.md` for the
+boundary of that allowance: it covers behavior that is *implemented but unproven*, never behavior
+that is still *unimplemented*. Rows below that are existence gaps (no manifests/code, not merely
+no proof) therefore block `rc.1` itself, and are marked so.
 
 This is a status snapshot, not a frozen document — update it as milestones close gaps. It records
 *evidence level*, never a promise about when something will be finished.
@@ -40,10 +43,10 @@ Each row names the exact claim a release candidate **must not make** until the c
 | **R3 — host-loss recovery**: a blank machine, given only the artifacts the recovery model says survive, can be rebuilt into a working platform | T-E (host-loss rehearsal) — not yet implemented. Off-site backup proves one *ingredient* (artifacts reach independent storage); it does not prove the recipe works. See `docs/core/recovery-model.md`'s own "R3/R4 specifically" section. | Yes — mandatory before final v1, not before `rc.1` (`docs/decisions/0011`) |
 | **R4 — site-loss recovery** | Depends on R3 being proven first | Yes |
 | **arm64 is a tested platform target at the same evidence level as x86-64** | T-D (arm64 minimal, nightly) — not yet implemented. The *minimum requirement description* names arm64 as an accepted architecture (and `bootstrap/preflight/check-arch.sh` genuinely permits it), but no CI run has ever exercised it. | Yes |
-| **Heartbeat, dyndns, UPS, public-ingress are implemented, working capabilities** | README-only, no manifests, in every case | Yes |
-| **Alert delivery (a configured SMTP/ntfy/webhook receiver) is an implemented capability** | Alertmanager is deliberately left at its default `null` receiver (`platform/observability/helmrelease.yaml`'s own comment) — alert *evaluation* and a *visible surface* are CORE and proven; a configured delivery receiver is not built | Yes |
-| **Topology B (separate operator repository) has been exercised end to end** | The generator and its own bootstrap/reconcile test (`docs/decisions/0009-repository-topology.md`, "Required for v1") do not exist yet. Topology A (monorepo) is what's actually tested. | Yes |
-| **T-C (Connected profile, nightly)** | Not yet implemented; depends in part on heartbeat, which doesn't exist yet | Yes |
+| **Heartbeat, dyndns, UPS, public-ingress are implemented, working capabilities** | README-only, no manifests, in every case | Yes — **and blocks `rc.1`**: an existence gap, not a proof gap (`docs/decisions/0012`) |
+| **Alert delivery (a configured SMTP/ntfy/webhook receiver) is an implemented capability** | Alertmanager is deliberately left at its default `null` receiver (`platform/observability/helmrelease.yaml`'s own comment) — alert *evaluation* and a *visible surface* are CORE and proven; a configured delivery receiver is not built | Yes — **and blocks `rc.1`** (existence gap, `docs/decisions/0012`) |
+| **Topology B (separate operator repository) has been exercised end to end** | The generator and its own bootstrap/reconcile test (`docs/decisions/0009-repository-topology.md`, "Required for v1") do not exist yet. Topology A (monorepo) is what's actually tested. | Yes — **and blocks `rc.1`** (existence gap, `docs/decisions/0012`; commit-SHA pinning means nothing about it structurally requires a release to exist first) |
+| **T-C (Connected profile, nightly)** | Not yet implemented; depends in part on heartbeat, which doesn't exist yet | Yes — the heartbeat *component* it depends on blocks `rc.1` (row above); the T-C profile itself is qualification infrastructure and may be built during the RC cycle (`docs/decisions/0012`) |
 | **T-F (upgrade testing)** | Cannot exist before a first release exists to upgrade *from* — `rc.1` is the precondition for T-F, not something T-F blocks (`docs/decisions/0011`) | Yes, once a prior release exists |
 | **Real public certificate issuance against a real domain** | `tests/profiles/t-a-public-tls.sh` proves issuer-independence and a genuine ACME network interaction (reaching the `Order` stage); reaching the DNS-01 solver and an actual signed certificate require a real public domain and are deliberately left to `capabilities/public-tls/verify-live.sh`, operator-run, not CI-executed. This is a permanent evidence-boundary, not a temporary gap — see that script's own header. | No — by design, not a gap to close |
 | **Self-service identity recovery / passkey support** | The shipped configuration specifically proves it exposes **no** unauthenticated recovery path at all (`tests/profiles/t-b-standard.sh`'s `identity-adversarial-recovery` check) — self-service recovery is not configured, by design. Passkey/WebAuthn support was explored, untested, only in a private, non-SCRAP reference deployment; SCRAP's own Blueprint neither provisions nor tests it. Any documentation implying otherwise is wrong and should be corrected on sight. | No — this is a design choice (operator-mediated recovery), not a missing feature; but claiming otherwise is a documentation defect regardless |
@@ -68,8 +71,10 @@ Recorded here rather than silently decided one way or the other:
   notes this is a policy choice filling a gap the frozen architecture left open, not a reading
   forced by the frozen text. If that policy is ever revisited, it should be revisited as a policy
   decision, not reinterpreted quietly.
-- **Whether the Topology B generator is release-candidate-blocking or final-v1-blocking** —
-  `docs/decisions/0009-repository-topology.md` says "Required for v1" without an explicit RC/final
-  split. This document places it at final-v1 on the same reasoning as heartbeat/dyndns/etc. (not
-  part of the minimum product envelope tested via Topology A), but that ADR's own wording does not
-  hand this an explicit RC exemption — flagged, not resolved, here.
+- **Whether the Topology B generator is release-candidate-blocking or final-v1-blocking** — was
+  flagged here as unresolved (`docs/decisions/0009-repository-topology.md` says "Required for v1"
+  without an explicit RC/final split, and an earlier revision of this document placed it at
+  final-v1 without an ADR licensing that placement). **Resolved 2026-08-22 by
+  `docs/decisions/0012-rc-implementation-envelope.md`: release-candidate-blocking**, on the same
+  footing as the other unimplemented intended-v1 surfaces — a candidate may defer proof, never
+  existence.
