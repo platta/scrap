@@ -87,12 +87,50 @@ spec:
         resources:
           requests: { cpu: 10m, memory: 32Mi }
           limits: { memory: 128Mi }
+        # Same reasoning as podMonitorSelector/serviceMonitorSelector/
+        # ruleSelector above, applied to the one remaining Prometheus
+        # Operator CRD this chart owns: ANY AlertmanagerConfig is picked
+        # up, cluster-wide, not just ones carrying this release's own
+        # label -- these two are already the chart's own default when
+        # left unset; stated explicitly so a reader doesn't have to trust
+        # that. capabilities/alert-delivery/ is the one consumer today,
+        # but this is a platform-level policy generalization, not
+        # something built FOR that capability -- platform/ still depends
+        # on nothing under capabilities/.
+        alertmanagerConfigSelector: {}
+        alertmanagerConfigNamespaceSelector: {}
+        # NOT the chart default (OnNamespace). REAL FINDING, implementing
+        # capabilities/alert-delivery/: the operator's default behavior
+        # strips any matcher an AlertmanagerConfig's own route defines on
+        # the `namespace` label and replaces it with an automatic
+        # `namespace: <the AlertmanagerConfig's own namespace>` matcher --
+        # so a delivery config living in "monitoring" would silently only
+        # ever receive alerts that ALSO happen to carry
+        # `namespace="monitoring"`. platform/observability-config/
+        # baseline-alerts.yaml's own alerts mostly carry the ALERTING
+        # WORKLOAD's namespace (scrap-backup, an app namespace, a node),
+        # never "monitoring" -- under the default strategy, alert
+        # delivery would appear to work (the object applies cleanly) while
+        # genuinely delivering nothing for almost every real alert this
+        # platform fires, the exact silent-no-op failure mode this
+        # project's own baseline-alerts.yaml NodeDown comment (this same
+        # file) already found once in a different selector. `None` disables
+        # that automatic namespace matcher entirely, so an AlertmanagerConfig
+        # is matched purely by the matchers it actually declares -- see
+        # capabilities/alert-delivery/alertmanagerconfig.yaml.
+        alertmanagerConfigMatcherStrategy:
+          type: None
       # DELIBERATELY left at the chart's own default: route -> receiver
-      # 'null', receivers: [{name: 'null'}] -- i.e. no receiver configured.
-      # This is not a placeholder that silently ships broken; it is a
-      # documented, honest state -- see platform/observability/README.md
-      # and docs/core/bootstrap-lifecycle.md's postflight step, which
-      # reports this explicitly rather than letting it go unnoticed.
+      # 'null', receivers: [{name: 'null'}] -- i.e. no BASE receiver
+      # configured here. This is not a placeholder that silently ships
+      # broken; it is a documented, honest state -- see
+      # platform/observability/README.md and
+      # docs/core/bootstrap-lifecycle.md's postflight step, which reports
+      # this explicitly rather than letting it go unnoticed. A real
+      # receiver is wired the capability way, via a namespace-scoped
+      # AlertmanagerConfig object -- see capabilities/alert-delivery/ --
+      # never by editing this base config, which stays chart-default for
+      # every instance regardless of which capabilities it enables.
       # config: {} (chart default)
 
     kubeStateMetrics:

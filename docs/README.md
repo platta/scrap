@@ -33,9 +33,9 @@ proven/unproven/deferred snapshot behind the "Implemented?" column below.
 | External Git hosting | SUPPORTED | Yes, via `bootstrap/install.sh`'s `REPO_URL` (no dedicated capability file) | account + internet | Moves the source of truth off-host — the *other* of R3's two required ingredients, same caveat as above |
 | Identity (Authentik) | SUPPORTED, OPTIONAL | Yes, live-tested | ~1 GB RAM, a Postgres to back up | SSO via native OIDC and forward-auth. **Operator-mediated account recovery only** — the shipped configuration specifically proves no unauthenticated self-service recovery path exists, and passkey/WebAuthn login is neither configured nor tested |
 | Logs (Loki + Alloy) | SUPPORTED | Yes, live-tested | ~200–700 MB RAM | — (operational only; not part of the recovery model) |
-| Alert delivery (SMTP/ntfy/webhook) | SUPPORTED | **Not yet implemented** — Alertmanager ships with its default `null` receiver | a reachable receiver | makes existing alerts actionable |
+| Alert delivery (webhook — ntfy, or anything Alertmanager supports) | SUPPORTED | Yes, live-tested (real delivery to an ephemeral receiver is CI-proven; a real third-party provider's own API acceptance is operator-verified, not CI) | a reachable webhook receiver | makes existing alerts actionable |
 | Public ingress | SUPPORTED | **Not yet implemented** — README only | public IP or tunnel, router control, larger threat model | public reachability |
-| External heartbeat | SUPPORTED | **Not yet implemented** — README only | internet + free account | tells you the *cluster* is down |
+| External heartbeat | SUPPORTED | Yes, live-tested (the conditional push mechanism is CI-proven; a real provider's own missed-ping alarm/notification is operator-verified, not CI) | internet + free account | tells you the *cluster* is down |
 | UPS (NUT) | SUPPORTED | **Not yet implemented** — README only | a UPS with a data connection | corruption protection on power loss |
 | Alternative identity, storage, ingress, issuer, backup engine, K8s distro | EXTENSION | n/a — contract only | varies — see `extensions/` | varies, and untested |
 | Multi-node, HA, multi-cluster, distributed storage, multi-tenancy | OUT OF SCOPE | n/a | — | not guaranteed; see `out-of-scope/` |

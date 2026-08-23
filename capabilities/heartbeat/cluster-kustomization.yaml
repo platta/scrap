@@ -1,0 +1,37 @@
+# Copy this file (and cluster-secrets-kustomization.yaml, next to it) into
+# clusters/<name>/capabilities/ to enable the external heartbeat -- delete
+# both to disable. See capabilities/README.md and
+# docs/core/configuration-model.md for why a capability needing
+# credentials is a two-file copy, not one: the credential lives under
+# clusters/<name>/secrets/, never under capabilities/, so it stays out of
+# what Topology B's operator repository treats as pinned, shared upstream
+# content (docs/decisions/0009-repository-topology.md).
+#
+# dependsOn platform-observability: the "monitoring" namespace (CORE,
+# always present) this CronJob lands in, and the alertmanager-operated
+# Service its own script queries. dependsOn heartbeat-secrets too:
+# unlike identity's HelmRelease-managed Deployment (starts immediately,
+# needs its Secret to already exist), this is a CronJob -- its
+# secretKeyRef is only resolved when a Job actually starts on its own
+# schedule, the same lazy-resolution reasoning
+# platform/backup/backup-cronjob.yaml's own restic-credentials
+# secretKeyRef relies on. Declared anyway for predictable, explicit
+# ordering -- costs nothing, and rules out a first scheduled run racing
+# a secret that hasn't reconciled yet on a slow first apply.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: heartbeat
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/heartbeat
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-observability
+    - name: heartbeat-secrets
+  wait: true
+  timeout: 3m0s

@@ -95,17 +95,41 @@ fi
 echo
 
 echo "--- alerting ---"
+base_receiver=""
 if kubectl get secret -n monitoring alertmanager-kube-prometheus-stack-alertmanager >/dev/null 2>&1; then
     receiver=$(kubectl get secret -n monitoring alertmanager-kube-prometheus-stack-alertmanager \
         -o jsonpath='{.data.alertmanager\.yaml}' 2>/dev/null | base64 -d | awk '/^route:/{f=1} f && /receiver:/{print $2; exit}')
-    if [ "$receiver" = "'null'" ] || [ -z "$receiver" ]; then
-        echo "STATED PLAINLY, NOT HIDDEN: no Alertmanager receiver is configured."
-        echo "Backups failing, certificates expiring, pods crash-looping -- none of it will reach"
-        echo "you until a real receiver (SMTP, ntfy, webhook) is configured. See"
-        echo "docs/supported/README.md and platform/observability/README.md."
-    else
-        echo "ok    Alertmanager route configured (receiver: $receiver)"
+    if [ "$receiver" != "'null'" ] && [ -n "$receiver" ]; then
+        base_receiver="platform/observability/'s own base route (receiver: $receiver)"
+    fi
+fi
+# REAL BUG, found implementing capabilities/alert-delivery/ (PLAT-35):
+# that capability -- and any operator-authored equivalent -- wires
+# delivery via a namespace-scoped AlertmanagerConfig object, never by
+# editing platform/observability/'s own base config (see that capability's
+# README and platform/observability/helmrelease.yaml's own comment). The
+# TOP-LEVEL route's own `receiver:` therefore stays 'null' even once
+# delivery genuinely works -- checking only the block above would keep
+# reporting "no receiver configured" forever after this capability is
+# enabled, exactly the kind of stale, misleading status this postflight
+# step exists to prevent. No jq dependency introduced here -- bootstrap
+# never assumes it (see tests/profiles/lib.sh's own comment on why jq is
+# a test-runner-only tool) -- so this uses kubectl's own jsonpath, then
+# plain shell/grep to drop any object with an empty receiver.
+am_receivers=$(kubectl get alertmanagerconfigs -A \
+    -o jsonpath='{range .items[*]}{.metadata.namespace}{"/"}{.metadata.name}{" -> "}{.spec.route.receiver}{"\n"}{end}' 2>/dev/null | \
+    grep -v -- '-> *$' || true)
+if [ -n "$base_receiver" ] || [ -n "$am_receivers" ]; then
+    if [ -n "$base_receiver" ]; then
+        echo "ok    $base_receiver"
+    fi
+    if [ -n "$am_receivers" ]; then
+        echo "ok    AlertmanagerConfig-routed delivery configured:"
+        echo "$am_receivers" | sed 's/^/      /'
     fi
 else
-    echo "WARN  Alertmanager Secret not found yet -- platform-observability may still be reconciling."
+    echo "STATED PLAINLY, NOT HIDDEN: no Alertmanager receiver is configured."
+    echo "Backups failing, certificates expiring, pods crash-looping -- none of it will reach"
+    echo "you until a real receiver (SMTP, ntfy, webhook) is configured. See"
+    echo "capabilities/alert-delivery/README.md and docs/supported/README.md."
 fi

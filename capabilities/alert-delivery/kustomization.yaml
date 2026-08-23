@@ -1,0 +1,8 @@
+# No namespace.yaml here -- deliberately. This object lands in
+# "monitoring", which platform/observability/namespace.yaml already
+# creates unconditionally (CORE, always present) -- the same reasoning
+# capabilities/logs/'s own workloads rely on for the same namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - alertmanagerconfig.yaml
