@@ -101,6 +101,23 @@ echo "receiver up (pid $RECEIVER_PID) on port ${RECEIVER_PORT}, logging to $RECE
 
 webhook_hits() { grep -c '^POST /webhook' "$RECEIVER_LOG" 2>/dev/null || true; }
 ping_hits() { grep -c '^GET /ping\|^POST /ping' "$RECEIVER_LOG" 2>/dev/null || true; }
+# Scoped to the specific alertname this profile itself fires, NOT "any
+# webhook hit" -- REAL FINDING, from this check's own first live run:
+# kube-prometheus-stack ships defaultRules.rules.general: true by
+# default, which includes "Watchdog", a rule that is ALWAYS firing by
+# design (its own purpose is confirming the alerting pipeline itself is
+# alive -- see its own annotation text, visible in the delivered
+# payload). With alertmanagerConfigMatcherStrategy: None (deliberately
+# catch-all -- see platform/observability/helmrelease.yaml), this
+# capability correctly delivers Watchdog too, within moments of
+# Alertmanager starting -- genuinely proving the mechanism works, but it
+# also means "the receiver has gotten zero requests" is never true after
+# Alertmanager has been up for more than a few seconds, and a raw
+# webhook_hits() count can't tell Watchdog's delivery apart from
+# BackupJobFailed's. Scoping to the alert this profile actually controls
+# keeps both the negative control and the delivery wait meaningful
+# without disabling a real baseline alert just to satisfy a test.
+backupjobfailed_hits() { grep '^POST /webhook' "$RECEIVER_LOG" 2>/dev/null | grep -c BackupJobFailed || true; }
 
 # ---------------------------------------------------------------------------
 log "T-A-alert-heartbeat: Phase 2/5: bootstrap/install.sh -- the real, unmodified installer"
@@ -198,45 +215,71 @@ flux reconcile kustomization heartbeat --with-source >/dev/null 2>&1 || true
 log "T-A-alert-heartbeat: Phase 4/5: postconditions"
 
 # 4a. Both new Kustomizations (and everything else) reach Ready.
-not_ready=$(kc get kustomizations -A -o json | jq -r '
-    .items[] |
-    (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
-    select($ready != "True") |
-    "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
-')
+# REAL FINDING, from this check's own first live run: forcing a
+# whole-tree reconcile (flux-system --with-source, just above) can
+# transiently flip an UNRELATED Kustomization's own Ready condition
+# while Flux re-evaluates it, even though nothing this profile touched
+# targets it -- confirmed live: apps-examples and platform-ingress
+# briefly reported Ready=False here despite this profile never editing
+# either. A short retry loop absorbs that settle time, the same shape
+# every OTHER polled postcondition in this script already uses -- it does
+# not weaken what this check proves, since it still requires every
+# Kustomization to reach True, not merely tolerate a stale False forever.
+not_ready=""
+i=0
+while [ "$i" -lt 12 ]; do
+    not_ready=$(kc get kustomizations -A -o json | jq -r '
+        .items[] |
+        (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+        select($ready != "True") |
+        "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+    ')
+    [ -z "$not_ready" ] && break
+    sleep 5
+    i=$((i + 1))
+done
 if [ -z "$not_ready" ]; then
     ok T-A-alert-heartbeat/kustomizations-ready "every Flux Kustomization is Ready, including alert-delivery(-secrets) and heartbeat(-secrets)"
 else
     fail T-A-alert-heartbeat/kustomizations-ready "not Ready: $not_ready"
 fi
 
-# 4b. Structural ground truth: the AlertmanagerConfig itself reports
-# Accepted -- before trusting any delivery to have happened.
-accepted=""
-i=0
-while [ "$i" -lt 24 ]; do
-    accepted=$(kc get alertmanagerconfig -n monitoring scrap-alert-delivery \
-        -o jsonpath='{.status.conditions[?(@.type=="Accepted")].status}' 2>/dev/null || true)
-    [ "$accepted" = "True" ] && break
-    sleep 5
-    i=$((i + 1))
-done
-if [ "$accepted" = "True" ]; then
-    ok T-A-alert-heartbeat/alertmanagerconfig-accepted "the AlertmanagerConfig object reports Accepted=True -- the Prometheus Operator genuinely merged it, not just applied it"
+# 4b. Structural ground truth: the AlertmanagerConfig object itself
+# exists, applied by this capability's own Kustomization.
+#
+# REAL FINDING, from this check's own first live run: this operator/CRD
+# combination (monitoring.coreos.com/v1alpha1 -- the only served version
+# in the pinned kube-prometheus-stack 88.3.0 chart, confirmed by
+# inspecting the chart's own bundled CRD) never populates
+# `.status.conditions` on an AlertmanagerConfig at all -- `kubectl
+# describe` on a live object showed no Status block whatsoever, not a
+# timing gap. An `Accepted` condition is a real Prometheus Operator
+# feature, just not one this API version's objects ever carry. Waiting
+# on a status field this CRD version never sets would have made this
+# check permanently unfalsifiable-by-passing -- structural existence is
+# what's actually provable here; genuine merge/delivery is proven far
+# more strongly below (4d), by an actual webhook request arriving.
+am_name=$(kc get alertmanagerconfig -n monitoring scrap-alert-delivery -o jsonpath='{.metadata.name}' 2>/dev/null || true)
+if [ "$am_name" = "scrap-alert-delivery" ]; then
+    ok T-A-alert-heartbeat/alertmanagerconfig-exists "the AlertmanagerConfig object exists, applied by capabilities/alert-delivery/'s own Kustomization"
 else
-    fail T-A-alert-heartbeat/alertmanagerconfig-accepted "expected Accepted=True within 2 minutes, got '$accepted'"
+    fail T-A-alert-heartbeat/alertmanagerconfig-exists "expected the scrap-alert-delivery AlertmanagerConfig to exist in the monitoring namespace, got name='$am_name'"
     kc describe alertmanagerconfig -n monitoring scrap-alert-delivery 2>&1 | sed 's/^/      /' || true
 fi
 
-# 4c. NEGATIVE CONTROL, alert-delivery: zero deliveries before any alert
-# has fired -- closes the same vacuous-pass gap
-# capabilities/logs/'s own never-emitted-marker check closes for a
-# different capability.
-before_hits=$(webhook_hits)
+# 4c. NEGATIVE CONTROL, alert-delivery: zero deliveries of the specific
+# alert this profile is about to fire, before it fires -- closes the
+# same vacuous-pass gap capabilities/logs/'s own never-emitted-marker
+# check closes for a different capability. Deliberately scoped to
+# BackupJobFailed, not "any webhook hit" -- see backupjobfailed_hits()'s
+# own comment for why a raw count would already be nonzero from
+# Watchdog by this point, which is a REAL delivery this negative control
+# is not about.
+before_hits=$(backupjobfailed_hits)
 if [ "${before_hits:-0}" -eq 0 ]; then
-    ok T-A-alert-heartbeat/webhook-negative-control "the receiver has genuinely received zero /webhook requests before any alert has fired"
+    ok T-A-alert-heartbeat/webhook-negative-control "the receiver has genuinely received zero BackupJobFailed deliveries before that alert has fired (total webhook traffic so far: $(webhook_hits), e.g. the chart's own always-firing Watchdog -- a real delivery, not noise, and not what this control is about)"
 else
-    fail T-A-alert-heartbeat/webhook-negative-control "expected zero /webhook hits before triggering an alert, got $before_hits -- this check is meaningless if it can't start from zero"
+    fail T-A-alert-heartbeat/webhook-negative-control "expected zero BackupJobFailed deliveries before triggering it, got $before_hits -- this check is meaningless if it can't start from zero"
 fi
 
 # 4d. A real, live-fired alert reaches the configured webhook receiver.
@@ -265,7 +308,7 @@ echo "      waiting up to 8 minutes for BackupJobFailed to fire (its rule requir
 delivered=""
 i=0
 while [ "$i" -lt 96 ]; do
-    if [ "$(webhook_hits)" -gt 0 ] 2>/dev/null; then
+    if [ "$(backupjobfailed_hits)" -gt 0 ] 2>/dev/null; then
         delivered=1
         break
     fi
@@ -274,7 +317,7 @@ while [ "$i" -lt 96 ]; do
 done
 kc delete job -n scrap-backup "$FAIL_JOB" --ignore-not-found >/dev/null 2>&1 || true
 
-if [ "$delivered" = 1 ] && grep -q '^POST /webhook' "$RECEIVER_LOG" && grep '/webhook' "$RECEIVER_LOG" | grep -q BackupJobFailed; then
+if [ "$delivered" = 1 ]; then
     ok T-A-alert-heartbeat/alert-delivered "a real, live-fired BackupJobFailed alert reached the ephemeral receiver as a genuine webhook POST carrying Alertmanager's own payload (alertname visible in the body)"
 else
     fail T-A-alert-heartbeat/alert-delivered "the deliberately-failed job never produced a webhook delivery within 8 minutes -- see the receiver log and Alertmanager's own state"
@@ -302,8 +345,22 @@ fi
 # real, live-induced condition, not a mocked response), a fresh triggered
 # run must withhold the push AND still exit successfully (correctly
 # withholding is success, not failure -- see capabilities/heartbeat/README.md).
-kc scale statefulset -n monitoring alertmanager-kube-prometheus-stack-alertmanager --replicas=0 >/dev/null
-scaled_down=$(wait_for_pod_gone monitoring "app.kubernetes.io/name=alertmanager" 24)
+#
+# REAL BUG, found via this check's own first live run: `kubectl scale
+# statefulset` directly targets the StatefulSet the Prometheus Operator
+# itself creates and continuously reconciles FROM the Alertmanager CR's
+# own `spec.replicas` -- the operator's own reconcile loop puts the
+# StatefulSet right back to the CR's desired count, so the pod never
+# actually terminated (confirmed live: the heartbeat job then genuinely
+# found Alertmanager still healthy and correctly pushed, exactly as
+# designed against a cluster that was never actually made unhealthy --
+# not a heartbeat defect). The correct seam is the CR itself, the same
+# way this project already avoids fighting a controller elsewhere
+# (capabilities/public-tls/README.md's own "two ClusterIssuers, never a
+# mutated one" finding is the identical class of mistake in a different
+# controller).
+kc patch alertmanager -n monitoring kube-prometheus-stack-alertmanager --type merge -p '{"spec":{"replicas":0}}' >/dev/null
+scaled_down=$(wait_for_pod_gone monitoring "app.kubernetes.io/name=alertmanager" 30)
 if [ "$scaled_down" != ok ]; then
     fail T-A-alert-heartbeat/heartbeat-negative-setup "Alertmanager's pod never actually terminated after scaling to zero -- can't run the negative control against a genuinely unhealthy Alertmanager without this"
 fi
@@ -323,9 +380,9 @@ fi
 
 # Restore Alertmanager before anything downstream (including this
 # script's own exit-status reporting on a shared runner) might expect a
-# healthy platform.
-kc scale statefulset -n monitoring alertmanager-kube-prometheus-stack-alertmanager --replicas=1 >/dev/null
-restored=$(wait_for_pod_ready monitoring "app.kubernetes.io/name=alertmanager" 24)
+# healthy platform. Same CR-level seam as the scale-down above.
+kc patch alertmanager -n monitoring kube-prometheus-stack-alertmanager --type merge -p '{"spec":{"replicas":1}}' >/dev/null
+restored=$(wait_for_pod_ready monitoring "app.kubernetes.io/name=alertmanager" 30)
 if [ "$restored" = ok ]; then
     ok T-A-alert-heartbeat/alertmanager-restored "Alertmanager is Ready again after being scaled back up"
 else
