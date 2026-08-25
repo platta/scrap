@@ -15,11 +15,15 @@ off by default in the `minimal` profile.
 credential of its own; two for one that has a credential (the credential itself lives under
 `clusters/<name>/secrets/`, never here — see `capabilities/identity/README.md`'s "Enabling this
 capability" section for the concrete pair). No flags, no templating language, no SCRAP-specific
-configuration format — see `docs/core/configuration-model.md`. One recorded exception:
+configuration format — see `docs/core/configuration-model.md`. Two recorded exceptions:
 `ups/`'s host half (the NUT daemon holding shutdown authority) is enabled by an operator-run
 `bootstrap/host/` script, not a Kustomization — decided in
 `docs/decisions/0013-ups-shutdown-authority.md`, which also makes explicit that no capability
-workload ever runs privileged or holds host power authority.
+workload ever runs privileged or holds host power authority; and `public-ingress/`, which is
+operator-edge configuration end to end — enabled by performing its documented router/DNS
+procedure, disabled by removing the forwards, deliberately shipping no manifest at all — decided
+in `docs/decisions/0014-public-ingress-edge-authority.md`, which also outlaws inert placeholder
+manifests generally.
 
 ## The one rule that applies to every directory here
 
