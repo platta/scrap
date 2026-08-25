@@ -378,6 +378,21 @@ query_record() {
     dig @127.0.0.1 -p "$BIND_PORT" +short +time=3 +tries=2 "$RECORD" A | tail -n1
 }
 
+# Diagnostics for the two straight CI runs that got this far only to
+# find the triggered Job's own curl to DYNDNS_IP_LOOKUP_URL returning
+# nothing (empty, not a real IP), even after fixing NODE_IP's own
+# pre/post-bootstrap timing -- unconditional, not just on failure, so
+# whichever of these three explanations is real (the echo server died
+# during the ~4-minute bootstrap; NODE_IP itself is still wrong; or
+# host-side sockets are fine but the pod genuinely can't reach the host
+# on this port) shows up directly rather than requiring another round.
+echo "diagnostics: echo server (pid $ECHO_PID) still alive?"
+ps -p "$ECHO_PID" -o pid,stat,cmd 2>&1 | sed 's/^/      /' || true
+echo "diagnostics: host-side curl to http://$NODE_IP:$ECHO_PORT/ (the exact URL the Job itself was given)"
+curl -sv --max-time 5 "http://$NODE_IP:$ECHO_PORT/" 2>&1 | sed 's/^/      /' || true
+echo "diagnostics: host-side dig to the nameserver via NODE_IP (not just 127.0.0.1, which is all this script's own readiness poll ever checked)"
+dig @"$NODE_IP" -p "$BIND_PORT" +short +time=3 +tries=1 "$ZONE" SOA 2>&1 | sed 's/^/      /' || true
+
 # 5c. POSITIVE: a manually triggered run genuinely updates the A record
 # to the current public IP, confirmed by an independent dig query this
 # script issues itself against the nameserver directly -- never inferred
