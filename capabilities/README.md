@@ -43,14 +43,15 @@ observability stack. CI checks this on every pull request (`tests/assertions/`).
 | [`offsite-backup/`](offsite-backup/) | S3-compatible off-site backup destination — places recovery artifacts off-host, one of R3's two required ingredients | off | **Implemented, live-tested** (proves artifact placement, not host-loss recovery itself — see `docs/release-readiness.md`) |
 | [`logs/`](logs/) | Centralized pod logs (Loki + Alloy), correlated with metrics | on | **Implemented, live-tested** |
 | [`alert-delivery/`](alert-delivery/) | A real Alertmanager receiver (webhook — ntfy, or anything Alertmanager itself supports) | on | **Implemented, live-tested** |
-| [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Designed, not yet implemented** — README only, no manifests |
+| [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Implemented, live-tested** (ships no manifest by design — `docs/decisions/0014-public-ingress-edge-authority.md`; live public reachability of a real install is operator-verified, not CI — see the directory's own README) |
 | [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Implemented, live-tested** |
-| [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Designed, not yet implemented** — README only, no manifests |
+| [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Implemented, live-tested** |
 | [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off | **Designed, not yet implemented** — README only, no manifests |
 
-For the three remaining "designed, not yet implemented" rows: the directory contains only a
+For the one remaining "designed, not yet implemented" row (`ups/`): the directory contains only a
 `README.md` describing the intended mechanism — there is no `Kustomization` file to copy in yet, so
-"enabling" one today has no effect. Each directory's `README.md` states exactly what enabling it is
-intended to add and what new external assumptions it will introduce — see `docs/supported/` for the
-consolidated version of the same information, organized for a reader deciding what to enable rather
-than for a contributor.
+"enabling" one today has no effect. `public-ingress/`, above, is a different case entirely: it's
+fully implemented, but its own `README.md` documents an operator-run procedure, never a file to
+copy in — see that directory's own README, and `docs/decisions/0014-public-ingress-edge-authority.md`,
+for why. See `docs/supported/` for the consolidated version of this same information, organized for
+a reader deciding what to enable rather than for a contributor.
