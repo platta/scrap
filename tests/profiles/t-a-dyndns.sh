@@ -343,9 +343,21 @@ log "T-A-dyndns: Phase 5/6: postconditions"
 # retry-loop shape t-a-alert-heartbeat.sh's own identical comment
 # explains (a whole-tree reconcile can transiently flip an unrelated
 # Kustomization's own Ready condition while Flux re-evaluates it).
+#
+# REAL BUG, found live via this profile's own first genuinely-green CI
+# run turning up a later flake: this capability is the first live
+# profile whose own enabling Kustomization creates a brand-new
+# Namespace (namespace.yaml, capabilities/dyndns/'s own "no dependency
+# on other capabilities" design) rather than reusing one that already
+# exists -- a genuinely heavier settle operation than every sibling
+# profile's own identical retry loop was ever exercised against. 12
+# iterations (60s) was insufficient at least once; 24 (2 minutes) gives
+# real margin without weakening what this check proves -- it still
+# requires every Kustomization to reach True, never merely tolerating a
+# stale False forever.
 not_ready=""
 i=0
-while [ "$i" -lt 12 ]; do
+while [ "$i" -lt 24 ]; do
     not_ready=$(kc get kustomizations -A -o json | jq -r '
         .items[] |
         (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
