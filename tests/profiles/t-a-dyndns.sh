@@ -181,7 +181,15 @@ if [ -f /etc/apparmor.d/usr.sbin.named ]; then
     sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.named 2>/dev/null || true
 fi
 
-nohup named -c "$BIND_DIR/named.conf" -g >"$BIND_LOG" 2>&1 &
+# -d 2: named's own startup logs 'running' and completes zone loading
+# cleanly every time, with zero errors anywhere, yet ss -tulnp
+# consistently shows nothing at all bound on $BIND_PORT afterward --
+# genuinely inconsistent with BIND9's normal, very vocal behavior about
+# listener failures. -d turns on debug-level tracing (a separate,
+# distinct path from the plain informational logging '-g' alone
+# produces), the most direct way to get a definitive answer about what
+# actually happens during listener setup rather than guessing further.
+nohup named -c "$BIND_DIR/named.conf" -g -d 2 >"$BIND_LOG" 2>&1 &
 NAMED_PID=$!
 
 nameserver_up=""
