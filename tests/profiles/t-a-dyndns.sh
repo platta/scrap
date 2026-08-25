@@ -388,10 +388,16 @@ query_record() {
 # on this port) shows up directly rather than requiring another round.
 echo "diagnostics: echo server (pid $ECHO_PID) still alive?"
 ps -p "$ECHO_PID" -o pid,stat,cmd 2>&1 | sed 's/^/      /' || true
-echo "diagnostics: host-side curl to http://$NODE_IP:$ECHO_PORT/ (the exact URL the Job itself was given)"
+echo "diagnostics: the ACTUAL env baked into the live CronJob's own pod spec -- not this script's own reconstruction of what it meant to set, in case Flux substitution or the sed edit didn't actually land"
+kc get cronjob -n dyndns scrap-dyndns -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].env}' 2>&1 | sed 's/^/      /' || true
+echo
+echo "diagnostics: host-side curl to http://$NODE_IP:$ECHO_PORT/ (what this script itself computed the URL to be)"
 curl -sv --max-time 5 "http://$NODE_IP:$ECHO_PORT/" 2>&1 | sed 's/^/      /' || true
 echo "diagnostics: host-side dig to the nameserver via NODE_IP (not just 127.0.0.1, which is all this script's own readiness poll ever checked)"
 dig @"$NODE_IP" -p "$BIND_PORT" +short +time=3 +tries=1 "$ZONE" SOA 2>&1 | sed 's/^/      /' || true
+echo "diagnostics: the most direct test -- curl to the same URL, run from INSIDE a throwaway pod on this same cluster (not the host)"
+kc run t-a-dyndns-connectivity-probe --image=curlimages/curl:8.21.0 --restart=Never --rm -i \
+    --command -- curl -sv --max-time 5 "http://$NODE_IP:$ECHO_PORT/" 2>&1 | sed 's/^/      /' || true
 
 # 5c. POSITIVE: a manually triggered run genuinely updates the A record
 # to the current public IP, confirmed by an independent dig query this
