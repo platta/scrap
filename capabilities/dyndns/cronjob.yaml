@@ -86,8 +86,8 @@ spec:
                   # envsubst (github.com/drone/envsubst under the hood,
                   # per its own error text), which understands bash-style
                   # parameter expansion operators (%, ##, :-, ...) and
-                  # matches BOTH $VAR and ${VAR} -- not the simpler
-                  # brace-only, operator-blind pattern
+                  # matches a bare name just as readily as a braced one --
+                  # not the simpler, brace-only, operator-blind pattern
                   # tests/assertions/check_instance_literals.py's own
                   # static check looks for. Every shell-local name below
                   # (never an instance-config key) is therefore escaped
