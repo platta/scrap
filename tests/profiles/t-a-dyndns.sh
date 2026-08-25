@@ -112,7 +112,15 @@ options {
     allow-transfer { none; };
     recursion no;
     pid-file "$BIND_DIR/named.pid";
+    # Both harmless-but-noisy by default: named's stock config normally
+    # points these at /run/named/ and /etc/bind/, both root/bind-owned
+    # and unreadable/unwritable by this unprivileged runner user. Neither
+    # is needed here -- this test never uses rndc, and the session key
+    # is only for nsupdate's own local-session convenience mode, not the
+    # real RFC2136 TSIG path this capability's own cronjob.yaml uses.
+    session-keyfile "$BIND_DIR/session.key";
 };
+controls { };
 
 key "$TSIG_KEY_NAME" {
     algorithm hmac-sha256;
@@ -126,10 +134,17 @@ zone "$ZONE" {
 };
 EOF
 
+# REAL BUG, found live via this script's own first CI run: an NS record
+# naming a name INSIDE the zone it delegates ("ns.$ZONE") needs a glue A
+# record for that same name, or BIND's default check-integrity refuses
+# to load the zone at all ("has no address records (A or AAAA)") --
+# nothing ever queries ns.$ZONE directly in this test, but the zone
+# can't load without it regardless.
 cat > "$BIND_DIR/db.zone" <<EOF
 \$TTL 300
 @ IN SOA ns.$ZONE. admin.$ZONE. ( 1 3600 900 604800 300 )
 @ IN NS ns.$ZONE.
+ns IN A 127.0.0.1
 host IN A $IP_INITIAL
 EOF
 
