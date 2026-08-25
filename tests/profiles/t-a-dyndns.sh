@@ -178,6 +178,13 @@ while [ "$i" -lt 20 ]; do
 done
 if [ -z "$nameserver_up" ]; then
     echo "FAIL  T-A-dyndns: the ephemeral nameserver never came up -- see $BIND_LOG"
+    echo "      --- one raw, unsuppressed dig attempt, for diagnosis ---"
+    dig @127.0.0.1 -p "$BIND_PORT" +time=3 +tries=1 "$ZONE" SOA 2>&1 | sed 's/^/      /' || true
+    echo "      --- what's actually listening on this port (ss -tuln) ---"
+    ss -tuln 2>&1 | sed 's/^/      /' || true
+    echo "      --- named process, still running? ---"
+    ps -p "$NAMED_PID" -o pid,stat,cmd 2>&1 | sed 's/^/      /' || true
+    echo "      --- named's own log ---"
     cat "$BIND_LOG" 2>/dev/null || true
     exit 1
 fi
