@@ -11,6 +11,13 @@ for stateful applications with local-disk databases, which is most of what SCRAP
 shutdown is a realistic and previously-observed failure mode for a single-node, single-disk
 install.
 
+**The mechanism is now decided** — `docs/decisions/0013-ups-shutdown-authority.md` (2026-08-25):
+shutdown authority is a host-level NUT install (`upsd` + `upsmon`, `SHUTDOWNCMD`) delivered by an
+operator-run `bootstrap/host/` script in the `install-k3s.sh` pattern; the in-cluster half of this
+capability is unprivileged visibility/alerting only (a read-only NUT client over TCP), enabled by
+the normal Kustomization-copy mechanism. No SCRAP workload holds host power authority.
+Implementation remains open (PLAT-37).
+
 ## New assumptions this introduces
 
 A UPS with a data connection to the host (USB or network). No cloud dependency.

@@ -20,6 +20,7 @@ attractive.
 | [0010](0010-backup-credential-isolation.md) | Backup credential isolation | An authorization boundary (`--host`, per-instance credentials), not a naming convention |
 | [0011](0011-release-candidate-policy.md) | Release-candidate policy | A candidate may leave explicitly-marked, still-mandatory v1 requirements unproven (e.g. T-E/R3); qualification failures produce another candidate, not a redefinition of what's required |
 | [0012](0012-rc-implementation-envelope.md) | RC implementation envelope | A candidate may defer proof, never existence: every mandatory-v1 behavior must be implemented before `rc.1` — heartbeat, dyndns, UPS, public ingress, alert delivery, and the Topology B generator are all pre-RC work |
+| [0013](0013-ups-shutdown-authority.md) | UPS shutdown authority | Host-level NUT (`bootstrap/host/`, the `install-k3s.sh` pattern) holds shutdown authority; the in-cluster half is unprivileged visibility only; no SCRAP workload ever holds host power — in-cluster privileged shutdown and scoping the promise down both rejected |
 
 ## Format
 
