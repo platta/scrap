@@ -14,6 +14,20 @@
 # own comment gives -- so this Kustomization need not (and does not)
 # dependOn dyndns-secrets to be created safely; see that Kustomization's
 # own comment for why the dependency instead runs the other direction.
+#
+# REAL BUG, found live via t-a-dyndns.sh's own CI run (its own connectivity
+# diagnostics proved pod-to-host reachability was never the problem --
+# a throwaway debug pod's curl to the exact same URL succeeded cleanly;
+# the actual fault was this Kustomization never substituting cronjob.yaml's
+# own ${DYNDNS_HOSTNAME}/${DYNDNS_NAMESERVER}/${DYNDNS_TSIG_KEY_NAME}/
+# ${DYNDNS_IP_LOOKUP_URL} tokens at all -- the live CronJob's own env
+# carried the literal, unsubstituted "${DYNDNS_IP_LOOKUP_URL}" string,
+# confirmed by reading its spec directly): postBuild.substituteFrom is
+# per-Kustomization, not inherited from the outer "capabilities"
+# Kustomization that discovers this file -- capabilities/public-tls/'s
+# own cluster-kustomization.yaml, which needs the identical mechanism for
+# acme-issuers.yaml's own ${ACME_EMAIL} etc., already establishes this
+# exact stanza; this file simply omitted it.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -26,5 +40,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
   wait: true
   timeout: 3m0s
