@@ -43,11 +43,6 @@ BIND_PORT=15353
 ECHO_PORT=15380
 BIND_DIR=/tmp/t-a-dyndns-bind
 mkdir -p "$BIND_DIR"
-# Computed up front (not just before Phase 3, where every other live
-# profile computes its own NODE_IP-equivalent) -- this test's own
-# nameserver needs to bind it explicitly, not just the CronJob pod that
-# reaches it later. See the listen-on directive's own comment for why.
-NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 ZONE="dyndns-test.internal"
 RECORD="host.${ZONE}"
 TSIG_KEY_NAME="t-a-dyndns-test-key"
@@ -59,7 +54,7 @@ BIND_LOG=/tmp/t-a-dyndns-named.log
 IPFILE=/tmp/t-a-dyndns-current-ip.txt
 
 # ---------------------------------------------------------------------------
-log "T-A-dyndns: Phase 0/5: environment prerequisites"
+log "T-A-dyndns: Phase 0/6: environment prerequisites"
 install_prereqs
 if ! command -v named >/dev/null 2>&1; then
     apt_install bind9
@@ -90,14 +85,18 @@ sudo systemctl disable bind9 2>/dev/null || true
 sudo systemctl disable named 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
-log "T-A-dyndns: Phase 1/5: two real, ephemeral services -- an authoritative nameserver and an IP-lookup endpoint"
+log "T-A-dyndns: Phase 1/6: the IP-lookup endpoint"
 
-# The IP-lookup endpoint: a real HTTP server whose response body is
-# whatever this script last wrote to $IPFILE -- lets later phases change
-# "the current public IP" the CronJob observes without restarting the
-# server, the exact contract capabilities/dyndns/README.md documents
-# (DYNDNS_IP_LOOKUP_URL: an endpoint whose entire response body is a bare
-# IPv4 address).
+# A real HTTP server whose response body is whatever this script last
+# wrote to $IPFILE -- lets later phases change "the current public IP"
+# the CronJob observes without restarting the server, the exact contract
+# capabilities/dyndns/README.md documents (DYNDNS_IP_LOOKUP_URL: an
+# endpoint whose entire response body is a bare IPv4 address). Binds
+# 0.0.0.0 -- unlike the nameserver below, this one genuinely has never
+# had a binding problem in any of this test's own CI runs, confirmed
+# repeatedly via ss showing python3 correctly listening; started here,
+# before bootstrap, same as every other live profile's own ephemeral
+# receiver.
 echo "$IP_INITIAL" > "$IPFILE"
 cat > /tmp/t-a-dyndns-echo.py <<'PYEOF'
 import sys
@@ -120,12 +119,54 @@ HTTPServer(("0.0.0.0", port), Handler).serve_forever()
 PYEOF
 nohup python3 /tmp/t-a-dyndns-echo.py "$IPFILE" "$ECHO_PORT" >/tmp/t-a-dyndns-echo.log 2>&1 &
 ECHO_PID=$!
+echo "echo endpoint up (pid $ECHO_PID) on port $ECHO_PORT"
 
-# The authoritative nameserver: a real, disposable BIND9 instance,
-# authoritative for one throwaway zone, with a real TSIG key generated
-# fresh for this run and an allow-update ACL scoped to it -- the same
-# RFC2136 mechanism capabilities/public-tls/'s own DNS-01 solver and this
-# capability's own cronjob.yaml speak, never a mock DNS server.
+# ---------------------------------------------------------------------------
+log "T-A-dyndns: Phase 2/6: bootstrap/install.sh -- the real, unmodified installer"
+export SCRAP_ESCROW_CONFIRMED=1
+cd "$REPO_ROOT"
+if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+    echo
+    echo "FAIL  T-A-dyndns: bootstrap/install.sh exited non-zero -- see the 'Step N/7'"
+    echo "      marker above for which layer of the documented bootstrap sequence failed."
+    exit 1
+fi
+
+setup_kubeconfig
+
+not_ready=$(kc get kustomizations -A -o json | jq -r '
+    .items[] |
+    (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
+    select($ready != "True") |
+    "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
+')
+if [ -z "$not_ready" ]; then
+    ok T-A-dyndns/kustomizations-ready-baseline "every Flux Kustomization is Ready before dyndns is enabled"
+else
+    fail T-A-dyndns/kustomizations-ready-baseline "not Ready: $not_ready"
+fi
+
+# ---------------------------------------------------------------------------
+log "T-A-dyndns: Phase 3/6: the authoritative nameserver"
+
+# REAL BUG, found live via this script's own eighth CI run: computed
+# BEFORE bootstrap (this test's own earlier attempt), NODE_IP captured
+# whatever the runner's routable address was pre-k3s -- k3s's own CNI
+# setup (Flannel, cni0, ...) adds further "scope global" interfaces, and
+# the in-cluster CronJob pod that later depends on this address couldn't
+# reach it. Every other live profile in this repository (t-a-alert-heartbeat.sh
+# included) computes its own NODE_IP-equivalent strictly AFTER bootstrap
+# for exactly this reason; this test now does the same, and starts the
+# nameserver here, after that value is known to be correct, rather than
+# in Phase 1 alongside the echo endpoint (which has no such dependency --
+# it binds 0.0.0.0, not a specific address).
+NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
+
+# A real, disposable BIND9 instance, authoritative for one throwaway
+# zone, with a real TSIG key generated fresh for this run and an
+# allow-update ACL scoped to it -- the same RFC2136 mechanism
+# capabilities/public-tls/'s own DNS-01 solver and this capability's own
+# cronjob.yaml speak, never a mock DNS server.
 cat > "$BIND_DIR/named.conf" <<EOF
 options {
     directory "$BIND_DIR";
@@ -240,35 +281,10 @@ if [ -z "$nameserver_up" ]; then
     cat "$BIND_LOG" 2>/dev/null || true
     exit 1
 fi
-echo "ephemeral nameserver up (pid $NAMED_PID) on port $BIND_PORT, echo endpoint up (pid $ECHO_PID) on port $ECHO_PORT"
+echo "ephemeral nameserver up (pid $NAMED_PID) on port $BIND_PORT"
 
 # ---------------------------------------------------------------------------
-log "T-A-dyndns: Phase 2/5: bootstrap/install.sh -- the real, unmodified installer"
-export SCRAP_ESCROW_CONFIRMED=1
-cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
-    echo
-    echo "FAIL  T-A-dyndns: bootstrap/install.sh exited non-zero -- see the 'Step N/7'"
-    echo "      marker above for which layer of the documented bootstrap sequence failed."
-    exit 1
-fi
-
-setup_kubeconfig
-
-not_ready=$(kc get kustomizations -A -o json | jq -r '
-    .items[] |
-    (.status.conditions // [] | map(select(.type=="Ready")) | .[0].status // "Unknown") as $ready |
-    select($ready != "True") |
-    "\(.metadata.namespace)/\(.metadata.name) (ready=\($ready))"
-')
-if [ -z "$not_ready" ]; then
-    ok T-A-dyndns/kustomizations-ready-baseline "every Flux Kustomization is Ready before dyndns is enabled"
-else
-    fail T-A-dyndns/kustomizations-ready-baseline "not Ready: $not_ready"
-fi
-
-# ---------------------------------------------------------------------------
-log "T-A-dyndns: Phase 3/5: enable dyndns live -- exactly the documented two-file copy"
+log "T-A-dyndns: Phase 4/6: enable dyndns live -- exactly the documented two-file copy"
 BARE_REPO=/var/lib/scrap/repo.git
 LIVEDIR=$(mktemp -d)
 git clone -q "$BARE_REPO" "$LIVEDIR"
@@ -321,9 +337,9 @@ flux reconcile kustomization dyndns-secrets --with-source >/dev/null 2>&1 || tru
 flux reconcile kustomization dyndns --with-source >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
-log "T-A-dyndns: Phase 4/5: postconditions"
+log "T-A-dyndns: Phase 5/6: postconditions"
 
-# 4a. Both new Kustomizations (and everything else) reach Ready. Same
+# 5a. Both new Kustomizations (and everything else) reach Ready. Same
 # retry-loop shape t-a-alert-heartbeat.sh's own identical comment
 # explains (a whole-tree reconcile can transiently flip an unrelated
 # Kustomization's own Ready condition while Flux re-evaluates it).
@@ -346,7 +362,7 @@ else
     fail T-A-dyndns/kustomizations-ready "not Ready: $not_ready"
 fi
 
-# 4b. Structural ground truth: the CronJob and its own Namespace exist,
+# 5b. Structural ground truth: the CronJob and its own Namespace exist,
 # applied by this capability's own Kustomization, and it makes no
 # Kubernetes API call of its own.
 cj_name=$(kc get cronjob -n dyndns scrap-dyndns -o jsonpath='{.metadata.name}' 2>/dev/null || true)
@@ -362,7 +378,7 @@ query_record() {
     dig @127.0.0.1 -p "$BIND_PORT" +short +time=3 +tries=2 "$RECORD" A | tail -n1
 }
 
-# 4c. POSITIVE: a manually triggered run genuinely updates the A record
+# 5c. POSITIVE: a manually triggered run genuinely updates the A record
 # to the current public IP, confirmed by an independent dig query this
 # script issues itself against the nameserver directly -- never inferred
 # from the Job's own exit status alone.
@@ -379,7 +395,7 @@ else
     fail T-A-dyndns/update-applies "expected the job to succeed and the record to become $IP_ONE (job result=$pos_result, record=$pos_record)"
 fi
 
-# 4d. UNCHANGED-IP PATH: a second triggered run with nothing changed
+# 5d. UNCHANGED-IP PATH: a second triggered run with nothing changed
 # makes no update attempt at all -- proving the "only update if the IP
 # actually changed" logic is genuine, not merely documented. Checked via
 # the job's own log text (it must say so) and that the record is still
@@ -397,7 +413,7 @@ else
     fail T-A-dyndns/skips-when-unchanged "expected the job to succeed, log 'no update needed', and record unchanged at $IP_ONE (result=$unchanged_result, record=$unchanged_record)"
 fi
 
-# 4e. NEGATIVE CONTROL: a deliberately wrong TSIG secret, with a
+# 5e. NEGATIVE CONTROL: a deliberately wrong TSIG secret, with a
 # genuinely different IP presented to the job, must fail visibly AND
 # leave the record untouched -- not merely a stale-looking success. Same
 # "verified, not assumed" standard capabilities/dyndns/README.md's own
@@ -446,7 +462,7 @@ else
     fail T-A-dyndns/rejects-wrong-credential "expected the job to FAIL and the record to remain $IP_ONE (result=$neg_result, record=$neg_record)"
 fi
 
-# 4f. Revert: confirm T1 -- the objects this capability owned are gone,
+# 5f. Revert: confirm T1 -- the objects this capability owned are gone,
 # nothing else is affected.
 LIVEDIR4=$(mktemp -d)
 git clone -q "$BARE_REPO" "$LIVEDIR4"
