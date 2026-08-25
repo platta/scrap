@@ -90,11 +90,12 @@ spec:
                   # not the simpler, brace-only, operator-blind pattern
                   # tests/assertions/check_instance_literals.py's own
                   # static check looks for. Every shell-local name below
-                  # (never an instance-config key) is therefore escaped
-                  # $$VAR, Flux's own documented escape for "leave this
-                  # exact text alone, the container's shell evaluates it
-                  # at runtime" -- $$ reduces to a literal $ during
-                  # substitution, the same way capabilities/heartbeat/cronjob.yaml's
+                  # (never an instance-config key) is therefore prefixed
+                  # with a doubled dollar sign, Flux's own documented
+                  # escape meaning "leave this exact text alone, the
+                  # container's shell evaluates it at runtime" -- a
+                  # doubled dollar sign reduces to a single literal one
+                  # during substitution, the same way capabilities/heartbeat/cronjob.yaml's
                   # own ALERTMANAGER_URL local was already kept out of
                   # Flux's substitution reach, just via a stronger
                   # mechanism now that this capability's own Kustomization
