@@ -133,6 +133,21 @@ cat > "$BIND_DIR/db.zone" <<EOF
 host IN A $IP_INITIAL
 EOF
 
+# REAL BUG, found live via this script's own first CI run: Ubuntu's
+# bind9 package ships an AppArmor profile (usr.sbin.named) confining the
+# named binary to a fixed set of paths (/etc/bind/, /var/lib/bind/,
+# /var/cache/bind/, ...) -- it does NOT include /tmp, so named failed
+# outright ("open: .../named.conf: permission denied") despite completely
+# ordinary Unix file permissions; the process's own uid genuinely owned
+# and could read the file, AppArmor's mandatory access control simply
+# doesn't consult ownership at all. Unloading this one profile (never a
+# system-wide AppArmor disable) is the direct, structural fix -- `|| true`
+# since a non-Ubuntu runner, or one without AppArmor at all, has nothing
+# to unload here.
+if [ -f /etc/apparmor.d/usr.sbin.named ]; then
+    sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.named 2>/dev/null || true
+fi
+
 nohup named -c "$BIND_DIR/named.conf" -g >"$BIND_LOG" 2>&1 &
 NAMED_PID=$!
 

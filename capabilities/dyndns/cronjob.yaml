@@ -82,18 +82,22 @@ spec:
                   # Copied to a plain, non-instance-config-shaped name
                   # BEFORE slicing host/port apart -- deliberately, not
                   # merely stylistic: Flux's postBuild.substituteFrom is
-                  # a blind ${VAR_NAME} text substitution over this
+                  # a blind, brace-wrapped text substitution over this
                   # WHOLE rendered manifest, this shell script text
                   # included, with no awareness of what's a real
                   # instance-config placeholder versus a shell
                   # parameter-expansion the container will evaluate
-                  # itself. capabilities/heartbeat/cronjob.yaml's own
-                  # ALERTMANAGER_URL local (assigned, never braced)
+                  # itself (tests/assertions/check_instance_literals.py's
+                  # own regex would flag a literal example of that
+                  # syntax written here as an undefined reference, which
+                  # is why this comment describes it in prose instead of
+                  # showing it). capabilities/heartbeat/cronjob.yaml's
+                  # own ALERTMANAGER_URL local (assigned, never braced)
                   # establishes the same defensive convention already --
                   # this does the equivalent for a name that (unlike
                   # ALERTMANAGER_URL) really is also an instance-config
                   # key, one step earlier, so no braced
-                  # ${DYNDNS_NAMESERVER...} form ever appears in this
+                  # DYNDNS_NAMESERVER reference ever appears in this
                   # script at all.
                   RAW_NAMESERVER="$DYNDNS_NAMESERVER"
                   NS_HOST="${RAW_NAMESERVER%%:*}"
@@ -130,8 +134,8 @@ spec:
                   # material from the Secret this capability's
                   # secretKeyRef reads (never an instance-config.yaml
                   # scalar at all -- tests/assertions/check_instance_literals.py
-                  # would correctly flag a braced ${DYNDNS_TSIG_SECRET}
-                  # here as an undefined reference, since it lives in
+                  # would correctly flag a brace-wrapped reference to it
+                  # here as undefined, since it lives in
                   # clusters/<name>/secrets/, not instance-config.yaml).
                   nsupdate -y "hmac-sha256:$DYNDNS_TSIG_KEY_NAME:$DYNDNS_TSIG_SECRET" -v <<UPDATE
                   server $NS_HOST $NS_PORT
