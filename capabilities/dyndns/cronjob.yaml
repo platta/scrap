@@ -79,29 +79,31 @@ spec:
                   set -eu
                   apk add --no-cache -q bind-tools curl
 
-                  # Copied to a plain, non-instance-config-shaped name
-                  # BEFORE slicing host/port apart -- deliberately, not
-                  # merely stylistic: Flux's postBuild.substituteFrom is
-                  # a blind, brace-wrapped text substitution over this
-                  # WHOLE rendered manifest, this shell script text
-                  # included, with no awareness of what's a real
-                  # instance-config placeholder versus a shell
-                  # parameter-expansion the container will evaluate
-                  # itself (tests/assertions/check_instance_literals.py's
-                  # own regex would flag a literal example of that
-                  # syntax written here as an undefined reference, which
-                  # is why this comment describes it in prose instead of
-                  # showing it). capabilities/heartbeat/cronjob.yaml's
-                  # own ALERTMANAGER_URL local (assigned, never braced)
-                  # establishes the same defensive convention already --
-                  # this does the equivalent for a name that (unlike
-                  # ALERTMANAGER_URL) really is also an instance-config
-                  # key, one step earlier, so no braced
-                  # DYNDNS_NAMESERVER reference ever appears in this
-                  # script at all.
-                  RAW_NAMESERVER="$DYNDNS_NAMESERVER"
-                  NS_HOST="${RAW_NAMESERVER%%:*}"
-                  NS_PORT="${RAW_NAMESERVER##*:}"
+                  # REAL BUG, found live via t-a-dyndns.sh's own CI run
+                  # once this capability's Kustomization actually gained
+                  # postBuild.substituteFrom (needed for the env: values
+                  # above): Flux's substitution engine is a genuine
+                  # envsubst (github.com/drone/envsubst under the hood,
+                  # per its own error text), which understands bash-style
+                  # parameter expansion operators (%, ##, :-, ...) and
+                  # matches BOTH $VAR and ${VAR} -- not the simpler
+                  # brace-only, operator-blind pattern
+                  # tests/assertions/check_instance_literals.py's own
+                  # static check looks for. Every shell-local name below
+                  # (never an instance-config key) is therefore escaped
+                  # $$VAR, Flux's own documented escape for "leave this
+                  # exact text alone, the container's shell evaluates it
+                  # at runtime" -- $$ reduces to a literal $ during
+                  # substitution, the same way capabilities/heartbeat/cronjob.yaml's
+                  # own ALERTMANAGER_URL local was already kept out of
+                  # Flux's substitution reach, just via a stronger
+                  # mechanism now that this capability's own Kustomization
+                  # genuinely needs postBuild.substituteFrom for real
+                  # (heartbeat's own Kustomization never did, so this
+                  # gap never applied there).
+                  RAW_NAMESERVER="$$DYNDNS_NAMESERVER"
+                  NS_HOST="$${RAW_NAMESERVER%%:*}"
+                  NS_PORT="$${RAW_NAMESERVER##*:}"
 
                   # The IP-lookup contract this capability needs: an
                   # HTTP(S) URL whose entire response body is a bare
@@ -112,35 +114,32 @@ spec:
                   # shape. Validated, not trusted blindly: a malformed
                   # response must never reach nsupdate as if it were a
                   # real address.
-                  CURRENT_IP=$(curl -sf --max-time 10 "$DYNDNS_IP_LOOKUP_URL" | tr -d '[:space:]')
-                  case "$CURRENT_IP" in
+                  CURRENT_IP=$(curl -sf --max-time 10 "$$DYNDNS_IP_LOOKUP_URL" | tr -d '[:space:]')
+                  case "$$CURRENT_IP" in
                     ''|*[!0-9.]*)
-                      echo "DYNDNS_IP_LOOKUP_URL did not return what looks like a bare IPv4 address (got: '$CURRENT_IP') -- refusing to send a DNS update with it"
+                      echo "DYNDNS_IP_LOOKUP_URL did not return what looks like a bare IPv4 address (got: '$$CURRENT_IP') -- refusing to send a DNS update with it"
                       exit 1
                       ;;
                   esac
 
-                  EXISTING_IP=$(dig @"$NS_HOST" -p "$NS_PORT" +short +time=5 +tries=2 "$DYNDNS_HOSTNAME" A | tail -n1)
+                  EXISTING_IP=$(dig @"$$NS_HOST" -p "$$NS_PORT" +short +time=5 +tries=2 "$$DYNDNS_HOSTNAME" A | tail -n1)
 
-                  if [ "$CURRENT_IP" = "$EXISTING_IP" ]; then
-                      echo "public IP unchanged ($CURRENT_IP) -- no update needed"
+                  if [ "$$CURRENT_IP" = "$$EXISTING_IP" ]; then
+                      echo "public IP unchanged ($$CURRENT_IP) -- no update needed"
                       exit 0
                   fi
 
-                  echo "public IP changed (was '${EXISTING_IP:-<none>}', now '$CURRENT_IP') -- sending an RFC2136 update"
-                  # Bare $DYNDNS_TSIG_KEY_NAME/$DYNDNS_TSIG_SECRET, not
-                  # braced -- same reasoning as RAW_NAMESERVER above.
+                  echo "public IP changed (was '$${EXISTING_IP:-<none>}', now '$$CURRENT_IP') -- sending an RFC2136 update"
                   # DYNDNS_TSIG_SECRET in particular is credential
                   # material from the Secret this capability's
                   # secretKeyRef reads (never an instance-config.yaml
-                  # scalar at all -- tests/assertions/check_instance_literals.py
-                  # would correctly flag a brace-wrapped reference to it
-                  # here as undefined, since it lives in
-                  # clusters/<name>/secrets/, not instance-config.yaml).
-                  nsupdate -y "hmac-sha256:$DYNDNS_TSIG_KEY_NAME:$DYNDNS_TSIG_SECRET" -v <<UPDATE
-                  server $NS_HOST $NS_PORT
-                  update delete $DYNDNS_HOSTNAME A
-                  update add $DYNDNS_HOSTNAME 300 A $CURRENT_IP
+                  # scalar at all) -- escaped the same as every other
+                  # shell-local/runtime-only name here, see this file's
+                  # own comment above.
+                  nsupdate -y "hmac-sha256:$$DYNDNS_TSIG_KEY_NAME:$$DYNDNS_TSIG_SECRET" -v <<UPDATE
+                  server $$NS_HOST $$NS_PORT
+                  update delete $$DYNDNS_HOSTNAME A
+                  update add $$DYNDNS_HOSTNAME 300 A $$CURRENT_IP
                   send
                   UPDATE
 
@@ -150,10 +149,10 @@ spec:
                   # reason this job re-queries the nameserver itself
                   # rather than trusting nsupdate's own exit code alone.
                   sleep 1
-                  CONFIRMED_IP=$(dig @"$NS_HOST" -p "$NS_PORT" +short +time=5 +tries=2 "$DYNDNS_HOSTNAME" A | tail -n1)
-                  if [ "$CONFIRMED_IP" = "$CURRENT_IP" ]; then
-                      echo "update confirmed: $DYNDNS_HOSTNAME now resolves to $CONFIRMED_IP at $NS_HOST"
+                  CONFIRMED_IP=$(dig @"$$NS_HOST" -p "$$NS_PORT" +short +time=5 +tries=2 "$$DYNDNS_HOSTNAME" A | tail -n1)
+                  if [ "$$CONFIRMED_IP" = "$$CURRENT_IP" ]; then
+                      echo "update confirmed: $$DYNDNS_HOSTNAME now resolves to $$CONFIRMED_IP at $$NS_HOST"
                   else
-                      echo "update NOT confirmed: expected $CURRENT_IP, the nameserver still answers '${CONFIRMED_IP:-<none>}' -- treating this as a failed update"
+                      echo "update NOT confirmed: expected $$CURRENT_IP, the nameserver still answers '$${CONFIRMED_IP:-<none>}' -- treating this as a failed update"
                       exit 1
                   fi
