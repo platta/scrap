@@ -66,6 +66,24 @@ if ! command -v openssl >/dev/null 2>&1; then
     apt_install openssl
 fi
 
+# REAL BUG, found live via this script's own third CI run: Debian/Ubuntu
+# packages auto-enable and auto-start their own systemd unit on install
+# -- `apt_install bind9` above brought up a SEPARATE, already-running
+# bind9/named.service using ITS OWN default /etc/bind/named.conf (port
+# 53, the standard rndc control channel on 953), confirmed live via
+# `ss -tuln` showing four listeners on each of those ports -- one per
+# libuv worker thread -- while this script's own custom instance (a
+# genuinely separate process, confirmed alive throughout via its own
+# PID) never appeared on its own configured port at all. Stopping and
+# disabling that system-managed instance before starting this test's own
+# is the direct fix; `|| true` throughout since a runner where the
+# package doesn't auto-start a service (or doesn't ship one under either
+# name) has nothing to stop.
+sudo systemctl stop bind9 2>/dev/null || true
+sudo systemctl stop named 2>/dev/null || true
+sudo systemctl disable bind9 2>/dev/null || true
+sudo systemctl disable named 2>/dev/null || true
+
 # ---------------------------------------------------------------------------
 log "T-A-dyndns: Phase 1/5: two real, ephemeral services -- an authoritative nameserver and an IP-lookup endpoint"
 
@@ -180,10 +198,12 @@ if [ -z "$nameserver_up" ]; then
     echo "FAIL  T-A-dyndns: the ephemeral nameserver never came up -- see $BIND_LOG"
     echo "      --- one raw, unsuppressed dig attempt, for diagnosis ---"
     dig @127.0.0.1 -p "$BIND_PORT" +time=3 +tries=1 "$ZONE" SOA 2>&1 | sed 's/^/      /' || true
-    echo "      --- what's actually listening on this port (ss -tuln) ---"
-    ss -tuln 2>&1 | sed 's/^/      /' || true
+    echo "      --- who owns what's actually listening (sudo ss -tulnp) ---"
+    sudo ss -tulnp 2>&1 | sed 's/^/      /' || true
     echo "      --- named process, still running? ---"
     ps -p "$NAMED_PID" -o pid,stat,cmd 2>&1 | sed 's/^/      /' || true
+    echo "      --- the exact named.conf this test wrote ---"
+    cat "$BIND_DIR/named.conf" 2>&1 | sed 's/^/      /' || true
     echo "      --- named's own log ---"
     cat "$BIND_LOG" 2>/dev/null || true
     exit 1
