@@ -130,6 +130,21 @@ options {
     allow-transfer { none; };
     recursion no;
     pid-file "$BIND_DIR/named.pid";
+    # REAL BUG, found live via this script's own -d 2 debug trace (six
+    # straight CI runs, same symptom): named logs 'running' cleanly and
+    # loads the zone, but the debug trace shows zero interface-scan or
+    # listener-socket activity anywhere, ever -- the interface manager
+    # task itself never runs, so nothing is ever actually bound. This
+    # matches a known class of issue in BIND 9.16+'s libuv-based network
+    # manager: automatic-interface-scan's netlink-based interface-change
+    # monitoring can hang indefinitely in certain virtualized/sandboxed
+    # network environments (GitHub's own hosted runners included),
+    # silently starving the very listener setup it's supposed to enable
+    # rescanning for. Disabling it outright is the documented workaround
+    # -- this test never adds or removes a network interface mid-run, so
+    # rescanning buys nothing here regardless.
+    automatic-interface-scan no;
+    interface-interval 0;
     # Both harmless-but-noisy by default: named's stock config normally
     # points these at /run/named/ and /etc/bind/, both root/bind-owned
     # and unreadable/unwritable by this unprivileged runner user. Neither
@@ -181,15 +196,7 @@ if [ -f /etc/apparmor.d/usr.sbin.named ]; then
     sudo apparmor_parser -R /etc/apparmor.d/usr.sbin.named 2>/dev/null || true
 fi
 
-# -d 2: named's own startup logs 'running' and completes zone loading
-# cleanly every time, with zero errors anywhere, yet ss -tulnp
-# consistently shows nothing at all bound on $BIND_PORT afterward --
-# genuinely inconsistent with BIND9's normal, very vocal behavior about
-# listener failures. -d turns on debug-level tracing (a separate,
-# distinct path from the plain informational logging '-g' alone
-# produces), the most direct way to get a definitive answer about what
-# actually happens during listener setup rather than guessing further.
-nohup named -c "$BIND_DIR/named.conf" -g -d 2 >"$BIND_LOG" 2>&1 &
+nohup named -c "$BIND_DIR/named.conf" -g >"$BIND_LOG" 2>&1 &
 NAMED_PID=$!
 
 nameserver_up=""
