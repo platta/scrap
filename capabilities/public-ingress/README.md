@@ -1,99 +1,109 @@
 # capabilities/public-ingress/
 
-**Architectural classification: FULLY SUPPORTED.** **Current implementation status: DESIGNED, NOT
-YET IMPLEMENTED** — this directory contains only this README; no `Kustomization`, `HelmRelease`, or
-other manifest exists yet, so there is nothing to enable. See `docs/release-readiness.md` for the
-current, repository-wide proven/unproven/deferred snapshot.
+**Architectural classification: FULLY SUPPORTED. Current implementation status: IMPLEMENTED,
+LIVE-TESTED** (live public reachability of a real install is operator-verified, not CI — see
+`verify-live.sh` below) — see `docs/release-readiness.md`. Depends on `platform/ingress/` only, and
+is strongly recommended alongside `capabilities/public-tls/` (though not required by it — public
+trust and public exposure are independent choices, see that directory's own README).
 
-Once built, this is intended to depend on `platform/ingress/` and to be strongly recommended
-alongside `capabilities/public-tls/` (though not required by it — public trust and public exposure
-are independent choices, see that directory's own README).
+## Why this capability ships no manifest at all
 
-## Why this remains unimplemented — a real architecture gap, not an oversight
+`platform/ingress/`'s `Gateway`/`Service` is already CORE — always present, identical whether or
+not this capability is ever enabled. What actually determines whether the platform is reachable
+from the internet is entirely outside Kubernetes' control: your router's own NAT table. There is no
+Kubernetes object that represents that decision, and inventing one to satisfy the letter of "ship a
+manifest" would misrepresent what it does — SCRAP ships no `NetworkPolicy` enforcement layer at all
+(`docs/out-of-scope/README.md`), so a `NetworkPolicy` "restricting" exposure would be structurally
+inert on this project's default CNI, not a real control.
 
-`docs/decisions/0012-rc-implementation-envelope.md` requires every mandatory-v1 capability, this one
-included, to ship **real manifests** and a documented copy-in enabling mechanism before `rc.1` —
-"never a README alone." Investigating this directly (PLAT-36) found that public ingress genuinely
-doesn't fit that template the way every other capability so far has:
+`docs/decisions/0014-public-ingress-edge-authority.md` decides this explicitly: this capability's
+real, implemented artifacts are the runbook below and `verify-live.sh`, not a `Kustomization` —
+the second capability (after `capabilities/ups/`'s host half,
+`docs/decisions/0013-ups-shutdown-authority.md`) to carry a recorded exception to the normal
+copy-a-Kustomization-in enablement rule (`docs/core/configuration-model.md`). **Enabling this
+capability is performing the three steps below; disabling it is removing the router forwards.**
+Nothing in the cluster changes in either direction, and `verify-live.sh` is re-runnable at any time.
 
-`platform/ingress/`'s `Gateway`/`Service` is already CORE — always present, identical whether or not
-this capability is ever enabled. What actually determines whether the platform is reachable from the
-internet is entirely **outside Kubernetes' control**: router port-forwarding (or a tunnel, for an
-operator without router control) — the router/tunnel side has no Kubernetes object to represent it at
-all. Unlike `capabilities/public-tls/`, which genuinely runs a mechanism in-cluster (cert-manager
-speaking ACME) even though *proving* it needs a real domain, there is no in-cluster mechanism here
-that "port-forwarding" could plausibly be a manifest **for** — SCRAP also ships no `NetworkPolicy`
-enforcement layer at all (`docs/out-of-scope/README.md`), so a `NetworkPolicy` "restricting" ingress
-would be structurally inert on this project's own default CNI, not a real control, and would misstate
-what it does.
-
-The one path that **would** produce a genuine, real, in-cluster manifest — a tunnel client for
-operators behind CGNAT or without router control — requires picking a specific tunnel
-software/protocol. Nothing in this repository's accepted architecture (any ADR, `docs/extensions/`,
-`docs/supported/`) already licenses one, unlike `capabilities/dyndns/`'s and
-`capabilities/public-tls/`'s shared RFC2136 choice, or UPS's already-named NUT. Picking one
-unilaterally, for a security-sensitive inbound-exposure mechanism, is exactly the kind of material
-provider/mechanism decision this project's own working agreement requires stopping for adjudication
-on rather than deciding silently inside an implementation task — see PLAT-36's own Jira history for
-the `QUESTION` this finding produced, and its resolution once recorded.
-
-## The concrete runbook, once a mechanism is decided (port-forwarding path)
-
-For the router-port-forwarding case specifically — the primary case, and the one requiring no new
-architecture decision at all — enabling this is, and will remain, entirely operator-side
-configuration rather than a Kubernetes manifest:
+## Enabling this capability — a runbook, not a file copy
 
 1. **Confirm `platform/ingress/reserved-ports.yaml` reflects everything you intend to expose.**
    `tests/assertions/check_reserved_ports.py` already enforces this on every pull request for
    anything landing in this repository, but the review is only meaningful if you actually read the
    file before forwarding a port at your router — it's the single place claimed host ports are
    declared, diffable in review, not a live surprise.
-2. **Forward TCP 80 and 443** (or only 443, if you never need ACME HTTP-01 — SCRAP's own
-   `capabilities/public-tls/` uses DNS-01 exclusively, so 80 is optional unless something else on
-   your network needs it) from your router to the k3s node's own LAN address
-   (`instance-config.yaml`'s `NODE_ADDRESS`). No SCRAP-side configuration changes this step at all —
-   the same `Gateway`/`Service` already answers LAN traffic on those ports today.
+2. **Forward TCP 443 (and optionally 80)** from your router to the k3s node's own LAN address
+   (`instance-config.yaml`'s `NODE_ADDRESS`). Port 80 is only needed if something on your network
+   requires it — SCRAP's own `capabilities/public-tls/` uses ACME DNS-01 exclusively, never
+   HTTP-01. No SCRAP-side configuration changes for this step at all — the same `Gateway`/`Service`
+   already answers LAN traffic on these ports today; port-forwarding it does not touch the
+   platform.
 3. **Split-horizon DNS**, so that internet clients and LAN clients resolving the same
    `*.${BASE_DOMAIN}` hostname reach the right address without depending on your router's NAT
    hairpin behavior working correctly (a real, previously undiagnosed dependency in the reference
    implementation): your LAN's own DNS server (not something this repository runs) should answer
    `*.${BASE_DOMAIN}` with `NODE_ADDRESS`; your **public** DNS zone (wherever
    `capabilities/public-tls/`'s DNS-01 solver lives, if enabled, or wherever the domain's
-   authoritative records live otherwise) should answer with your public IP —
-   `capabilities/dyndns/`, if your public IP changes, keeps that second answer current automatically.
-4. **A materially larger threat model** — documented plainly, not minimized, this remains the
-   capability with the most consequential new assumptions in the entire envelope. Review
-   `docs/out-of-scope/README.md`'s own "no NetworkPolicy isolation" note before exposing anything:
-   nothing in this platform limits what an internet-reachable Gateway can, structurally, reach inside
-   the cluster.
+   authoritative records live otherwise) should answer with your current public IP —
+   `capabilities/dyndns/` keeps that second answer current automatically if your public IP
+   changes; a static-IP install needs no dyndns at all.
 
-## For an operator without router control (CGNAT, or a network you don't administer)
+**A materially larger threat model** — stated plainly, not minimized, before the step that creates
+it: this remains the capability with the most consequential new assumptions in the entire envelope.
+SCRAP provides no in-cluster segmentation (`docs/out-of-scope/README.md`) — an internet-reachable
+Gateway can reach whatever the application contract routes. Nothing about exposure changes TLS
+issuers, certificate shape (`docs/decisions/0006-tls-wildcard-and-issuer-independence.md`), or
+which routes require forward-auth/OIDC — only reachability changes.
 
-A tunnel client is the general answer — an outbound-only connection from inside your network to a
-relay you (or the tunnel provider) control, terminating publicly and forwarding to the platform
-Gateway's own `Service` — but *which* tunnel mechanism SCRAP ships, if any, is the open question
-above. Until that's decided, this repository documents the **contract** an alternative must satisfy,
-the same way `docs/extensions/README.md` already does for every other seam this project intentionally
-doesn't pick a single implementation for: forward TCP 443 (and optionally 80) to the Gateway's own
-`Service`, `traefik.traefik.svc.cluster.local`, without terminating TLS itself — the platform's own
-wildcard certificate must still be what a browser actually sees. Any tunnel software satisfying that
-contract works; SCRAP neither promises one works nor tests one, exactly `docs/extensions/README.md`'s
-own "What extension is not" section already describes for every other undecided seam.
+## Acceptance evidence
 
-## Consistent with the project's own precedent
+Two distinct evidence levels, kept honestly separate — CI owns no router and this repository
+controls no public edge, so CI cannot prove *an exposure*, but it can and must prove the tool an
+operator relies on to check one:
 
-This isn't the first "designed, not yet implemented" capability in the ADR-0012 envelope to need its
-own dedicated mechanism decision before implementation could honestly proceed: UPS's own
-shutdown-authority question (its version of "which specific mechanism gets to act") was raised as a
-separate, dedicated adjudication ticket (PLAT-41, blocking the UPS implementation ticket PLAT-37)
-producing its own architecture-decision record, rather than an implementing agent deciding it inline
-inside the implementation work. Public ingress's own exposure-mechanism question is recorded here for
-the same reason, not as a stall — see `docs/decisions/README.md` for whichever ADR that ticket
-ultimately produces, once merged.
+**1. Static/structural — every push and PR, no external dependency:** the reserved-ports
+allowlist and its CI enforcement (`tests/assertions/check_reserved_ports.py`) — already exists,
+unconditional, and applies to this capability's own application contract exactly as it does to
+every raw-port pattern.
+
+**2. `verify-live.sh`'s own oracle proven live, against the from-zero-bootstrapped cluster's real
+Gateway — every push and PR, no router or public domain required
+(`tests/profiles/t-a-public-ingress.sh`):** this script's decisive check — reading the certificate
+actually served at a target and comparing its SHA-256 fingerprint, byte-for-byte, against the real
+`Secret` cert-manager wrote for the platform's own wildcard certificate — is proven both ways: PASS
+when pointed at the platform's own genuinely-serving Gateway, and FAIL when pointed at a
+deliberately different, unrelated TLS endpoint. A verifier that had never been shown to turn red
+would be aspirational prose with a shebang, not a proof.
+
+**3. Live public reachability of a real install — operator-run, not CI-executed
+(`capabilities/public-ingress/verify-live.sh`):** the one claim that genuinely cannot be tested
+without external infrastructure this project doesn't control and never will — a real router, a
+real public IP, real public DNS. Run it yourself after completing the runbook above; see that
+script's own header for exactly what it does and does not prove, including why an unreachable
+result from inside your own LAN is expected (NAT hairpin), not a failure, and what an off-network
+vantage buys you that this script alone cannot.
 
 ## New assumptions this introduces
 
-A public IP or a tunnel provider account; router control, or a tunnel; a materially larger threat
-model than a LAN-only install, since the Gateway is now reachable by anyone. Documented plainly, not
-minimized — this is the capability with the most consequential new assumptions in the entire
-envelope.
+A public IP (static, or kept current by `capabilities/dyndns/`); router control; a materially
+larger threat model than a LAN-only install, since the Gateway is now reachable by anyone.
+Documented plainly, not minimized — see "Enabling this capability" above.
+
+## CGNAT and no-router-control environments — not supported in v1
+
+`docs/decisions/0014-public-ingress-edge-authority.md` decides this boundary explicitly, in the
+open, rather than leaving it implied: the general answer for an operator who cannot forward a
+router port is a tunnel — an outbound connection from inside your network to a public relay,
+forwarding inbound traffic to the platform Gateway — but shipping one in v1 was rejected. Every
+concrete choice is either a specific commercial provider (a third party inside the inbound trust
+path, a materially different security posture than dyndns/public-tls's own vendor-neutral RFC2136
+choice) or a self-hosted relay (presupposing a second public host most of this capability's
+population doesn't have); no vendor-neutral standard exists to pick the way RFC2136 was chosen for
+DNS updates.
+
+What v1 offers this population instead is the same seam `docs/extensions/README.md` already
+documents for every other place this project intentionally doesn't pick a single implementation:
+any mechanism that delivers TCP 443 (and optionally 80) to the platform Gateway's own Service,
+`traefik.traefik.svc.cluster.local`, **without terminating TLS itself** — the platform's own
+wildcard certificate must still be what a client sees — satisfies the platform's side of the
+contract. SCRAP neither promises a specific tunnel works nor tests one. A supported tunnel
+capability may be added post-v1, only by its own recorded decision.

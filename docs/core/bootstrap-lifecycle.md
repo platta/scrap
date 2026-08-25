@@ -47,7 +47,7 @@ line of the frozen spec, and where.
 | Capability | Extra bootstrap step |
 |---|---|
 | Public TLS (ACME) | DNS provider credential; issuer selection; staging issuer first, then production |
-| Public ingress | Split-horizon DNS setup; router/tunnel configuration; reserved-ports review |
+| Public ingress | Reserved-ports review; router port-forwarding (443, optionally 80); split-horizon DNS; `capabilities/public-ingress/verify-live.sh` |
 | Dyndns | TSIG key provisioned on your authoritative nameserver; hostname/nameserver/IP-lookup URL set in `instance-config.yaml` |
 | Off-site backup | Endpoint + credentials; `restic init`; restic password escrowed and verified **separately** from the age key |
 | Identity | Enable the capability; one interactive enrollment; export the declarative Blueprint config |
