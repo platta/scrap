@@ -28,6 +28,13 @@ behavior for a path with no `kustomization.yaml` (discover and flatten every YAM
 exactly the semantics this needs: any file placed there is picked up, none of them reference each
 other except via their own explicit `dependsOn`.
 
+**One recorded exception** (`docs/decisions/0013-ups-shutdown-authority.md`): the UPS capability's
+host half — the NUT daemon holding shutdown authority — is enabled by running its operator-run
+`bootstrap/host/` script and disabled by its documented uninstall path, because what it manages (a
+systemd unit that can power off the machine) exists outside anything Flux reconciles. Its
+in-cluster half follows the normal rule above. That exception is licensed for host shutdown
+authority only, not as a general escape from this model.
+
 **A capability needing its own credential is two files, not one** — a small, real exception to
 "copying one file," found while implementing `capabilities/identity/` (the first capability built).
 The credential itself lives under `clusters/<name>/secrets/`, never under `capabilities/`, so it

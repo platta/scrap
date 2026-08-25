@@ -15,7 +15,11 @@ off by default in the `minimal` profile.
 credential of its own; two for one that has a credential (the credential itself lives under
 `clusters/<name>/secrets/`, never here — see `capabilities/identity/README.md`'s "Enabling this
 capability" section for the concrete pair). No flags, no templating language, no SCRAP-specific
-configuration format — see `docs/core/configuration-model.md`.
+configuration format — see `docs/core/configuration-model.md`. One recorded exception:
+`ups/`'s host half (the NUT daemon holding shutdown authority) is enabled by an operator-run
+`bootstrap/host/` script, not a Kustomization — decided in
+`docs/decisions/0013-ups-shutdown-authority.md`, which also makes explicit that no capability
+workload ever runs privileged or holds host power authority.
 
 ## The one rule that applies to every directory here
 
