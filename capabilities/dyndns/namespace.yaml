@@ -1,0 +1,17 @@
+# This capability's own namespace -- deliberately, unlike heartbeat/
+# alert-delivery (which land their CronJob/AlertmanagerConfig in
+# "monitoring", a CORE namespace that exists unconditionally). dyndns is
+# explicitly designed to have no dependency on any other capability or
+# platform-tier namespace (capabilities/dyndns/README.md), so it can't
+# reuse someone else's always-present namespace the way those two do --
+# the same reasoning capabilities/identity/'s own namespace exists,
+# except identity's lives under clusters/example/secrets/identity/ to
+# solve a Deployment's immediate-secret-read ordering problem
+# (capabilities/identity/kustomization.yaml's own comment). This
+# capability's workload is a CronJob, so that problem doesn't apply --
+# see cluster-secrets-kustomization.yaml's own comment for the
+# dependency direction this namespace living HERE instead requires.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dyndns

@@ -48,6 +48,7 @@ line of the frozen spec, and where.
 |---|---|
 | Public TLS (ACME) | DNS provider credential; issuer selection; staging issuer first, then production |
 | Public ingress | Split-horizon DNS setup; router/tunnel configuration; reserved-ports review |
+| Dyndns | TSIG key provisioned on your authoritative nameserver; hostname/nameserver/IP-lookup URL set in `instance-config.yaml` |
 | Off-site backup | Endpoint + credentials; `restic init`; restic password escrowed and verified **separately** from the age key |
 | Identity | Enable the capability; one interactive enrollment; export the declarative Blueprint config |
 | Heartbeat | Register the check; confirm a test ping arrives |

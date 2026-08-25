@@ -36,6 +36,7 @@ proven/unproven/deferred snapshot behind the "Implemented?" column below.
 | Alert delivery (webhook — ntfy, or anything Alertmanager supports) | SUPPORTED | Yes, live-tested (real delivery to an ephemeral receiver is CI-proven; a real third-party provider's own API acceptance is operator-verified, not CI) | a reachable webhook receiver | makes existing alerts actionable |
 | Public ingress | SUPPORTED | **Not yet implemented** — README only | public IP or tunnel, router control, larger threat model | public reachability |
 | External heartbeat | SUPPORTED | Yes, live-tested (the conditional push mechanism is CI-proven; a real provider's own missed-ping alarm/notification is operator-verified, not CI) | internet + free account | tells you the *cluster* is down |
+| Dynamic DNS | SUPPORTED | Yes, live-tested (a real RFC2136 update against an ephemeral nameserver, both positive and a wrong-credential negative control, is CI-proven) | a dynamic-DNS-capable domain/provider + internet | keeps a changing public IP's DNS record current |
 | UPS (NUT) | SUPPORTED | **Not yet implemented** — README only | a UPS with a data connection | corruption protection on power loss |
 | Alternative identity, storage, ingress, issuer, backup engine, K8s distro | EXTENSION | n/a — contract only | varies — see `extensions/` | varies, and untested |
 | Multi-node, HA, multi-cluster, distributed storage, multi-tenancy | OUT OF SCOPE | n/a | — | not guaranteed; see `out-of-scope/` |

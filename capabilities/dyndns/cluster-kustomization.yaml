@@ -1,0 +1,30 @@
+# Copy this file (and cluster-secrets-kustomization.yaml, next to it)
+# into clusters/<name>/capabilities/ to enable dyndns -- delete both to
+# disable. See capabilities/README.md and docs/core/configuration-model.md
+# for why a capability needing credentials is a two-file copy, not one.
+#
+# No dependsOn at all -- deliberately. Unlike heartbeat/alert-delivery,
+# this capability has no platform-tier or other-capability dependency
+# (README.md's own "no dependency on other capabilities"); it creates
+# its own namespace (namespace.yaml, part of THIS Kustomization's own
+# build) rather than reusing one that already exists elsewhere. The
+# CronJob's own secretKeyRef is lazily resolved (only read when a Job
+# actually starts on its own schedule, never at this Kustomization's own
+# apply time) -- same reasoning capabilities/heartbeat/cluster-kustomization.yaml's
+# own comment gives -- so this Kustomization need not (and does not)
+# dependOn dyndns-secrets to be created safely; see that Kustomization's
+# own comment for why the dependency instead runs the other direction.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dyndns
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/dyndns
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  timeout: 3m0s

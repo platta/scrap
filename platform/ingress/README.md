@@ -31,8 +31,10 @@ Provides:
 
 An application declares an `HTTPRoute` attached to this Gateway by name, or (for raw TCP/UDP) a
 `Service` of type `LoadBalancer` whose port is declared in the reserved-ports allowlist
-(`platform/ingress/reserved-ports.yaml`, once implemented) — checked by `tests/assertions/` on
-every pull request. This is the direct, structural fix for a real incident: an ingress controller's
+(`platform/ingress/reserved-ports.yaml`) — checked by `tests/assertions/check_reserved_ports.py`
+on every pull request. **Correction, found live via PLAT-36:** this parenthetical previously read
+"once implemented" — stale by the time it was found; the allowlist and its check have both existed
+and been CI-gated since this file's own `reserved-ports.yaml` was added. This is the direct, structural fix for a real incident: an ingress controller's
 default `LoadBalancer` Service silently claiming a host's real production ports via k3s's
 ServiceLB. SCRAP makes that class of mistake CI-detectable rather than a live incident.
 

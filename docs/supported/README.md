@@ -19,7 +19,7 @@ current, authoritative proven/unproven/deferred boundary.
 | Alert delivery | Alerts that actually reach you | a reachable webhook receiver (ntfy, or anything Alertmanager itself supports) | **Implemented, live-tested** (a real webhook delivery to an ephemeral receiver is CI-proven; a real third-party provider's own API acceptance is operator-verified, not CI) | `capabilities/alert-delivery/` |
 | Public ingress | Reachable from the internet | public IP or tunnel, larger threat model | **Designed, not yet implemented** — README only, no manifests | `capabilities/public-ingress/` |
 | External heartbeat | Told when the *cluster itself* is down | a free third-party account | **Implemented, live-tested** (the conditional push mechanism, both healthy and withheld, is CI-proven against an ephemeral receiver; a real provider's own missed-ping alarm/notification is operator-verified, not CI) | `capabilities/heartbeat/` |
-| Dynamic DNS | Keeps a DNS record pointed at a changing IP | a dynamic-DNS-capable domain/provider | **Designed, not yet implemented** — README only, no manifests | `capabilities/dyndns/` |
+| Dynamic DNS | Keeps a DNS record pointed at a changing IP | a dynamic-DNS-capable domain/provider | **Implemented, live-tested** (a real RFC2136 update against an ephemeral nameserver is CI-proven, both the positive and a wrong-credential negative control — see `capabilities/dyndns/README.md`) | `capabilities/dyndns/` |
 | UPS integration | Graceful shutdown on power loss | a UPS with a data connection | **Designed, not yet implemented** — README only, no manifests | `capabilities/ups/` |
 
 None of these are enabled by default in the checked-in `minimal` profile

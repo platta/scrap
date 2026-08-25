@@ -70,6 +70,21 @@ data:
   ACME_DNS01_NAMESERVER: "ns.example.internal:53"
   ACME_DNS01_TSIG_KEY_NAME: "example-tsig-key"
 
+  # capabilities/dyndns/ -- keeps DYNDNS_HOSTNAME's A record pointed at
+  # this host's current public IP via the same generic RFC2136 DNS
+  # UPDATE protocol as ACME_DNS01_* above, but with its own, separate
+  # TSIG key (narrower blast radius) and no dependency on
+  # capabilities/public-tls/ being enabled at all. Only consumed if
+  # dyndns is enabled; harmless to leave as placeholders otherwise. See
+  # capabilities/dyndns/README.md.
+  DYNDNS_HOSTNAME: "example.internal"
+  DYNDNS_NAMESERVER: "ns.example.internal:53"
+  DYNDNS_TSIG_KEY_NAME: "example-dyndns-tsig-key"
+  # Any HTTP(S) URL whose entire response body is a bare IPv4 address --
+  # ipify is a free, dedicated, no-account service built for exactly
+  # this; swap for any other endpoint satisfying that same contract.
+  DYNDNS_IP_LOOKUP_URL: "https://api.ipify.org"
+
   # Backup retention policy, passed straight to `restic forget`.
   BACKUP_RETENTION_DAILY: "7"
   BACKUP_RETENTION_WEEKLY: "4"

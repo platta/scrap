@@ -37,10 +37,10 @@ observability stack. CI checks this on every pull request (`tests/assertions/`).
 | [`alert-delivery/`](alert-delivery/) | A real Alertmanager receiver (webhook — ntfy, or anything Alertmanager itself supports) | on | **Implemented, live-tested** |
 | [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Designed, not yet implemented** — README only, no manifests |
 | [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Implemented, live-tested** |
-| [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Designed, not yet implemented** — README only, no manifests |
+| [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Implemented, live-tested** |
 | [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off | **Designed, not yet implemented** — README only, no manifests |
 
-For the three remaining "designed, not yet implemented" rows: the directory contains only a
+For the two remaining "designed, not yet implemented" rows: the directory contains only a
 `README.md` describing the intended mechanism — there is no `Kustomization` file to copy in yet, so
 "enabling" one today has no effect. Each directory's `README.md` states exactly what enabling it is
 intended to add and what new external assumptions it will introduce — see `docs/supported/` for the
