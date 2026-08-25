@@ -43,6 +43,11 @@ BIND_PORT=15353
 ECHO_PORT=15380
 BIND_DIR=/tmp/t-a-dyndns-bind
 mkdir -p "$BIND_DIR"
+# Computed up front (not just before Phase 3, where every other live
+# profile computes its own NODE_IP-equivalent) -- this test's own
+# nameserver needs to bind it explicitly, not just the CronJob pod that
+# reaches it later. See the listen-on directive's own comment for why.
+NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 ZONE="dyndns-test.internal"
 RECORD="host.${ZONE}"
 TSIG_KEY_NAME="t-a-dyndns-test-key"
@@ -124,7 +129,19 @@ ECHO_PID=$!
 cat > "$BIND_DIR/named.conf" <<EOF
 options {
     directory "$BIND_DIR";
-    listen-on port $BIND_PORT { 0.0.0.0; };
+    # REAL BUG, found live via seven straight CI runs: the wildcard
+    # "0.0.0.0" form here never resulted in named actually binding
+    # ANYTHING on this port at all (confirmed repeatedly via
+    # process-owner-aware ss -tulnp and a -d 2 debug trace showing zero
+    # interface-scan activity), despite a cleanly-loaded config and no
+    # error of any kind logged -- disabling automatic-interface-scan
+    # (this file's own comment, further down) did not resolve it either.
+    # Listing the exact addresses this test actually needs -- loopback
+    # for this script's own readiness/verification queries, and this
+    # runner's real address for the in-cluster CronJob pod that queries
+    # it later -- sidesteps whatever "0.0.0.0" specifically fails to
+    # resolve to in this environment, and is more precise regardless.
+    listen-on port $BIND_PORT { 127.0.0.1; $NODE_IP; };
     listen-on-v6 { none; };
     allow-query { any; };
     allow-transfer { none; };
@@ -249,8 +266,6 @@ if [ -z "$not_ready" ]; then
 else
     fail T-A-dyndns/kustomizations-ready-baseline "not Ready: $not_ready"
 fi
-
-NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
 # ---------------------------------------------------------------------------
 log "T-A-dyndns: Phase 3/5: enable dyndns live -- exactly the documented two-file copy"
