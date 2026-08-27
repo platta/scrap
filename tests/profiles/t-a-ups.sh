@@ -124,7 +124,24 @@ fi
 # of the actual status line, breaking the exact-equality check below.
 # stderr is discarded here (to a log, for diagnostics on failure), never
 # merged into the value being compared.
-host_status=$(sudo upsc ups@localhost ups.status 2>/tmp/t-a-ups-upsc.log || true)
+#
+# REAL BUG #2, found live via this same run once #1 was fixed: upsd
+# genuinely answered "WAIT" for a few seconds immediately after the
+# driver started -- dummy-ups's own real transitional status before its
+# first read of the .dev file completes, not a mock or a defect. install-nut.sh's
+# own readiness wait only checks upsc's EXIT STATUS (a "WAIT" answer is
+# still a successful query), so it can return before the value has
+# actually settled. Polled here instead of asserted once, the same
+# eventual-consistency pattern every other timing-sensitive check in this
+# repository already uses.
+host_status=""
+i=0
+while [ "$i" -lt 12 ]; do
+    host_status=$(sudo upsc ups@localhost ups.status 2>/tmp/t-a-ups-upsc.log || true)
+    [ "$host_status" = "OL" ] && break
+    sleep 2
+    i=$((i + 1))
+done
 if [ "$host_status" = "OL" ]; then
     ok T-A-ups/host-upsc-reads-real-driver "upsc reads ups.status=OL directly from the real, running dummy-ups driver"
 else
