@@ -10,3 +10,12 @@ exact version this repository's own scratch validation used — not a guess, not
 
 No node-role labeling: SCRAP v1 is single-node only (multi-node is explicitly out of scope,
 `docs/out-of-scope/README.md`), so there is no role to label yet.
+
+`install-nut.sh` / `uninstall-nut.sh` — the `capabilities/ups/` host half: a persistent,
+distro-packaged NUT (`upsd` + `upsmon`) install, with `upsmon`'s own `SHUTDOWNCMD` holding the
+authority to power this node off on sustained low battery. Decided in
+`docs/decisions/0013-ups-shutdown-authority.md`: this exists outside anything Flux reconciles, so
+it is enabled and disabled by running these scripts directly, not by copying a `Kustomization` —
+the same recorded exception `capabilities/README.md` documents. See `capabilities/ups/README.md`
+for the full enabling procedure, including the in-cluster half (metrics/alerting), which *is*
+enabled the normal way.

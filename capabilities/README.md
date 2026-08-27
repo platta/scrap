@@ -46,12 +46,14 @@ observability stack. CI checks this on every pull request (`tests/assertions/`).
 | [`public-ingress/`](public-ingress/) | Reachable from the public internet | off | **Implemented, live-tested** (ships no manifest by design — `docs/decisions/0014-public-ingress-edge-authority.md`; live public reachability of a real install is operator-verified, not CI — see the directory's own README) |
 | [`heartbeat/`](heartbeat/) | External dead-man's-switch — the only way to know the cluster itself is down | off | **Implemented, live-tested** |
 | [`dyndns/`](dyndns/) | Keeps a DNS record pointed at a changing IP | off | **Implemented, live-tested** |
-| [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off | **Designed, not yet implemented** — README only, no manifests |
+| [`ups/`](ups/) | Graceful shutdown on power loss (NUT) | off | **Implemented, live-tested** (the host half — the actual shutdown authority — is an operator-run script, not a Kustomization; see that directory's own README) |
 
-For the one remaining "designed, not yet implemented" row (`ups/`): the directory contains only a
-`README.md` describing the intended mechanism — there is no `Kustomization` file to copy in yet, so
-"enabling" one today has no effect. `public-ingress/`, above, is a different case entirely: it's
-fully implemented, but its own `README.md` documents an operator-run procedure, never a file to
-copy in — see that directory's own README, and `docs/decisions/0014-public-ingress-edge-authority.md`,
-for why. See `docs/supported/` for the consolidated version of this same information, organized for
-a reader deciding what to enable rather than for a contributor.
+`ups/`, above, is a different case from every other implemented capability: it ships two halves
+with two different enabling mechanisms (see the "Two recorded exceptions" paragraph above). The
+in-cluster half is the normal Kustomization-copy; the host half — the actual shutdown authority —
+is `bootstrap/host/install-nut.sh`, run directly, never a file copied into `clusters/<name>/`.
+`public-ingress/`, above, is a different case again: it's fully implemented, but its own
+`README.md` documents an operator-run procedure end to end, never a file to copy in at all — see
+that directory's own README, and `docs/decisions/0014-public-ingress-edge-authority.md`, for why.
+See `docs/supported/` for the consolidated version of this same information, organized for a
+reader deciding what to enable rather than for a contributor.
