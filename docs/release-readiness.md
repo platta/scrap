@@ -65,7 +65,19 @@ Each row names the exact claim a release candidate **must not make** until the c
 | A platform web UI | Explicitly out of scope (`docs/out-of-scope/README.md`) |
 | Multi-node, HA, multi-cluster/fleet, distributed storage, multi-tenancy | Explicitly out of scope (`docs/out-of-scope/README.md`) |
 | Dedicated R5 (account/credential loss) acceptance testing | No frozen test profile is tied to R5 specifically; the structural mitigation (dual age recipients) is already proven. Left here deliberately rather than assigned a target — resolving this further would be inventing a decision the frozen architecture doesn't make. |
-| The mechanics of cutting a tag, a CHANGELOG, or a release workflow | Explicitly out of scope for `docs/decisions/0011-release-candidate-policy.md`, which defers them here; cutting `rc.1` itself needs no such machinery. |
+| Renovate / automated version-bump PRs | Tracked as "can be decided later," not a v1 requirement — distinct from the release-engineering machinery below, which now exists |
+
+## Release engineering machinery
+
+**Resolved 2026-08-27 (PLAT-87).** The mechanics of cutting a tag, a CHANGELOG, and a release
+workflow — previously listed here as deferred, per `docs/decisions/0011-release-candidate-policy.md`'s
+own scoping — are now implemented: see
+[`docs/decisions/0015-versioning-and-release-process.md`](decisions/0015-versioning-and-release-process.md)
+for the versioning scheme and procedure, [`CHANGELOG.md`](../CHANGELOG.md) and
+[`docs/releases/`](releases/) for the release-notes artifacts, and
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) for the tag-triggered publish
+workflow. This is machinery only — it does not itself constitute cutting, approving, or claiming
+`v0.1.0-rc.1`; see `docs/releases/v0.1.0-rc.1.md` for that candidate's own current status.
 
 ## Deliberately unresolved ambiguities
 

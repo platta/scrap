@@ -1,0 +1,45 @@
+name: Release
+
+# Never creates a tag. Pushing a tag is the adjudicated, human act
+# docs/decisions/0015-versioning-and-release-process.md describes -- this workflow only turns an
+# already-pushed tag into a reproducible GitHub Release, sourced entirely from that tag's own
+# CHANGELOG.md section. `v*-rc.*` tags publish as a prerelease; anything else publishes as latest.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub Release from CHANGELOG.md
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract this tag's CHANGELOG.md section
+        id: notes
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # CHANGELOG.md headings look like "## [v0.1.0-rc.1] — candidate, not yet tagged".
+          # Grab everything from that heading up to (not including) the next "## [" heading.
+          awk -v tag="[$tag]" '
+            $0 ~ /^## \[/ { if (found) exit; if (index($0, tag)) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section found for tag $tag (expected a '## [$tag] ...' heading)"
+            exit 1
+          fi
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: release-notes.md
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
+          generate_release_notes: false
