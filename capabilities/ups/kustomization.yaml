@@ -1,0 +1,10 @@
+# No namespace.yaml here -- everything lands in "monitoring", which
+# platform/observability/ already creates unconditionally (CORE, always
+# present) -- same reasoning capabilities/heartbeat/kustomization.yaml's
+# own comment gives for the same namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - exporter-deployment.yaml
+  - servicemonitor.yaml
+  - prometheusrule.yaml

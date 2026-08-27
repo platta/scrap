@@ -1,0 +1,20 @@
+# Prometheus Operator ServiceMonitor scraping scrap-ups-exporter's own
+# /metrics -- picked up automatically, cluster-wide, by
+# platform/observability/helmrelease.yaml's own serviceMonitorSelector: {}
+# (no release-name label required), exactly like every other capability's
+# own metrics surface.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: scrap-ups-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: scrap-ups-exporter
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scrap-ups-exporter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

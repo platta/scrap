@@ -52,6 +52,7 @@ line of the frozen spec, and where.
 | Off-site backup | Endpoint + credentials; `restic init`; restic password escrowed and verified **separately** from the age key |
 | Identity | Enable the capability; one interactive enrollment; export the declarative Blueprint config |
 | Heartbeat | Register the check; confirm a test ping arrives |
+| UPS | Connect the UPS; run `bootstrap/host/install-nut.sh` on the host (a real, separate step outside anything Flux reconciles — `docs/decisions/0013-ups-shutdown-authority.md`); enable the in-cluster half normally; matching credential in both places |
 | External Git | Add the remote; migrate; confirm Flux follows |
 
 Escrow verification is deliberate and appears twice (age key, restic password) — both are

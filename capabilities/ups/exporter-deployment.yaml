@@ -1,0 +1,294 @@
+# The in-cluster half of this capability: a small, self-contained
+# Prometheus exporter that speaks upsd's own read-only network protocol
+# (port 3493, RFC-less but stable and documented for decades -- LIST VAR)
+# directly, over the host's LAN address. No third-party exporter image:
+# the NUT wire protocol is a handful of plain-text lines (USERNAME,
+# PASSWORD, LIST VAR ... END LIST VAR), small enough to implement in
+# stdlib Python with nothing else to audit or pin a second image for --
+# the same "install what's needed at container start, from an official
+# base image" pattern capabilities/dyndns/cronjob.yaml already
+# establishes, applied to a long-running Deployment instead of a CronJob
+# because Prometheus needs something to scrape continuously, not
+# something that runs on a schedule.
+#
+# Deliberately unprivileged and read-only: this pod authenticates as
+# ${NUT_USERNAME} (docs/decisions/0013-ups-shutdown-authority.md's "read
+# -only NUT user" -- bootstrap/host/install-nut.sh's own upsd.users
+# config grants this user a password and nothing else: no "upsmon"
+# grant, so it can never receive an FSD broadcast; no "instcmds"/"actions"
+# grant, so it can never SET VAR or INSTCMD). This pod cannot shut
+# anything down, and ADR-0013's "no SCRAP-shipped workload ever holds
+# host power authority" holds structurally, not just by convention.
+#
+# namespace: monitoring -- CORE, always present (platform/observability/),
+# same reasoning capabilities/heartbeat/cronjob.yaml and
+# capabilities/alert-delivery/alertmanagerconfig.yaml give for the same
+# namespace.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scrap-ups-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: scrap-ups-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scrap-ups-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: scrap-ups-exporter
+    spec:
+      # This pod talks to upsd over the host's LAN address, never the
+      # Kubernetes API -- same reasoning capabilities/heartbeat/cronjob.yaml's
+      # own comment gives.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: exporter
+          # Pinned, not :latest -- tests/assertions/check_image_pinning.py.
+          # Same base image and install-at-start pattern already proven
+          # live by capabilities/dyndns/cronjob.yaml.
+          image: alpine:3.20.3
+          ports:
+            - name: metrics
+              containerPort: 9199
+          env:
+            - name: NUT_HOST
+              value: "${NODE_ADDRESS}"
+            - name: NUT_UPS_NAME
+              value: "${UPS_NAME}"
+            - name: NUT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: ups-credentials
+                  key: NUT_USERNAME
+            - name: NUT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ups-credentials
+                  key: NUT_PASSWORD
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 64Mi }
+          # python3 isn't in the base alpine image -- installed at
+          # container start, same as bind-tools/curl in
+          # capabilities/dyndns/cronjob.yaml. readOnlyRootFilesystem
+          # above means apk needs its cache and the interpreter's own
+          # writes directed at /tmp (an emptyDir below), not the image
+          # layer.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              apk add --no-cache -q python3
+              exec python3 /tmp/exporter.py
+      initContainers:
+        # Writes the exporter script into the shared /tmp emptyDir before
+        # the main container starts -- initContainers run to completion
+        # first, so by the time the main container's command above execs,
+        # /tmp/exporter.py already exists; no readiness race, nothing else
+        # needed to sequence this. readOnlyRootFilesystem on the main
+        # container means it cannot write its own script out via a heredoc
+        # the way capabilities/dyndns/cronjob.yaml's own container writes
+        # nothing at all (it only ever runs commands, never persists a
+        # script file). This container needs busybox's `cat` only, already
+        # present in every alpine image, no install step.
+        - name: write-exporter-script
+          image: alpine:3.20.3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              cat > /tmp/exporter.py <<'PYEOF'
+              # capabilities/ups/ in-cluster exporter -- reads upsd's own
+              # LIST VAR response over a plain TCP socket (no third-party
+              # NUT client library, no third-party exporter image; see
+              # this Deployment's own top-of-file comment) and serves it
+              # as Prometheus text exposition format on /metrics.
+              #
+              # Every scrape opens its own fresh connection and logs out
+              # cleanly -- no persistent, stateful connection to keep
+              # alive or reconnect, the simplest correct thing for a
+              # metric that's polled every 30s-1m by Prometheus, not
+              # streamed continuously.
+              import http.server
+              import os
+              import re
+              import socket
+              import sys
+
+              NUT_HOST = os.environ["NUT_HOST"]
+              NUT_PORT = int(os.environ.get("NUT_PORT", "3493"))
+              NUT_UPS_NAME = os.environ["NUT_UPS_NAME"]
+              NUT_USERNAME = os.environ["NUT_USERNAME"]
+              NUT_PASSWORD = os.environ["NUT_PASSWORD"]
+              LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "9199"))
+
+              VAR_LINE = re.compile(r'^VAR \S+ (\S+) "(.*)"$')
+
+              # Purely numeric NUT variables this exporter re-exposes
+              # directly as Prometheus gauges, named nut_<key, dots to
+              # underscores>. ups.status is handled separately below (it's
+              # a space-separated set of flags, not a number).
+              NUMERIC_VARS = {
+                  "battery.charge": "nut_ups_battery_charge_percent",
+                  "battery.runtime": "nut_ups_battery_runtime_seconds",
+                  "battery.voltage": "nut_ups_battery_voltage_volts",
+                  "ups.load": "nut_ups_load_percent",
+                  "input.voltage": "nut_ups_input_voltage_volts",
+              }
+
+              # ups.status flags this exporter promotes to their own
+              # boolean gauge -- these are exactly the ones
+              # prometheusrule.yaml's own alert expressions read.
+              STATUS_FLAGS = ["OL", "OB", "LB", "RB"]
+
+
+              def unescape(value):
+                  return value.replace('\\"', '"').replace("\\\\", "\\")
+
+
+              def query_nut():
+                  """Returns a dict of NUT variable name -> raw string value.
+                  Raises on any connection/protocol failure -- the caller
+                  treats that as nut_up=0, never a partial/guessed result."""
+                  with socket.create_connection((NUT_HOST, NUT_PORT), timeout=5) as sock:
+                      f = sock.makefile("rwb", buffering=0)
+
+                      def send(line):
+                          f.write((line + "\n").encode())
+
+                      def recv_line():
+                          line = f.readline()
+                          if not line:
+                              raise ConnectionError("upsd closed the connection unexpectedly")
+                          return line.decode().rstrip("\n")
+
+                      send(f"USERNAME {NUT_USERNAME}")
+                      resp = recv_line()
+                      if not resp.startswith("OK"):
+                          raise ValueError(f"USERNAME rejected: {resp!r}")
+
+                      send(f"PASSWORD {NUT_PASSWORD}")
+                      resp = recv_line()
+                      if not resp.startswith("OK"):
+                          raise ValueError(f"PASSWORD rejected: {resp!r}")
+
+                      send(f"LIST VAR {NUT_UPS_NAME}")
+                      first = recv_line()
+                      if not first.startswith(f"BEGIN LIST VAR {NUT_UPS_NAME}"):
+                          raise ValueError(f"unexpected LIST VAR response: {first!r}")
+
+                      values = {}
+                      end_marker = f"END LIST VAR {NUT_UPS_NAME}"
+                      while True:
+                          line = recv_line()
+                          if line == end_marker:
+                              break
+                          m = VAR_LINE.match(line)
+                          if m:
+                              values[m.group(1)] = unescape(m.group(2))
+
+                      send("LOGOUT")
+                      return values
+
+
+              def render_metrics():
+                  lines = []
+                  try:
+                      values = query_nut()
+                  except Exception as exc:
+                      print(f"scrape failed: {exc}", file=sys.stderr)
+                      lines.append("# HELP nut_up Whether the last scrape of upsd succeeded (1) or not (0).")
+                      lines.append("# TYPE nut_up gauge")
+                      lines.append("nut_up 0")
+                      return "\n".join(lines) + "\n"
+
+                  lines.append("# HELP nut_up Whether the last scrape of upsd succeeded (1) or not (0).")
+                  lines.append("# TYPE nut_up gauge")
+                  lines.append("nut_up 1")
+
+                  status = values.get("ups.status", "")
+                  flags = set(status.split())
+                  lines.append("# HELP nut_ups_status_flag Whether ups.status contains a given flag (OL=online, OB=on battery, LB=low battery, RB=replace battery).")
+                  lines.append("# TYPE nut_ups_status_flag gauge")
+                  for flag in STATUS_FLAGS:
+                      present = 1 if flag in flags else 0
+                      lines.append(f'nut_ups_status_flag{{flag="{flag}"}} {present}')
+
+                  for key, metric_name in NUMERIC_VARS.items():
+                      raw = values.get(key)
+                      if raw is None:
+                          continue
+                      try:
+                          numeric = float(raw)
+                      except ValueError:
+                          continue
+                      lines.append(f"# TYPE {metric_name} gauge")
+                      lines.append(f"{metric_name} {numeric}")
+
+                  return "\n".join(lines) + "\n"
+
+
+              class Handler(http.server.BaseHTTPRequestHandler):
+                  def log_message(self, fmt, *args):
+                      sys.stderr.write("%s - %s\n" % (self.address_string(), fmt % args))
+
+                  def do_GET(self):
+                      if self.path != "/metrics":
+                          self.send_response(404)
+                          self.end_headers()
+                          return
+                      body = render_metrics().encode()
+                      self.send_response(200)
+                      self.send_header("Content-Type", "text/plain; version=0.0.4")
+                      self.send_header("Content-Length", str(len(body)))
+                      self.end_headers()
+                      self.wfile.write(body)
+
+
+              if __name__ == "__main__":
+                  server = http.server.ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), Handler)
+                  print(f"scrap-ups-exporter listening on :{LISTEN_PORT}, querying {NUT_HOST}:{NUT_PORT} ups={NUT_UPS_NAME}")
+                  server.serve_forever()
+              PYEOF
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scrap-ups-exporter
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: scrap-ups-exporter
+spec:
+  selector:
+    app.kubernetes.io/name: scrap-ups-exporter
+  ports:
+    - name: metrics
+      port: 9199
+      targetPort: metrics

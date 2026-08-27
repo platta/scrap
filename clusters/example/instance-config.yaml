@@ -111,6 +111,15 @@ data:
   # requires editing platform/).
   BACKUP_JOB_DEADLINE_SECONDS: "600"
 
+  # capabilities/ups/'s in-cluster exporter reads upsd over the LAN at
+  # NODE_ADDRESS:3493 (above) and needs the same UPS name
+  # bootstrap/host/install-nut.sh configured in /etc/nut/ups.conf's own
+  # [section] -- the two must match, or every query fails with "unknown
+  # UPS" (fails visibly -- nut_up reports 0, see
+  # capabilities/ups/README.md). Only consumed if the ups in-cluster
+  # capability is enabled; harmless to leave as a placeholder otherwise.
+  UPS_NAME: "ups"
+
   # apps/examples/p6-external-proxy/'s demonstration backend -- a NAS, a
   # router admin UI, a hypervisor console, anything real on your LAN with
   # no identity or TLS of its own. RFC 5737 documentation address below:
