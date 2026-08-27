@@ -33,7 +33,7 @@ status=0
 DUMMY_DEV=/etc/nut/scrap-ups-test.dev
 SENTINEL=/tmp/t-a-ups-shutdown-sentinel
 NUT_READONLY_PASSWORD="t-a-ups-test-password-$(date +%s)"
-WRONG_PASSWORD="t-a-ups-deliberately-wrong-password"
+WRONG_UPS_NAME=scrap-ups-nonexistent
 
 write_dummy_state() {
     # $1 = ups.status value, e.g. "OL" or "OB LB"
@@ -57,22 +57,22 @@ prom_value() {
     query_prom "$1" | jq -r '.data.result[0].value[1] // empty' 2>/dev/null || true
 }
 
-# Restarts the exporter Deployment and waits until exactly one pod
-# matches the label selector, it is genuinely NEW (not one of the pods
-# present before the restart), and it is Ready. REAL BUG, found live via
-# this profile's own fifth CI run: with replicas: 1 and the default
-# RollingUpdate strategy (maxSurge rounds up to 1 for a single replica),
-# `kubectl rollout restart` creates the NEW pod as a surge BEFORE tearing
-# down the OLD one -- a real overlap window where both pods are Ready
-# simultaneously, both scraped by Prometheus, and a plain
+# capture_old_pods / wait_for_exclusive_new_pod: used around any live
+# perturbation of the exporter Deployment, so a subsequent Prometheus
+# query is guaranteed to hit the NEW pod, never a still-running OLD one.
+# REAL BUG, found live via this profile's own fifth CI run: with
+# replicas: 1 and the default RollingUpdate strategy (maxSurge rounds up
+# to 1 for a single replica), a rollout creates the NEW pod as a surge
+# BEFORE tearing down the OLD one -- a real overlap window where both
+# pods are Ready simultaneously, both scraped by Prometheus, and a plain
 # wait_for_pod_ready (which only checks item[0] of whatever the label
 # selector currently matches) can report success while still describing
-# the OLD pod. Querying Prometheus during that window made the
-# comm-lost-negative-control check read the stale, still-correct-credential
-# pod's own nut_up=1, not the new, deliberately-broken pod's real 0.
-restart_and_wait_exclusive() {
-    old_pods=$(kc get pods -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
-    kc rollout restart deployment -n monitoring scrap-ups-exporter >/dev/null
+# the OLD pod.
+capture_old_pods() {
+    kc get pods -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true
+}
+wait_for_exclusive_new_pod() {
+    old_pods="$1"
     result=""
     i=0
     while [ "$i" -lt 24 ]; do
@@ -336,18 +336,43 @@ else
     kc logs -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter --tail=50 2>&1 | sed 's/^/      /' || true
 fi
 
-# 5d. NEGATIVE CONTROL: a deliberately wrong credential makes nut_up
-# genuinely drop to 0 -- "configuration errors fail visibly" proven live,
-# not assumed. Secret env vars require a new pod to take effect.
-kc patch secret -n monitoring ups-credentials --type merge \
-    -p "{\"stringData\":{\"NUT_PASSWORD\":\"$WRONG_PASSWORD\"}}" >/dev/null
-wait_pod=$(restart_and_wait_exclusive)
+# 5d. NEGATIVE CONTROL: a broken configuration makes nut_up genuinely
+# drop to 0 -- "configuration errors fail visibly" proven live, not
+# assumed.
+#
+# REAL FINDING, found live via this profile's own fifth and sixth CI
+# runs: a deliberately WRONG NUT_PASSWORD does not actually break
+# anything here. Direct evidence, not a guess -- the exporter's own
+# query_nut() logs "scrape failed: ..." to stderr on ANY protocol
+# rejection (wrong USERNAME, wrong PASSWORD, or an unexpected LIST VAR
+# response), and across two full live runs with a deliberately wrong
+# password live for several minutes and multiple Prometheus scrape
+# intervals, that line never appeared once. upsd's real behavior:
+# USERNAME/PASSWORD are accepted for a plain user (one with a password
+# and no upsmon/instcmds/actions grant) without actually validating the
+# password against LIST VAR access -- password correctness is enforced
+# for privileged operations (SET VAR, INSTCMD, upsmon's own FSD-eligible
+# login), never for this read-only path. capabilities/ups/README.md is
+# corrected to state this plainly rather than implying a stronger
+# boundary than upsd actually enforces.
+#
+# The negative control instead breaks NUT_UPS_NAME -- a real,
+# genuinely-enforced failure (upsd's own "ERR UNKNOWN-UPS" for a LIST VAR
+# naming a UPS it never configured), and the exact failure class
+# instance-config.yaml's own UPS_NAME comment already names as this
+# capability's real fail-visibly path. `kubectl set env` patches (and,
+# by itself, already triggers a rollout of) the Deployment directly --
+# capture_old_pods/wait_for_exclusive_new_pod is still needed for the
+# same overlap reason as any other rollout.
+old_pods=$(capture_old_pods)
+kc set env deployment/scrap-ups-exporter -n monitoring "NUT_UPS_NAME=$WRONG_UPS_NAME" >/dev/null
+wait_pod=$(wait_for_exclusive_new_pod "$old_pods")
 if [ "$wait_pod" != ok ]; then
-    fail T-A-ups/comm-lost-negative-setup "no single, genuinely-new, Ready exporter pod appeared after the deliberate credential break"
+    fail T-A-ups/comm-lost-negative-setup "no single, genuinely-new, Ready exporter pod appeared after the deliberate UPS_NAME break"
 fi
 
 down_val=""
-echo "      waiting up to 2 minutes for a scrape reflecting the deliberately wrong credential..."
+echo "      waiting up to 2 minutes for a scrape reflecting the deliberately wrong UPS_NAME..."
 i=0
 while [ "$i" -lt 24 ]; do
     down_val=$(prom_value 'nut_up')
@@ -356,17 +381,19 @@ while [ "$i" -lt 24 ]; do
     i=$((i + 1))
 done
 if [ "$down_val" = "0" ]; then
-    ok T-A-ups/comm-lost-negative-control "a deliberately wrong NUT_PASSWORD makes nut_up genuinely read 0 through Prometheus -- UPSCommunicationLost's own trigger condition is real, not aspirational"
+    ok T-A-ups/comm-lost-negative-control "a deliberately wrong NUT_UPS_NAME makes nut_up genuinely read 0 through Prometheus -- UPSCommunicationLost's own trigger condition is real, not aspirational"
 else
-    fail T-A-ups/comm-lost-negative-control "expected nut_up=0 with a deliberately wrong credential, got '$down_val'"
+    fail T-A-ups/comm-lost-negative-control "expected nut_up=0 with a deliberately wrong UPS_NAME, got '$down_val'"
     kc logs -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter --tail=50 2>&1 | sed 's/^/      /' || true
 fi
 
-# Restore the correct credential before the real shutdown-trigger phase
+# Restore the correct UPS_NAME before the real shutdown-trigger phase
 # below, which depends on the exporter genuinely reading upsd again.
-kc patch secret -n monitoring ups-credentials --type merge \
-    -p "{\"stringData\":{\"NUT_PASSWORD\":\"$NUT_READONLY_PASSWORD\"}}" >/dev/null
-wait_pod=$(restart_and_wait_exclusive)
+# The trailing "-" removes kubectl set env's own override, reverting to
+# the Deployment's original, Flux-applied ${UPS_NAME} value.
+old_pods=$(capture_old_pods)
+kc set env deployment/scrap-ups-exporter -n monitoring NUT_UPS_NAME- >/dev/null
+wait_pod=$(wait_for_exclusive_new_pod "$old_pods")
 restored_val=""
 i=0
 while [ "$i" -lt 24 ]; do
@@ -376,9 +403,9 @@ while [ "$i" -lt 24 ]; do
     i=$((i + 1))
 done
 if [ "$wait_pod" = ok ] && [ "$restored_val" = "1" ]; then
-    ok T-A-ups/credential-restored "nut_up reads 1 again after the credential is restored"
+    ok T-A-ups/credential-restored "nut_up reads 1 again after UPS_NAME is restored"
 else
-    fail T-A-ups/credential-restored "expected nut_up=1 after restoring the credential, got '$restored_val' (pod ready=$wait_pod)"
+    fail T-A-ups/credential-restored "expected nut_up=1 after restoring UPS_NAME, got '$restored_val' (pod ready=$wait_pod)"
 fi
 
 # ---------------------------------------------------------------------------

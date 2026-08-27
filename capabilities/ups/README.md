@@ -25,9 +25,16 @@ stateful workloads their normal termination window before the node powers off.
 Prometheus exporter (`exporter-deployment.yaml`) that connects to `upsd` over the node's LAN
 address (`${NODE_ADDRESS}:3493`, `instance-config.yaml`) and reads its status via a **read-only
 NUT user** — a `upsd.users` account with a password and no `upsmon`/`instcmds`/`actions` grant,
-so it can authenticate and read (`LIST VAR`) but can never receive an FSD broadcast, `SET VAR`,
-or `INSTCMD` anything. `servicemonitor.yaml` and `prometheusrule.yaml` wire that into Prometheus
-and Alertmanager the normal way (`UPSOnBattery`, `UPSLowBattery`, `UPSReplaceBattery`, and
+so it can never receive an FSD broadcast, `SET VAR`, or `INSTCMD` anything, regardless of what it
+authenticates as. **Real limit, found live (`tests/profiles/t-a-ups.sh`'s own first negative
+control, redesigned after evidence, not assumption — see "Configuration errors fail visibly"
+below): upsd does not actually validate this user's password for `LIST VAR` read access at all** —
+only privileged operations enforce it. The account still documents and scopes *intent* (this is
+the identity the read-only client authenticates as, auditable in `upsd`'s own logs), and the
+privilege grants above are real and enforced; password secrecy for this specific user is not a
+real access-control boundary against another host already able to reach port 3493 on the LAN.
+`servicemonitor.yaml` and `prometheusrule.yaml` wire the exporter's metrics into Prometheus and
+Alertmanager the normal way (`UPSOnBattery`, `UPSLowBattery`, `UPSReplaceBattery`, and
 `UPSCommunicationLost` if the exporter itself loses contact with `upsd`).
 
 **No SCRAP-shipped workload ever holds host power authority** — `docs/decisions/0013`'s own
@@ -101,11 +108,20 @@ starts immediately on apply, the same reasoning `capabilities/identity/README.md
 
 ## Configuration errors fail visibly — verified, not assumed
 
-A wrong `NUT_USERNAME`/`NUT_PASSWORD`, a wrong `UPS_NAME`, or an unreachable `upsd` all fail the
-same way: the exporter's own `query_nut()` raises, `nut_up` reports `0`, and
-`UPSCommunicationLost` fires after 5 minutes — never a silent zero-value metric indistinguishable
-from "everything is fine, on mains, 100% charged." There is no SCRAP-authored fallback or
-retry-and-ignore logic in this path.
+A wrong `NUT_USERNAME`, a wrong `UPS_NAME`, or an unreachable `upsd` all fail the same way: the
+exporter's own `query_nut()` raises, `nut_up` reports `0`, and `UPSCommunicationLost` fires after
+5 minutes — never a silent zero-value metric indistinguishable from "everything is fine, on
+mains, 100% charged." There is no SCRAP-authored fallback or retry-and-ignore logic in this path.
+
+**Real finding, not assumed — a wrong `NUT_PASSWORD` alone does *not* fail this way.**
+`tests/profiles/t-a-ups.sh`'s own first design asserted it would; direct evidence across two full
+live CI runs (a deliberately wrong password held for minutes, multiple Prometheus scrape
+intervals, and the exporter's own `scrape failed: ...` stderr diagnostic — which fires on any
+protocol rejection — never once printed) showed `upsd` accepts `USERNAME`/`PASSWORD` for a plain
+user's `LIST VAR` access without actually validating the password. The negative control this
+project actually ships instead breaks `NUT_UPS_NAME`, a failure `upsd` genuinely does enforce
+(`ERR UNKNOWN-UPS`). See "Enabling this capability" above for what a wrong `NUT_PASSWORD`
+therefore does and doesn't buy.
 
 ## Acceptance evidence
 
@@ -139,7 +155,9 @@ own query API — not just that the objects exist. Both directions are proven:
   to fire only on the real degraded condition, not unconditionally.
 - **`UPSCommunicationLost`, proven both ways:** the alert is confirmed silent while the exporter
   can reach `upsd`, and confirmed to fire when it deliberately cannot (the exporter's own
-  `Secret` pointed at a wrong password — a real, visible authentication failure, not a mock).
+  `NUT_UPS_NAME` pointed at a UPS `upsd` never configured — a real, visible `LIST VAR` failure,
+  not a mock; see "Configuration errors fail visibly" above for why this is the negative control
+  actually used, not a wrong password).
 
 **Honest limit of this level:** NUT's `dummy-ups` driver simulates the *device's own reported
 state* faithfully (the same code path a real driver's readings flow through), but a *real* UPS's
