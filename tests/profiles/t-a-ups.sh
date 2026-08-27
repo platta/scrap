@@ -243,11 +243,19 @@ fi
 # requires: no privilege escalation, every capability dropped, no
 # ServiceAccount token -- an ordinary unprivileged container, never
 # privileged, never hostPID, never a host mount.
-sec=$(kc get deployment -n monitoring scrap-ups-exporter -o json 2>/dev/null || true)
-sa_token=$(echo "$sec" | jq -r '.spec.template.spec.automountServiceAccountToken // true')
-no_escalation=$(echo "$sec" | jq -r '[.spec.template.spec.containers[].securityContext.allowPrivilegeEscalation] | all(. == false)')
-caps_dropped=$(echo "$sec" | jq -r '[.spec.template.spec.containers[].securityContext.capabilities.drop // [] | .[]] | any(. == "ALL")')
-if [ "$sa_token" = "false" ] && [ "$no_escalation" = "true" ] && [ "$caps_dropped" = "true" ]; then
+# jsonpath, not -o json | jq: REAL BUG, found live -- the Deployment's
+# full JSON representation embeds this capability's own giant Python
+# exporter script (the initContainer's command), and piping that whole
+# object through jq produced 'Invalid string: control characters ... must
+# be escaped' -- jsonpath extracts exactly the three scalars needed
+# without round-tripping the embedded script through a second JSON
+# parse at all, the same targeted-extraction shape 5a's own dep_name/
+# svc_name/sm_name/pr_name checks already use successfully against this
+# same object.
+sa_token=$(kc get deployment -n monitoring scrap-ups-exporter -o jsonpath='{.spec.template.spec.automountServiceAccountToken}' 2>/dev/null || true)
+no_escalation=$(kc get deployment -n monitoring scrap-ups-exporter -o jsonpath='{.spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation}' 2>/dev/null || true)
+caps_dropped=$(kc get deployment -n monitoring scrap-ups-exporter -o jsonpath='{.spec.template.spec.containers[0].securityContext.capabilities.drop[0]}' 2>/dev/null || true)
+if [ "$sa_token" = "false" ] && [ "$no_escalation" = "false" ] && [ "$caps_dropped" = "ALL" ]; then
     ok T-A-ups/exporter-unprivileged "the exporter Deployment genuinely has no ServiceAccount token, disallows privilege escalation, and drops every container capability -- structurally, not just documented"
 else
     fail T-A-ups/exporter-unprivileged "expected automountServiceAccountToken=false, allowPrivilegeEscalation=false, capabilities dropped=ALL -- got token=$sa_token no_escalation=$no_escalation caps_dropped=$caps_dropped"
