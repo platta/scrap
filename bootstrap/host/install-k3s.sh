@@ -165,4 +165,10 @@ else
     echo "WARNING: kubelet never registered a 'shutdown'/'delay' inhibitor lock within 30s -- graceful"
     echo "node shutdown may not actually be active despite the config file above. Not treated as fatal"
     echo "here (see comment above); tests/profiles/t-a-ups.sh's own checks are authoritative for this."
+    echo "loginctl list-inhibitors (full, for diagnosis):"
+    loginctl list-inhibitors || true
+    echo "journalctl -u k3s, full (not just a tail), grepped for anything shutdown/config-related --"
+    echo "captured here because by the time a later diagnostics step runs, this early startup"
+    echo "output has already scrolled past any tail-bounded capture:"
+    journalctl -u k3s --no-pager 2>/dev/null | grep -iE "shutdown|scrap-kubelet-shutdown-config|Running kubelet|failed to (load|parse|unmarshal)|invalid configuration|unknown field" || echo "(no matching lines found)"
 fi
