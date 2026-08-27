@@ -41,11 +41,67 @@ status=0
 INSTANCE_NAME=topology-b-instance
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 0/6: environment prerequisites"
+log "T-A-topology-b: Phase 0/7: environment prerequisites"
 install_prereqs
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 1/6: host a local bare repo over SSH-to-localhost -- same"
+log "T-A-topology-b: Phase 1/7: generator input validation -- instance-name, no cluster needed"
+# Fast, local, no-cluster checks of bootstrap/generate-topology-b.sh's own
+# instance-name contract (an RFC 1123 DNS label) -- run first, before any
+# of the expensive live-bootstrap phases below, since a broken validator is
+# exactly the kind of defect that should fail loud and cheap. Closes a
+# real, reviewed defect: an earlier version of the generator accepted "."
+# and ".." (rejecting only an empty name or one containing "/"), under
+# which CLUSTER_DIR resolved to the output directory itself and the
+# generator silently wrote -- and committed -- a malformed repository
+# instead of failing safely (PLAT-38 review).
+VALIDATION_DIR=/tmp/t-a-topology-b-validation
+VALIDATION_LOG=/tmp/t-a-topology-b-validation.log
+rm -rf "$VALIDATION_DIR"
+
+# assert_generator_rejects <bad-name> <label> -- runs the generator against
+# a fresh, otherwise-untouched output directory and asserts BOTH a nonzero
+# exit AND that no partial repository was left behind: an invalid name
+# that still leaves files on disk is exactly the "malformed repository
+# committed anyway" failure mode this exists to catch.
+assert_generator_rejects() {
+    bad_name="$1"; check_label="$2"
+    out="$VALIDATION_DIR/$check_label"
+    rm -rf "$out"
+    if sh "$REPO_ROOT/bootstrap/generate-topology-b.sh" "$out" "$bad_name" >"$VALIDATION_LOG" 2>&1; then
+        fail "T-A-topology-b/reject-$check_label" "generate-topology-b.sh exited 0 for instance-name '$bad_name' -- expected a nonzero exit"
+        return
+    fi
+    if [ -e "$out" ] && [ -n "$(ls -A "$out" 2>/dev/null)" ]; then
+        fail "T-A-topology-b/reject-$check_label" "instance-name '$bad_name' was rejected (nonzero exit) but left a partial repository behind at $out"
+        return
+    fi
+    ok "T-A-topology-b/reject-$check_label" "instance-name '$bad_name' rejected with a nonzero exit and no partial output"
+}
+
+assert_generator_rejects "." "dot"
+assert_generator_rejects ".." "dotdot"
+assert_generator_rejects "topology/b" "slash"
+assert_generator_rejects "has space" "whitespace"
+assert_generator_rejects "bad;name\`x\`" "metacharacter"
+
+# Positive boundary case: the shortest possible valid RFC 1123 DNS label (a
+# single lowercase letter) must still be ACCEPTED -- proves the validator
+# isn't merely rejecting everything.
+BOUNDARY_DIR="$VALIDATION_DIR/boundary-valid"
+rm -rf "$BOUNDARY_DIR"
+if sh "$REPO_ROOT/bootstrap/generate-topology-b.sh" "$BOUNDARY_DIR" "x" >"$VALIDATION_LOG" 2>&1 \
+    && [ -d "$BOUNDARY_DIR/clusters/x" ]; then
+    ok T-A-topology-b/accept-boundary "a minimal single-character instance-name ('x') is accepted and generates clusters/x/"
+else
+    fail T-A-topology-b/accept-boundary "a minimal, valid single-character instance-name ('x') was rejected -- validation is too strict"
+    sed 's/^/      /' "$VALIDATION_LOG" || true
+fi
+rm -rf "$VALIDATION_DIR"
+rm -f "$VALIDATION_LOG"
+
+# ---------------------------------------------------------------------------
+log "T-A-topology-b: Phase 2/7: host a local bare repo over SSH-to-localhost -- same"
 log "mechanism bootstrap/install.sh's own D5 default path uses, set up here explicitly"
 log "because this test supplies its own REPO_URL (install.sh's own local-seeding branch"
 log "never runs when REPO_URL is set)"
@@ -84,7 +140,7 @@ UPSTREAM_SHA=$(git -C "$WORKDIR" rev-parse HEAD)
 rm -rf "$WORKDIR"
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 2/6: generate the Topology B operator repository, pinned to $UPSTREAM_SHA"
+log "T-A-topology-b: Phase 3/7: generate the Topology B operator repository, pinned to $UPSTREAM_SHA"
 AGE_KEY_DIR=/tmp/t-a-topology-b-age
 rm -rf "$AGE_KEY_DIR"
 mkdir -p "$AGE_KEY_DIR"
@@ -129,7 +185,7 @@ if [ "$STRUCT_OK" -eq 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 3/6: commit 2 on main -- the generated repo becomes flux-system's tip"
+log "T-A-topology-b: Phase 4/7: commit 2 on main -- the generated repo becomes flux-system's tip"
 WORKDIR2=$(mktemp -d)
 git clone -q "$BARE_REPO" "$WORKDIR2"
 find "$WORKDIR2" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} \;
@@ -141,7 +197,7 @@ find "$GEN_DIR" -mindepth 1 -maxdepth 1 ! -name .git -exec cp -a {} "$WORKDIR2/"
 rm -rf "$WORKDIR2" "$GEN_DIR"
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 4/6: bootstrap/install.sh -- the real, unmodified installer, against the generated repo"
+log "T-A-topology-b: Phase 5/7: bootstrap/install.sh -- the real, unmodified installer, against the generated repo"
 export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
 if ! sudo -E env HOME=/root AGE_KEY_DIR="$AGE_KEY_DIR" FLUX_PRIVATE_KEY_FILE="$DEPLOY_KEY" \
@@ -155,7 +211,7 @@ fi
 setup_kubeconfig
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 5/6: postconditions"
+log "T-A-topology-b: Phase 6/7: postconditions"
 
 echo "      --- flux get kustomizations -A ---"
 flux get kustomizations -A 2>&1 | sed 's/^/      /' || true
@@ -209,7 +265,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "T-A-topology-b: Phase 6/6: negative control -- a deliberately wrong pinned commit fails visibly"
+log "T-A-topology-b: Phase 7/7: negative control -- a deliberately wrong pinned commit fails visibly"
 BOGUS_SHA=0000000000000000000000000000000000dead
 WORKDIR3=$(mktemp -d)
 git clone -q "$BARE_REPO" "$WORKDIR3"

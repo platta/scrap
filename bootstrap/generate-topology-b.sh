@@ -78,9 +78,47 @@ if [ -z "$OUT_DIR" ]; then
     echo "Usage: sh bootstrap/generate-topology-b.sh <output-dir> [instance-name]" >&2
     exit 1
 fi
+
+# instance-name contract: an RFC 1123 DNS label -- lowercase letters,
+# digits, and '-' only, starting and ending with a letter or digit, at
+# most 63 characters. The same contract Kubernetes itself enforces on
+# object names, chosen because INSTANCE_NAME is interpolated throughout
+# this script: into filesystem paths (CLUSTER_DIR), sed replacement text,
+# generated YAML content, generated Markdown documentation, and the final
+# commit message. A weaker check here is a real bug, not a style
+# preference: an earlier version of this script rejected only an empty
+# name or one containing '/', which let "." and ".." through --
+# CLUSTER_DIR="$OUT_DIR/clusters/.." resolves to $OUT_DIR ITSELF, so the
+# generator silently wrote clusters/, secrets/, and capabilities/ content
+# into the wrong location and still committed the malformed result instead
+# of failing safely (found in review, PLAT-38). Validating BEFORE touching
+# the filesystem at all -- this is the first substantive check in the
+# script -- closes that class of defect structurally: every character this
+# contract forbids ('.', '/', whitespace, '$', '`', ';', quotes, and every
+# other shell/YAML-significant character) is exactly the set that made the
+# interpolation sites above unsafe.
 case "$INSTANCE_NAME" in
-    */*|"") echo "instance-name must be a single non-empty path segment (got '$INSTANCE_NAME')" >&2; exit 1 ;;
+    "")
+        echo "instance-name must not be empty" >&2
+        exit 1
+        ;;
 esac
+case "$INSTANCE_NAME" in
+    *[!a-z0-9-]*)
+        echo "instance-name must contain only lowercase letters, digits, and '-' (got '$INSTANCE_NAME')" >&2
+        exit 1
+        ;;
+esac
+case "$INSTANCE_NAME" in
+    -*|*-)
+        echo "instance-name must start and end with a letter or digit, not '-' (got '$INSTANCE_NAME')" >&2
+        exit 1
+        ;;
+esac
+if [ "${#INSTANCE_NAME}" -gt 63 ]; then
+    echo "instance-name must be 63 characters or fewer, an RFC 1123 DNS label (got ${#INSTANCE_NAME}: '$INSTANCE_NAME')" >&2
+    exit 1
+fi
 
 if [ -e "$OUT_DIR" ]; then
     if [ ! -d "$OUT_DIR" ] || [ -n "$(ls -A "$OUT_DIR" 2>/dev/null)" ]; then
