@@ -45,9 +45,22 @@ spec:
       # Kubernetes API -- same reasoning capabilities/heartbeat/cronjob.yaml's
       # own comment gives.
       automountServiceAccountToken: false
+      # REAL BUG, found live via this capability's own first two CI runs:
+      # runAsNonRoot/runAsUser here made `apk add` fail outright ("Failed
+      # to open apk database: Permission denied") regardless of
+      # readOnlyRootFilesystem (already found and removed separately) --
+      # apk needs to write /lib/apk/db/ itself, root-owned in the base
+      # image, so installing a package at all needs to run as root here,
+      # the same reason capabilities/dyndns/cronjob.yaml and
+      # capabilities/heartbeat/cronjob.yaml -- this pattern's own
+      # precedent -- never set runAsNonRoot either. Every other
+      # hardening below still holds: no privilege escalation, every
+      # Linux capability dropped, no ServiceAccount token, the default
+      # seccomp profile -- an ordinary unprivileged container, never
+      # privileged, never hostPID, never a host mount, exactly ADR-0013's
+      # actual requirement (root inside one ordinary container is not the
+      # host-power-authority privilege ADR-0013 forbids).
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: exporter

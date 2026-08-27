@@ -234,15 +234,23 @@ else
 fi
 
 # 5b. Structural: the exporter pod's own security posture, asserted
-# directly, not merely claimed in this capability's README.
+# directly, not merely claimed in this capability's README. Not
+# runAsNonRoot -- REAL BUG, found live via this capability's own first
+# two CI runs: `apk add` needs to write /lib/apk/db/, root-owned in the
+# base image, so it cannot run non-root at all here, the same reason
+# capabilities/dyndns/cronjob.yaml and capabilities/heartbeat/cronjob.yaml
+# never set it either. What's actually asserted is what ADR-0013 actually
+# requires: no privilege escalation, every capability dropped, no
+# ServiceAccount token -- an ordinary unprivileged container, never
+# privileged, never hostPID, never a host mount.
 sec=$(kc get deployment -n monitoring scrap-ups-exporter -o json 2>/dev/null || true)
-run_as_nonroot=$(echo "$sec" | jq -r '.spec.template.spec.securityContext.runAsNonRoot // false')
 sa_token=$(echo "$sec" | jq -r '.spec.template.spec.automountServiceAccountToken // true')
+no_escalation=$(echo "$sec" | jq -r '[.spec.template.spec.containers[].securityContext.allowPrivilegeEscalation] | all(. == false)')
 caps_dropped=$(echo "$sec" | jq -r '[.spec.template.spec.containers[].securityContext.capabilities.drop // [] | .[]] | any(. == "ALL")')
-if [ "$run_as_nonroot" = "true" ] && [ "$sa_token" = "false" ] && [ "$caps_dropped" = "true" ]; then
-    ok T-A-ups/exporter-unprivileged "the exporter Deployment genuinely runs non-root, with no ServiceAccount token, and every container capability dropped -- structurally, not just documented"
+if [ "$sa_token" = "false" ] && [ "$no_escalation" = "true" ] && [ "$caps_dropped" = "true" ]; then
+    ok T-A-ups/exporter-unprivileged "the exporter Deployment genuinely has no ServiceAccount token, disallows privilege escalation, and drops every container capability -- structurally, not just documented"
 else
-    fail T-A-ups/exporter-unprivileged "expected runAsNonRoot=true, automountServiceAccountToken=false, capabilities dropped=ALL -- got runAsNonRoot=$run_as_nonroot token=$sa_token caps_dropped=$caps_dropped"
+    fail T-A-ups/exporter-unprivileged "expected automountServiceAccountToken=false, allowPrivilegeEscalation=false, capabilities dropped=ALL -- got token=$sa_token no_escalation=$no_escalation caps_dropped=$caps_dropped"
 fi
 
 wait_pod=$(wait_for_pod_ready monitoring "app.kubernetes.io/name=scrap-ups-exporter" 24)

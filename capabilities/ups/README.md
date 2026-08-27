@@ -31,10 +31,15 @@ and Alertmanager the normal way (`UPSOnBattery`, `UPSLowBattery`, `UPSReplaceBat
 `UPSCommunicationLost` if the exporter itself loses contact with `upsd`).
 
 **No SCRAP-shipped workload ever holds host power authority** — `docs/decisions/0013`'s own
-corollary, enforced structurally here, not just documented: the exporter pod runs
-`runAsNonRoot`, drops every Linux capability, has `automountServiceAccountToken: false`, and its
-NUT credential cannot trigger a shutdown even if the pod were fully compromised. Only `upsmon`,
-running on the host itself outside anything Flux reconciles, can decide to power the node off.
+corollary, enforced structurally here, not just documented: the exporter pod is an ordinary
+unprivileged container — no `privileged`, no `hostPID`, no host mount, `allowPrivilegeEscalation:
+false`, every Linux capability dropped, no `ServiceAccount` token — and its NUT credential cannot
+trigger a shutdown even if the pod were fully compromised. It does run as root *inside* that one
+ordinary container, needed to install `python3` at start the same way every other apk-based
+capability here does (`capabilities/dyndns/cronjob.yaml`, `capabilities/heartbeat/cronjob.yaml`) —
+root-in-a-container is not the host-power-authority privilege ADR-0013 forbids; a privileged
+container, `hostPID`, or a host mount would be, and this has none of them. Only `upsmon`, running
+on the host itself outside anything Flux reconciles, can decide to power the node off.
 
 ## Why no third-party exporter image
 
@@ -109,8 +114,8 @@ Two distinct evidence levels, kept honestly separate:
 **1. Static/structural — every push and PR, no external dependency:** the `Deployment`,
 `Service`, `ServiceMonitor`, and `PrometheusRule` render, are owned by this capability's own
 Kustomization (T1: absent from a `minimal`-profile cluster), and the exporter pod's own
-security posture (`runAsNonRoot`, dropped capabilities, no service account token) is asserted
-structurally, not merely claimed in prose.
+security posture (no privilege escalation, every Linux capability dropped, no service account
+token) is asserted structurally, not merely claimed in prose.
 
 **2. A real host-level NUT install, driven by NUT's own `dummy-ups` driver, against a real
 exporter reading real (simulated) UPS data — every push and PR, no physical hardware
