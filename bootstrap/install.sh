@@ -24,6 +24,20 @@
 #   FLUX_VERSION    Default: v2.9.4, pinned.
 #   AGE_KEY_DIR     Where the two age keypairs are written. Default:
 #                   /etc/scrap/age -- root-only permissions.
+#   FLUX_PRIVATE_KEY_FILE
+#                   Only meaningful together with an explicit REPO_URL: an
+#                   SSH private key file to pass to `flux bootstrap git
+#                   --private-key-file`. `flux bootstrap git` (the generic,
+#                   non-provider-specific subcommand this script always
+#                   uses) cannot register a deploy key with an arbitrary SSH
+#                   host on its own -- without this, an ssh:// REPO_URL
+#                   would need that registration done by hand, mid-run,
+#                   which this script cannot do unattended. Leave unset for
+#                   an http(s):// REPO_URL (anonymous read, no key needed)
+#                   or a hosting provider you authenticate to some other
+#                   way. When REPO_URL is unset, this script's own D5
+#                   minimum path ignores this variable and generates its
+#                   own key, exactly as before.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -123,7 +137,13 @@ echo
 
 # ---------------------------------------------------------------------------
 log "Step 5/7: Git source"
-FLUX_PRIVATE_KEY_FILE=""
+# Preserves a caller-supplied FLUX_PRIVATE_KEY_FILE (see the comment block
+# at the top of this script) -- needed for an explicit ssh:// REPO_URL,
+# e.g. a Topology B operator repository hosted over SSH
+# (bootstrap/generate-topology-b.sh's own acceptance test uses exactly
+# this). Untouched, and still always "" by default, for every existing
+# caller that doesn't set it.
+FLUX_PRIVATE_KEY_FILE="${FLUX_PRIVATE_KEY_FILE:-}"
 if [ -z "${REPO_URL:-}" ]; then
     # REAL FINDING, from actually running this: Flux's GitRepository source
     # only supports HTTP/S or SSH URLs -- confirmed directly against
