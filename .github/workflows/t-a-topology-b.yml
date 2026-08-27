@@ -1,0 +1,47 @@
+name: T-A-topology-b (ADR-0009 Topology B onboarding live acceptance)
+
+# A separate from-zero bootstrap from every other profile's own -- see
+# tests/profiles/t-a-topology-b.sh's own header for why. Needs no external
+# domain, DNS credentials, or GitHub reachability -- it hosts everything it
+# needs from a local bare repository -- so this runs on every push/PR, the
+# same trigger tier as T-A itself.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-topology-b:
+    name: T-A-topology-b -- generated Topology B repo bootstraps/reconciles via a pinned scrap-platform source
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-topology-b against this runner as a fresh host
+        run: sh tests/profiles/t-a-topology-b.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- flux get sources git -A ---"
+          sudo -E flux get sources git -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- scrap-platform GitRepository, full describe ---"
+          sudo -E kubectl describe gitrepository -n flux-system scrap-platform || true
+          echo "--- flux-system GitRepository, full describe ---"
+          sudo -E kubectl describe gitrepository -n flux-system flux-system || true
+          echo "--- platform-crds Kustomization, full describe ---"
+          sudo -E kubectl describe kustomization -n flux-system platform-crds || true
+          echo "--- source-controller log tail ---"
+          sudo -E kubectl logs -n flux-system -l app=source-controller --tail=200 || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true
