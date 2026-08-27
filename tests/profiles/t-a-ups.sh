@@ -33,6 +33,11 @@ status=0
 DUMMY_DEV=/etc/nut/scrap-ups-test.dev
 SENTINEL=/tmp/t-a-ups-shutdown-sentinel
 NUT_READONLY_PASSWORD="t-a-ups-test-password-$(date +%s)"
+# Matches instance-config.yaml's own default UPS_NAME, which Flux
+# substitutes into the exporter Deployment's own NUT_UPS_NAME env value
+# at apply time -- this is that same literal value, named here so the
+# revert step (below) can restore it explicitly, not just unset it.
+CORRECT_UPS_NAME=ups
 WRONG_UPS_NAME=scrap-ups-nonexistent
 
 write_dummy_state() {
@@ -135,7 +140,7 @@ NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -
 # ---------------------------------------------------------------------------
 log "T-A-ups: Phase 3/7: host half -- bootstrap/host/install-nut.sh, for real, against dummy-ups"
 if ! sudo -E env \
-    NUT_UPS_NAME=ups \
+    NUT_UPS_NAME="$CORRECT_UPS_NAME" \
     NUT_DRIVER=dummy-ups \
     NUT_PORT="$DUMMY_DEV" \
     NUT_READONLY_PASSWORD="$NUT_READONLY_PASSWORD" \
@@ -389,10 +394,19 @@ fi
 
 # Restore the correct UPS_NAME before the real shutdown-trigger phase
 # below, which depends on the exporter genuinely reading upsd again.
-# The trailing "-" removes kubectl set env's own override, reverting to
-# the Deployment's original, Flux-applied ${UPS_NAME} value.
+#
+# REAL BUG, found live via this profile's own seventh CI run: a trailing
+# "-" (kubectl set env's own unset syntax) does not restore the previous
+# value -- it DELETES the env var from the pod spec entirely. The
+# exporter's own NUT_UPS_NAME = os.environ["NUT_UPS_NAME"] has no
+# default, so a container missing it outright crashes at startup
+# (KeyError) instead of just failing to connect -- no pod ever became
+# Ready, so both this check and the next (which depends on the exporter
+# being up to observe the real on-battery event) failed. Set explicitly
+# back to the same value install-nut.sh's own host install used, not
+# unset.
 old_pods=$(capture_old_pods)
-kc set env deployment/scrap-ups-exporter -n monitoring NUT_UPS_NAME- >/dev/null
+kc set env deployment/scrap-ups-exporter -n monitoring "NUT_UPS_NAME=$CORRECT_UPS_NAME" >/dev/null
 wait_pod=$(wait_for_exclusive_new_pod "$old_pods")
 restored_val=""
 i=0
