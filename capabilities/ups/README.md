@@ -26,14 +26,20 @@ Graceful Node Shutdown feature has had its feature gate on by default since Kube
 but the feature does nothing until `shutdownGracePeriod`/`shutdownGracePeriodCriticalPods` are
 set to non-zero values — both default to `0`, which
 [upstream Kubernetes documentation](https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/)
-states plainly does not activate it. `bootstrap/host/install-k3s.sh` now installs k3s with
-`--kubelet-arg=shutdown-grace-period=30s --kubelet-arg=shutdown-grace-period-critical-pods=10s`
-(the exact worked example from that same documentation) and raises systemd-logind's
-`InhibitDelayMaxSec` to `45` so that window isn't silently truncated by whatever a given
-distribution's own default happens to be. This is a property of the k3s host itself, not of this
-capability specifically — it protects any operator-initiated `shutdown -h` on this single-node
-stack, not only a UPS-triggered one — but `bootstrap/host/install-nut.sh`'s `SHUTDOWNCMD` is what
-makes it matter unattended.
+states plainly does not activate it. Both fields are `KubeletConfiguration` fields, not CLI
+flags, on this project's pinned k3s version — a real finding, live: the deprecated CLI-flag form
+the same upstream documentation still shows (`--shutdown-grace-period=...`) has been removed
+outright on this kubelet, not merely deprecated, and crash-loops kubelet if passed
+(`Error: failed to parse kubelet flag: unknown flag: --shutdown-grace-period`).
+`bootstrap/host/install-k3s.sh` instead writes a real `KubeletConfiguration` file
+(`/etc/rancher/k3s/scrap-kubelet-shutdown-config.yaml`, `shutdownGracePeriod: 30s` /
+`shutdownGracePeriodCriticalPods: 10s` — the exact worked example from that same documentation)
+and points kubelet at it via `--kubelet-arg=config=<path>` (kubelet's own long-stable `--config`
+flag), and raises systemd-logind's `InhibitDelayMaxSec` to `45` so that window isn't silently
+truncated by whatever a given distribution's own default happens to be. This is a property of the
+k3s host itself, not of this capability specifically — it protects any operator-initiated
+`shutdown -h` on this single-node stack, not only a UPS-triggered one — but
+`bootstrap/host/install-nut.sh`'s `SHUTDOWNCMD` is what makes it matter unattended.
 
 **In-cluster half (visibility/alerting only):** `scrap-ups-exporter`, a small, self-contained
 Prometheus exporter (`exporter-deployment.yaml`) that connects to `upsd` over the node's LAN
@@ -178,9 +184,10 @@ push and PR (`tests/profiles/t-a-ups.sh`'s own `T-A-ups/kubelet-*` and
 `T-A-ups/logind-inhibit-delay-raised` checks):** `bootstrap/host/install-k3s.sh` installs k3s
 with kubelet's Graceful Node Shutdown explicitly configured (see "The real mechanism" above) and
 a matching `systemd-logind` `InhibitDelayMaxSec` override. This is checked live, not re-asserted
-from the installer's own script text: the real installed `k3s.service` unit genuinely carries
-both `--kubelet-arg` flags, `systemd-logind`'s own running D-Bus property genuinely reflects the
-raised `InhibitDelayMaxUSec`, and — the central proof — a real `systemd-logind` "shutdown"/"delay"
+from the installer's own script text: the real installed `k3s.service` unit genuinely points
+kubelet at the real `KubeletConfiguration` file on disk (which genuinely carries both fields),
+`systemd-logind`'s own running D-Bus property genuinely reflects the raised `InhibitDelayMaxUSec`,
+and — the central proof — a real `systemd-logind` "shutdown"/"delay"
 inhibitor lock is genuinely held, which only exists while kubelet's node-shutdown manager is
 actually running with a non-zero grace period. Before this fix, no such lock existed on any host
 this project bootstrapped; the node still reported `Ready`, silently masking the gap.

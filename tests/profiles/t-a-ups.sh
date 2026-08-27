@@ -167,16 +167,31 @@ fi
 # PrepareForShutdown-triggered eviction path without following through on
 # an actual poweroff. See capabilities/ups/README.md's own "Honest limits"
 # section.
+# REAL BUG, found live via this profile's own first CI run under this
+# revision: --kubelet-arg=shutdown-grace-period=... (the deprecated CLI
+# flag form) has been REMOVED outright on this kubelet version, not
+# merely deprecated -- crash-looped kubelet on every T-A-* profile, not
+# just this one. bootstrap/host/install-k3s.sh now sets both fields via a
+# real KubeletConfiguration file instead, passed through
+# --kubelet-arg=config=<path> (kubelet's own long-stable --config flag).
+# Checked here at both ends: the real installed k3s.service unit genuinely
+# points kubelet at that file, AND the file genuinely landed on disk with
+# the right content -- not just this script's own text.
+config_path=/etc/rancher/k3s/scrap-kubelet-shutdown-config.yaml
 unit_file_ok=""
 k3s_unit=$(systemctl cat k3s.service 2>/dev/null || true)
-if echo "$k3s_unit" | grep -q "shutdown-grace-period=30s" && \
-   echo "$k3s_unit" | grep -q "shutdown-grace-period-critical-pods=10s"; then
+if echo "$k3s_unit" | grep -q -- "--kubelet-arg=config=${config_path}"; then
     unit_file_ok=1
 fi
-if [ -n "$unit_file_ok" ]; then
-    ok T-A-ups/kubelet-shutdown-args-installed "the real installed k3s.service unit (via 'systemctl cat') genuinely carries both --kubelet-arg shutdown-grace-period flags, not just this script's own text"
+config_file_ok=""
+if sudo grep -q "shutdownGracePeriod: 30s" "$config_path" 2>/dev/null && \
+   sudo grep -q "shutdownGracePeriodCriticalPods: 10s" "$config_path" 2>/dev/null; then
+    config_file_ok=1
+fi
+if [ -n "$unit_file_ok" ] && [ -n "$config_file_ok" ]; then
+    ok T-A-ups/kubelet-shutdown-args-installed "the real installed k3s.service unit points kubelet at $config_path (via 'systemctl cat'), and that real file on disk genuinely carries both shutdown grace period fields"
 else
-    fail T-A-ups/kubelet-shutdown-args-installed "expected both shutdown-grace-period --kubelet-arg flags in 'systemctl cat k3s.service'"
+    fail T-A-ups/kubelet-shutdown-args-installed "expected --kubelet-arg=config=$config_path in 'systemctl cat k3s.service' (found: ${unit_file_ok:-no}) and both fields in that real file (found: ${config_file_ok:-no})"
 fi
 
 logind_max=$(busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager InhibitDelayMaxUSec 2>/dev/null | awk '{print $2}')
