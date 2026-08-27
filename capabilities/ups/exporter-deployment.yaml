@@ -75,17 +75,21 @@ spec:
                   key: NUT_PASSWORD
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { memory: 64Mi }
           # python3 isn't in the base alpine image -- installed at
           # container start, same as bind-tools/curl in
-          # capabilities/dyndns/cronjob.yaml. readOnlyRootFilesystem
-          # above means apk needs its cache and the interpreter's own
-          # writes directed at /tmp (an emptyDir below), not the image
-          # layer.
+          # capabilities/dyndns/cronjob.yaml. REAL BUG, found live via
+          # this capability's own first CI run: readOnlyRootFilesystem
+          # here made `apk add` fail outright ("Unable to lock database:
+          # Permission denied") -- apk needs to write its own database
+          # under the image's root filesystem (/lib/apk/db/), not just
+          # /tmp, so the two are incompatible with this install-at-start
+          # pattern. Dropped, matching capabilities/dyndns/cronjob.yaml
+          # and capabilities/heartbeat/cronjob.yaml, neither of which
+          # sets it either, for the same reason.
           volumeMounts:
             - name: tmp
               mountPath: /tmp

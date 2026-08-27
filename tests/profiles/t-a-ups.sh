@@ -117,11 +117,19 @@ else
     ok T-A-ups/shutdowncmd-negative-control "SHUTDOWNCMD's own sentinel does not exist while the simulated UPS reports healthy (OL)"
 fi
 
-host_status=$(sudo upsc ups@localhost ups.status 2>&1 || true)
+# REAL BUG, found live via this profile's own first CI run: merging
+# stderr into the captured value (2>&1) picked up upsc's own harmless
+# startup diagnostic ("Init SSL without certificate database", printed
+# by every invocation, unrelated to dummy-ups or any real failure) ahead
+# of the actual status line, breaking the exact-equality check below.
+# stderr is discarded here (to a log, for diagnostics on failure), never
+# merged into the value being compared.
+host_status=$(sudo upsc ups@localhost ups.status 2>/tmp/t-a-ups-upsc.log || true)
 if [ "$host_status" = "OL" ]; then
     ok T-A-ups/host-upsc-reads-real-driver "upsc reads ups.status=OL directly from the real, running dummy-ups driver"
 else
-    fail T-A-ups/host-upsc-reads-real-driver "expected ups.status=OL from upsc, got: $host_status"
+    fail T-A-ups/host-upsc-reads-real-driver "expected ups.status=OL from upsc, got: '$host_status'"
+    sed 's/^/      /' /tmp/t-a-ups-upsc.log 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
