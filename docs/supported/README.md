@@ -2,12 +2,11 @@
 
 **FULLY SUPPORTED, architecturally.** For deciding what to enable. This mirrors
 `capabilities/README.md` but is written for a reader choosing a configuration, not a contributor
-navigating the repository — see that file for the directory-by-directory technical detail,
-including which of these are implemented today versus designed-but-not-yet-built. Every capability
-listed here is *intended* to be designed, configured, documented, tested, and maintained by this
-project; enabling an implemented one is not required, but a failure in it is a SCRAP bug, exactly
-like a failure in `platform/`. See the Status column below and `docs/release-readiness.md` for the
-current, authoritative proven/unproven/deferred boundary.
+navigating the repository — see that file for the directory-by-directory technical detail. Every
+capability listed here is *intended* to be designed, configured, documented, tested, and
+maintained by this project; enabling one is not required, but a failure in it is a SCRAP bug,
+exactly like a failure in `platform/`. See the Status column below and `docs/release-readiness.md`
+for the current, authoritative proven/unproven/deferred boundary.
 
 | Capability | What you get | What it costs you | Status | Docs |
 |---|---|---|---|---|

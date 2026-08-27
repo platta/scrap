@@ -38,7 +38,7 @@ line of the frozen spec, and where.
    application pod by the exact value that was destroyed — every push/PR, not merely attempted.
    The same procedure is documented for a real operator's first backed-up application in
    `docs/runbooks/README.md`. `bootstrap/install.sh` also discards `postflight.sh`'s own exit
-   status (`|| true`, `bootstrap/install.sh:382`) by design — the postflight report is meant to
+   status (`|| true`, `bootstrap/install.sh:402`) by design — the postflight report is meant to
    inform the operator, not gate the install; only CI machine-checks its postconditions, in
    `t-a-minimal.sh`.
 

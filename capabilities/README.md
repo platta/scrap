@@ -1,14 +1,14 @@
 # capabilities/
 
 **FULLY SUPPORTED, architecturally** — every capability listed here is *intended* to be designed,
-configured, documented, tested, and maintained by this project, and a failure in an *implemented*
-one is a SCRAP bug, exactly like a failure in `platform/`. That classification is about intent, not
-a claim that every row below already has manifests behind it — see the Status column: several are
-implemented and live-tested today; others are currently README-only design documents with no
-manifests to enable at all. `docs/release-readiness.md` is the authoritative current snapshot; this
-table is kept in sync with it. None of these capabilities are required. Several implemented ones
-are on by default in the documented `standard` profile (`clusters/example/capabilities/`); all are
-off by default in the `minimal` profile.
+configured, documented, tested, and maintained by this project, and a failure in one is a SCRAP
+bug, exactly like a failure in `platform/`. Every capability below is implemented and live-tested
+today — see the Status column, and its own directory README, for exactly what's proven and what
+remains an honest evidence boundary. Two are enabled by an operator-run procedure rather than an
+ordinary Kustomization-copy, as noted below. `docs/release-readiness.md` is the authoritative
+current snapshot; this table is kept in sync with it. None of these capabilities are required.
+Several are on by default in the documented `standard` profile
+(`clusters/example/capabilities/`); all are off by default in the `minimal` profile.
 
 **Enabling a capability is copying its Flux `Kustomization` file(s) into
 `clusters/<name>/capabilities/`. Disabling it is deleting them.** One file for a capability with no

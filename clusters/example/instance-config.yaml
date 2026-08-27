@@ -11,7 +11,7 @@
 # CI validates: every ${VAR_NAME} referenced anywhere in the repository
 # resolves to a key defined in some instance's config (this file, or another
 # instance's equivalent). It does not validate that YOUR values are correct —
-# that's what bootstrap/preflight/ is for, once implemented.
+# that's what bootstrap/preflight/ is for.
 apiVersion: v1
 kind: ConfigMap
 metadata:

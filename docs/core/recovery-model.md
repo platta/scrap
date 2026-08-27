@@ -47,7 +47,7 @@ re-distributing trust to client devices — no data loss, no application changes
 ## What SCRAP tests versus what it merely documents
 
 Every claim above with a listed unlocking capability is asserted by a CI profile
-(`tests/profiles/`, `tests/dr/`) once implemented — including a destructive restore verified by
+(`tests/profiles/`, `tests/dr/`) — including a destructive restore verified by
 *specific, recently-changed values*, never row counts alone, which is the exact distinction that
 mattered in a real incident during this platform's own design work. A claim without a corresponding
 test is not yet a guarantee, and this document will say so rather than implying otherwise.
