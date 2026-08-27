@@ -22,6 +22,7 @@ attractive.
 | [0012](0012-rc-implementation-envelope.md) | RC implementation envelope | A candidate may defer proof, never existence: every mandatory-v1 behavior must be implemented before `rc.1` — heartbeat, dyndns, UPS, public ingress, alert delivery, and the Topology B generator are all pre-RC work |
 | [0013](0013-ups-shutdown-authority.md) | UPS shutdown authority | Host-level NUT (`bootstrap/host/`, the `install-k3s.sh` pattern) holds shutdown authority; the in-cluster half is unprivileged visibility only; no SCRAP workload ever holds host power — in-cluster privileged shutdown and scoping the promise down both rejected |
 | [0014](0014-public-ingress-edge-authority.md) | Public-ingress exposure mechanism | Router port-forwarding + split-horizon DNS is the supported v1 mechanism; the capability is operator-edge configuration end to end — implemented as a runbook plus operator-run verification whose oracle is CI-proven, no manifests by design; CGNAT/tunnel is an extension contract only, a supported tunnel needs its own future record; inert manifests outlawed |
+| [0015](0015-versioning-and-release-process.md) | Versioning and release process | `v`-prefixed SemVer 2.0.0 Git tags (`v0.1.0-rc.1`, ...), created manually only after independent exact-candidate adjudication; a tag-triggered workflow publishes the GitHub Release from `CHANGELOG.md`, never creates the tag itself |
 
 ## Format
 
