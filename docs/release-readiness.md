@@ -65,6 +65,7 @@ Each row names the exact claim a release candidate **must not make** until the c
 | A platform web UI | Explicitly out of scope (`docs/out-of-scope/README.md`) |
 | Multi-node, HA, multi-cluster/fleet, distributed storage, multi-tenancy | Explicitly out of scope (`docs/out-of-scope/README.md`) |
 | Dedicated R5 (account/credential loss) acceptance testing | No frozen test profile is tied to R5 specifically; the structural mitigation (dual age recipients) is already proven. Left here deliberately rather than assigned a target — resolving this further would be inventing a decision the frozen architecture doesn't make. |
+| The mechanics of cutting a tag, a CHANGELOG, or a release workflow | Explicitly out of scope for `docs/decisions/0011-release-candidate-policy.md`, which defers them here; cutting `rc.1` itself needs no such machinery. |
 
 ## Deliberately unresolved ambiguities
 
