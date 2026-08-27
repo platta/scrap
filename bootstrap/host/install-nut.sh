@@ -108,8 +108,20 @@ fi
 
 echo "Installing NUT (Network UPS Tools)..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -q
-apt-get install -y -q nut
+# Bounded, not open-ended -- tests/profiles/lib.sh's own apt_install()
+# comment documents the real incident this guards against: an unbounded
+# apt-get silently consumed an entire CI job's timeout on a stalled
+# mirror, with zero diagnostic output. Same fix, applied here since this
+# is a real host-provisioning script, not just a test harness.
+APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+if ! timeout 150 apt-get $APT_OPTS update -q; then
+    echo "apt-get update did not complete within 150s -- likely a stalled mirror or network issue"
+    exit 1
+fi
+if ! timeout 150 apt-get $APT_OPTS install -y -q nut; then
+    echo "apt-get install nut did not complete within 150s -- likely a stalled mirror or network issue"
+    exit 1
+fi
 
 echo "Writing /etc/nut/nut.conf (MODE=netserver -- this host serves upsd to the LAN, not just itself)..."
 cat >/etc/nut/nut.conf <<EOF

@@ -11,9 +11,9 @@
 # because Prometheus needs something to scrape continuously, not
 # something that runs on a schedule.
 #
-# Deliberately unprivileged and read-only: this pod authenticates as
-# ${NUT_USERNAME} (docs/decisions/0013-ups-shutdown-authority.md's "read
-# -only NUT user" -- bootstrap/host/install-nut.sh's own upsd.users
+# Deliberately unprivileged and read-only: this pod authenticates as the
+# NUT_USERNAME credential (docs/decisions/0013-ups-shutdown-authority.md's
+# "read-only NUT user" -- bootstrap/host/install-nut.sh's own upsd.users
 # config grants this user a password and nothing else: no "upsmon"
 # grant, so it can never receive an FSD broadcast; no "instcmds"/"actions"
 # grant, so it can never SET VAR or INSTCMD). This pod cannot shut

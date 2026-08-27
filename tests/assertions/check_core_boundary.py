@@ -20,6 +20,18 @@ Checked two ways:
 This is the direct, structural fix for a real defect: a platform monitoring
 Kustomization that `dependsOn` an identity application, so deleting the
 application broke the entire observability stack.
+
+REAL BUG, found live via capabilities/ups/'s own first CI run (PLAT-37): the
+textual scan's naive `token in line` substring match fired on a completely
+unrelated, legitimate string -- `apiVersion: apps/v1`, the standard
+Kubernetes API group for Deployment/StatefulSet/DaemonSet, which happens to
+contain "apps/" as a substring with zero relation to this repository's own
+apps/ directory tier. No capability before ups/ ever authored a raw
+Deployment-shaped manifest directly (every other one uses a HelmRelease), so
+this collision was latent, never triggered, until now. An `apiVersion:` line
+is never a directory-path reference in the first place -- it's always a
+`<group>/<version>` API identifier -- so it's excluded from this scan
+entirely, not special-cased per forbidden token.
 """
 from __future__ import annotations
 
@@ -53,6 +65,12 @@ def run(root: Path) -> list[str]:
             for lineno, line in enumerate(path.read_text(errors="ignore").splitlines(), start=1):
                 stripped = line.strip()
                 if stripped.startswith("#"):
+                    continue
+                # An apiVersion value is a Kubernetes API group/version
+                # identifier (e.g. "apps/v1", "batch/v1"), never a
+                # directory-path reference -- see this module's own
+                # docstring for the real collision this exemption fixes.
+                if stripped.startswith("apiVersion:"):
                     continue
                 for token in tokens:
                     if token in line:
