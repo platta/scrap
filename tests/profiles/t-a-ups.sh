@@ -57,6 +57,44 @@ prom_value() {
     query_prom "$1" | jq -r '.data.result[0].value[1] // empty' 2>/dev/null || true
 }
 
+# Restarts the exporter Deployment and waits until exactly one pod
+# matches the label selector, it is genuinely NEW (not one of the pods
+# present before the restart), and it is Ready. REAL BUG, found live via
+# this profile's own fifth CI run: with replicas: 1 and the default
+# RollingUpdate strategy (maxSurge rounds up to 1 for a single replica),
+# `kubectl rollout restart` creates the NEW pod as a surge BEFORE tearing
+# down the OLD one -- a real overlap window where both pods are Ready
+# simultaneously, both scraped by Prometheus, and a plain
+# wait_for_pod_ready (which only checks item[0] of whatever the label
+# selector currently matches) can report success while still describing
+# the OLD pod. Querying Prometheus during that window made the
+# comm-lost-negative-control check read the stale, still-correct-credential
+# pod's own nut_up=1, not the new, deliberately-broken pod's real 0.
+restart_and_wait_exclusive() {
+    old_pods=$(kc get pods -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+    kc rollout restart deployment -n monitoring scrap-ups-exporter >/dev/null
+    result=""
+    i=0
+    while [ "$i" -lt 24 ]; do
+        cur_pods=$(kc get pods -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+        cur_count=$(echo "$cur_pods" | wc -w)
+        overlap=""
+        for p in $old_pods; do
+            case " $cur_pods " in *" $p "*) overlap=1 ;; esac
+        done
+        if [ "$cur_count" -eq 1 ] && [ -z "$overlap" ]; then
+            ready=$(kc get pods -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)
+            if [ "$ready" = "True" ]; then
+                result=ok
+                break
+            fi
+        fi
+        sleep 5
+        i=$((i + 1))
+    done
+    echo "$result"
+}
+
 # ---------------------------------------------------------------------------
 log "T-A-ups: Phase 0/7: environment prerequisites"
 install_prereqs
@@ -303,10 +341,9 @@ fi
 # not assumed. Secret env vars require a new pod to take effect.
 kc patch secret -n monitoring ups-credentials --type merge \
     -p "{\"stringData\":{\"NUT_PASSWORD\":\"$WRONG_PASSWORD\"}}" >/dev/null
-kc rollout restart deployment -n monitoring scrap-ups-exporter >/dev/null
-wait_pod=$(wait_for_pod_ready monitoring "app.kubernetes.io/name=scrap-ups-exporter" 24)
+wait_pod=$(restart_and_wait_exclusive)
 if [ "$wait_pod" != ok ]; then
-    fail T-A-ups/comm-lost-negative-setup "the exporter pod never became Ready after the deliberate credential break"
+    fail T-A-ups/comm-lost-negative-setup "no single, genuinely-new, Ready exporter pod appeared after the deliberate credential break"
 fi
 
 down_val=""
@@ -329,8 +366,7 @@ fi
 # below, which depends on the exporter genuinely reading upsd again.
 kc patch secret -n monitoring ups-credentials --type merge \
     -p "{\"stringData\":{\"NUT_PASSWORD\":\"$NUT_READONLY_PASSWORD\"}}" >/dev/null
-kc rollout restart deployment -n monitoring scrap-ups-exporter >/dev/null
-wait_pod=$(wait_for_pod_ready monitoring "app.kubernetes.io/name=scrap-ups-exporter" 24)
+wait_pod=$(restart_and_wait_exclusive)
 restored_val=""
 i=0
 while [ "$i" -lt 24 ]; do
