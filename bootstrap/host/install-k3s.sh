@@ -148,10 +148,16 @@ fi
 # early, visible diagnostic so a regression here doesn't first surface
 # as a confusing failure somewhere downstream.
 echo "Checking whether kubelet's graceful node shutdown manager is armed (a live systemd-logind delay inhibitor for shutdown)..."
+# REAL BUG, found live via this fix's own second CI run: 'loginctl
+# list-inhibitors' is not a real loginctl verb at all ("Unknown command
+# verb 'list-inhibitors'.") -- systemd-inhibit --list is the actual,
+# real tool for listing active inhibitor locks. Every prior run's
+# "not found" result was this command failing outright, its stderr
+# swallowed by 2>/dev/null -- not genuine evidence the lock was absent.
 i=0
 inhibitor_found=""
 while [ "$i" -lt 15 ]; do
-    if loginctl list-inhibitors --no-legend 2>/dev/null | awk '/shutdown/ && /delay/' | grep -q .; then
+    if systemd-inhibit --list 2>/dev/null | awk '/shutdown/ && /delay/' | grep -q .; then
         inhibitor_found=1
         break
     fi
@@ -160,13 +166,13 @@ while [ "$i" -lt 15 ]; do
 done
 if [ -n "$inhibitor_found" ]; then
     echo "ok: a real 'shutdown'/'delay' inhibitor is held -- kubelet's graceful node shutdown is live, not just configured on paper."
-    loginctl list-inhibitors
+    systemd-inhibit --list
 else
     echo "WARNING: kubelet never registered a 'shutdown'/'delay' inhibitor lock within 30s -- graceful"
     echo "node shutdown may not actually be active despite the config file above. Not treated as fatal"
     echo "here (see comment above); tests/profiles/t-a-ups.sh's own checks are authoritative for this."
-    echo "loginctl list-inhibitors (full, for diagnosis):"
-    loginctl list-inhibitors || true
+    echo "systemd-inhibit --list (full, for diagnosis):"
+    systemd-inhibit --list || true
     echo "journalctl -u k3s, full (not just a tail), grepped for anything shutdown/config-related --"
     echo "captured here because by the time a later diagnostics step runs, this early startup"
     echo "output has already scrolled past any tail-bounded capture:"

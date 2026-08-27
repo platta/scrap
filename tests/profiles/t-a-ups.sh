@@ -201,10 +201,16 @@ else
     fail T-A-ups/logind-inhibit-delay-raised "expected InhibitDelayMaxUSec=45000000 (45s), got '$logind_max'"
 fi
 
+# REAL BUG, found live via this profile's own second CI run under this
+# revision: 'loginctl list-inhibitors' is not a real loginctl verb at all
+# ("Unknown command verb 'list-inhibitors'."), so every prior result here
+# was that command failing outright (stderr swallowed by 2>/dev/null),
+# never genuine evidence the lock was absent. systemd-inhibit --list is
+# the real tool for listing active inhibitor locks.
 shutdown_inhibitor=""
 i=0
 while [ "$i" -lt 15 ]; do
-    if loginctl list-inhibitors --no-legend 2>/dev/null | awk '/shutdown/ && /delay/' | grep -q .; then
+    if systemd-inhibit --list 2>/dev/null | awk '/shutdown/ && /delay/' | grep -q .; then
         shutdown_inhibitor=1
         break
     fi
@@ -214,8 +220,8 @@ done
 if [ -n "$shutdown_inhibitor" ]; then
     ok T-A-ups/kubelet-graceful-shutdown-armed "a real 'shutdown'/'delay' systemd-logind inhibitor is genuinely held -- kubelet's Graceful Node Shutdown manager is live on this host, not merely configured on paper"
 else
-    fail T-A-ups/kubelet-graceful-shutdown-armed "no 'shutdown'/'delay' inhibitor found in 'loginctl list-inhibitors' -- kubelet's node-shutdown manager never armed despite the configured grace periods"
-    loginctl list-inhibitors 2>&1 | sed 's/^/      /' || true
+    fail T-A-ups/kubelet-graceful-shutdown-armed "no 'shutdown'/'delay' inhibitor found in 'systemd-inhibit --list' -- kubelet's node-shutdown manager never armed despite the configured grace periods"
+    systemd-inhibit --list 2>&1 | sed 's/^/      /' || true
 fi
 
 NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
