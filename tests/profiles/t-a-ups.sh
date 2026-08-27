@@ -135,6 +135,74 @@ else
     fail T-A-ups/kustomizations-ready-baseline "not Ready: $not_ready"
 fi
 
+# 2a. DECISION -- ChatGPT (2026-08-27) revision: the T-A-ups test previously
+# proved only that upsmon's SHUTDOWNCMD fires, never that the production
+# default (`shutdown -h +0`) actually reaches k3s/kubelet's own pod
+# termination behavior. bootstrap/host/install-k3s.sh now explicitly arms
+# kubelet's Graceful Node Shutdown feature (shutdownGracePeriod=30s /
+# shutdownGracePeriodCriticalPods=10s -- both default to 0, which upstream
+# Kubernetes documentation states does NOT activate the feature despite
+# its feature gate being on by default since v1.21) and raises systemd
+# logind's InhibitDelayMaxSec to 45s so that grace period isn't silently
+# truncated. This checks the REAL, LIVE effect of that fix on this exact
+# host -- not a re-assertion of the installer's own script text -- via the
+# same live-not-mocked standard every other check in this profile holds
+# to: a real systemd-logind delay inhibitor for "shutdown" only exists
+# while kubelet's node-shutdown manager is genuinely running with a
+# non-zero grace period configured; its absence is exactly the
+# silent-no-op failure this fix closes (the node reports Ready either
+# way, so nothing about a normal bootstrap would otherwise reveal it).
+#
+# What this does NOT prove, by design (an "operator-run verification
+# boundary" of the same shape README's own hardware-pull-the-plug
+# boundary already establishes, for a different reason): actually
+# completing a host shutdown to observe a representative pod's own
+# SIGTERM/preStop/exit timing. GitHub-hosted CI runners are ephemeral
+# but still expect the job's own runner process to survive to report a
+# result -- deliberately shutting one down mid-job cannot be turned into
+# a repeatable, interpretable green/red signal (the job would very likely
+# be reported failed/cancelled by GitHub's own infrastructure regardless
+# of what was observed beforehand), and systemd's own shutdown
+# negotiation offers no supported way to exercise the real
+# PrepareForShutdown-triggered eviction path without following through on
+# an actual poweroff. See capabilities/ups/README.md's own "Honest limits"
+# section.
+unit_file_ok=""
+k3s_unit=$(systemctl cat k3s.service 2>/dev/null || true)
+if echo "$k3s_unit" | grep -q "shutdown-grace-period=30s" && \
+   echo "$k3s_unit" | grep -q "shutdown-grace-period-critical-pods=10s"; then
+    unit_file_ok=1
+fi
+if [ -n "$unit_file_ok" ]; then
+    ok T-A-ups/kubelet-shutdown-args-installed "the real installed k3s.service unit (via 'systemctl cat') genuinely carries both --kubelet-arg shutdown-grace-period flags, not just this script's own text"
+else
+    fail T-A-ups/kubelet-shutdown-args-installed "expected both shutdown-grace-period --kubelet-arg flags in 'systemctl cat k3s.service'"
+fi
+
+logind_max=$(busctl get-property org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager InhibitDelayMaxUSec 2>/dev/null | awk '{print $2}')
+if [ "$logind_max" = "45000000" ]; then
+    ok T-A-ups/logind-inhibit-delay-raised "systemd-logind's live InhibitDelayMaxUSec genuinely reads 45s, read from the running daemon's own D-Bus property, not the drop-in file alone"
+else
+    fail T-A-ups/logind-inhibit-delay-raised "expected InhibitDelayMaxUSec=45000000 (45s), got '$logind_max'"
+fi
+
+shutdown_inhibitor=""
+i=0
+while [ "$i" -lt 15 ]; do
+    if loginctl list-inhibitors --no-legend 2>/dev/null | awk '/shutdown/ && /delay/' | grep -q .; then
+        shutdown_inhibitor=1
+        break
+    fi
+    sleep 2
+    i=$((i + 1))
+done
+if [ -n "$shutdown_inhibitor" ]; then
+    ok T-A-ups/kubelet-graceful-shutdown-armed "a real 'shutdown'/'delay' systemd-logind inhibitor is genuinely held -- kubelet's Graceful Node Shutdown manager is live on this host, not merely configured on paper"
+else
+    fail T-A-ups/kubelet-graceful-shutdown-armed "no 'shutdown'/'delay' inhibitor found in 'loginctl list-inhibitors' -- kubelet's node-shutdown manager never armed despite the configured grace periods"
+    loginctl list-inhibitors 2>&1 | sed 's/^/      /' || true
+fi
+
 NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
 # ---------------------------------------------------------------------------

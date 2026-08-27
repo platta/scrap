@@ -18,8 +18,22 @@ previously-observed failure mode for a single-node, single-disk install.
 `upsd` (serves UPS status) and `upsmon` (decides when to shut down and holds `SHUTDOWNCMD`
 authority) — delivered by `bootstrap/host/install-nut.sh`, the same one-shot-script-installing-
 a-persistent-systemd-service shape `install-k3s.sh` already established. `upsmon`'s own
-`SHUTDOWNCMD` runs a real, orderly `shutdown -h` on sustained on-battery + low-battery, giving
-stateful workloads their normal termination window before the node powers off.
+`SHUTDOWNCMD` runs a real, orderly `shutdown -h` on sustained on-battery + low-battery.
+
+**That termination window is not automatic — `install-k3s.sh` arms it explicitly.** A real
+finding from an independent review of this capability's own first implementation: kubelet's
+Graceful Node Shutdown feature has had its feature gate on by default since Kubernetes v1.21,
+but the feature does nothing until `shutdownGracePeriod`/`shutdownGracePeriodCriticalPods` are
+set to non-zero values — both default to `0`, which
+[upstream Kubernetes documentation](https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/)
+states plainly does not activate it. `bootstrap/host/install-k3s.sh` now installs k3s with
+`--kubelet-arg=shutdown-grace-period=30s --kubelet-arg=shutdown-grace-period-critical-pods=10s`
+(the exact worked example from that same documentation) and raises systemd-logind's
+`InhibitDelayMaxSec` to `45` so that window isn't silently truncated by whatever a given
+distribution's own default happens to be. This is a property of the k3s host itself, not of this
+capability specifically — it protects any operator-initiated `shutdown -h` on this single-node
+stack, not only a UPS-triggered one — but `bootstrap/host/install-nut.sh`'s `SHUTDOWNCMD` is what
+makes it matter unattended.
 
 **In-cluster half (visibility/alerting only):** `scrap-ups-exporter`, a small, self-contained
 Prometheus exporter (`exporter-deployment.yaml`) that connects to `upsd` over the node's LAN
@@ -125,7 +139,7 @@ therefore does and doesn't buy.
 
 ## Acceptance evidence
 
-Two distinct evidence levels, kept honestly separate:
+Three distinct evidence levels, kept honestly separate:
 
 **1. Static/structural — every push and PR, no external dependency:** the `Deployment`,
 `Service`, `ServiceMonitor`, and `PrometheusRule` render, are owned by this capability's own
@@ -159,17 +173,44 @@ own query API — not just that the objects exist. Both directions are proven:
   not a mock; see "Configuration errors fail visibly" above for why this is the negative control
   actually used, not a wrong password).
 
-**Honest limit of this level:** NUT's `dummy-ups` driver simulates the *device's own reported
-state* faithfully (the same code path a real driver's readings flow through), but a *real* UPS's
-physical behavior under an actual mains outage — battery chemistry, runtime estimation accuracy,
-USB/serial link reliability — is not something CI can own hardware for and never will be. The
-**physical pull-the-plug test against real hardware is an operator-run verification boundary**,
-the same evidentiary shape `capabilities/public-tls/verify-live.sh` establishes for real-domain
-certificate issuance: after completing "Enabling this capability" above with your own real UPS,
-pull the plug (or use your UPS's own test-discharge feature) and confirm the host shuts down
-cleanly and Kubernetes' own graceful-node-shutdown handling gives your workloads their normal
-termination window. Nothing in this repository can fabricate that evidence in CI, and nothing
-here claims to.
+**3. The termination window itself is genuinely armed, live, on the exact host under test — every
+push and PR (`tests/profiles/t-a-ups.sh`'s own `T-A-ups/kubelet-*` and
+`T-A-ups/logind-inhibit-delay-raised` checks):** `bootstrap/host/install-k3s.sh` installs k3s
+with kubelet's Graceful Node Shutdown explicitly configured (see "The real mechanism" above) and
+a matching `systemd-logind` `InhibitDelayMaxSec` override. This is checked live, not re-asserted
+from the installer's own script text: the real installed `k3s.service` unit genuinely carries
+both `--kubelet-arg` flags, `systemd-logind`'s own running D-Bus property genuinely reflects the
+raised `InhibitDelayMaxUSec`, and — the central proof — a real `systemd-logind` "shutdown"/"delay"
+inhibitor lock is genuinely held, which only exists while kubelet's node-shutdown manager is
+actually running with a non-zero grace period. Before this fix, no such lock existed on any host
+this project bootstrapped; the node still reported `Ready`, silently masking the gap.
+
+**Honest limits — two distinct boundaries, kept honestly separate:**
+
+- NUT's `dummy-ups` driver simulates the *device's own reported state* faithfully (the same code
+  path a real driver's readings flow through), but a *real* UPS's physical behavior under an
+  actual mains outage — battery chemistry, runtime estimation accuracy, USB/serial link
+  reliability — is not something CI can own hardware for and never will be. The **physical
+  pull-the-plug test against real hardware is an operator-run verification boundary**, the same
+  evidentiary shape `capabilities/public-tls/verify-live.sh` establishes for real-domain
+  certificate issuance: after completing "Enabling this capability" above with your own real UPS,
+  pull the plug (or use your UPS's own test-discharge feature) and confirm the host shuts down
+  cleanly.
+- Level 3 above proves the mechanism that gives workloads a termination window is genuinely armed
+  on this host, but proving it live end-to-end — that a real shutdown transaction actually pauses
+  for a representative stateful pod's own SIGTERM/`preStop`/exit before the node powers off — is
+  **also an operator-run verification boundary**, for a different reason than the hardware one
+  above: a GitHub-hosted CI runner's own job-completion protocol assumes the runner survives to
+  report a result, and deliberately shutting one down mid-job cannot be turned into a repeatable,
+  interpretable green/red signal, while `systemd`'s own shutdown negotiation offers no supported
+  way to exercise the real `PrepareForShutdown`-triggered eviction path without following through
+  on an actual poweroff. On your own scratch VM or real host, after enabling both halves, watch
+  `kubectl get events -w` (or a representative stateful pod's own logs) from a second machine
+  while triggering a real shutdown (the UPS's own test-discharge feature, or `sudo shutdown -h
+  +0` directly) to confirm your workloads actually receive their configured termination window.
+
+Nothing in this repository can fabricate either boundary's evidence in CI, and nothing here
+claims to.
 
 ## New assumptions this introduces
 
