@@ -43,6 +43,20 @@ escape from this model:
   differs either way, so the capability deliberately ships no `Kustomization` at all. Licensed for
   network-edge exposure only.
 
+**A third case reaches the same no-`Kustomization` outcome without a decision record**, because it
+isn't an exception to this model at all: off-site backup (`capabilities/offsite-backup/README.md`)
+needs no new in-cluster resource, so it has no capability-owned Kustomization to copy in the first
+place. `platform/backup/`'s three CronJobs already read the S3 credential env vars unconditionally
+(inert when absent). Enabling off-site backup is two edits to *existing*, core-owned configuration
+and secret surfaces — not a new capability-owned file, and not an operator-run procedure outside
+Flux's reach like the two exceptions above:
+
+1. set `BACKUP_DESTINATION` in `clusters/<name>/instance-config.yaml`, and
+2. add `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` to the existing
+   `clusters/<name>/secrets/restic-credentials.sops.yaml`.
+
+See that README's "Enabling this capability" section for full mechanical detail.
+
 **A capability needing its own credential is two files, not one** — a small, real exception to
 "copying one file," found while implementing `capabilities/identity/` (the first capability built).
 The credential itself lives under `clusters/<name>/secrets/`, never under `capabilities/`, so it
