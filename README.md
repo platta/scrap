@@ -4,79 +4,80 @@
 
 > *The hardware can be scrap. The architecture isn't.*
 
-SCRAP is an opinionated, durable, rebuildable single-node Kubernetes platform for self-hosting
-whatever applications you want. Build the platform once. Deploy arbitrary applications into it
-using well-defined integration patterns. If the hardware dies, rebuild the platform and restore
-the applications from durable, tested backups.
+## What is SCRAP?
 
-**Status: pre-release implementation.** The architecture is frozen (see
-[`docs/decisions/`](docs/decisions/)); the platform core, backup engine, observability core, the
-identity capability, public TLS via ACME/DNS-01, and Grafana are implemented and live-validated on a
-real cluster, including P1–P6 of the application contract. It is installable end to end via
-`bootstrap/install.sh` against a fresh host, and that install path plus P1/P4/P5/P6 (minimal
-profile), identity/P2/P3/Grafana (standard profile), and the public-TLS issuer swap are now
-mechanically proven from zero on every push/PR by `tests/profiles/`, not just validated by hand.
-Disaster recovery (R1) is proven the same way, nightly, not just documented: a genuinely destructive
-restore of identity's own multi-tier Authentik + PostgreSQL, including quiescence ordering, a real
-logical-dump consistency method, and stable-primary-key preservation — see `tests/dr/`. Identity's recovery-flow-abuse obligation is closed the same way, adversarially: no unauthenticated
-path to a password-set form, proven both structurally (the live Brand/`IdentificationStage` objects)
-and behaviorally (a genuinely anonymous request reaching both real login-page entry points), with a
-passing negative control. Off-site (S3-compatible) backup is proven the same way: a real remote
-write, an independent read using the intended recovery credentials, and a genuine, bounded, visible
-failure on bad credentials — see `tests/profiles/t-a-offsite-backup.sh`. That proves recovery
-artifacts can genuinely be placed off-host; it does **not** prove host-loss recovery (R3) itself —
-that is the host-loss rehearsal (T-E), still open. See
-[`docs/release-readiness.md`](docs/release-readiness.md) for the exact, current boundary between
-what's proven and what a release candidate may still leave open under
-[`docs/decisions/0011-release-candidate-policy.md`](docs/decisions/0011-release-candidate-policy.md)
-— in short: logs, public ingress, heartbeat, dyndns, UPS, alert delivery, and the Topology B
-onboarding generator are designed but not yet implemented; T-E/R3, R4, T-C, T-D (arm64), and T-F
-remain unproven and must not be claimed. See [Roadmap](#roadmap) below.
+SCRAP is an opinionated, single-node Kubernetes platform for self-hosting your own applications on
+a spare Linux box. Build the platform once. Deploy applications into it using well-defined
+integration patterns. If the hardware dies, rebuild the platform and restore your applications from
+tested backups.
 
-## What SCRAP actually is
+It's not a new abstraction layer over Kubernetes — it's a curated, tested composition of real,
+maintained, upstream tools (k3s, Flux, cert-manager, Gateway API/Traefik, restic, Prometheus) wired
+together with one opinion: **applications consume platform capabilities through ordinary Kubernetes
+contracts, never the other way around.** If SCRAP disappeared tomorrow, you'd still hold an
+understandable, standards-based Kubernetes platform, not a pile of magic you can't operate without
+it.
 
-SCRAP is not a new abstraction layer over Kubernetes. It is a curated, tested composition of real,
-maintained, upstream tools — k3s, Flux, Kustomize, SOPS/age, cert-manager, Gateway API/Traefik,
-restic, Prometheus — wired together with one opinion: **applications should consume platform
-capabilities through ordinary Kubernetes contracts, never the other way around.**
+## Who it's for
 
-Read **[Understanding SCRAP](docs/understanding-scrap.md)** for the full conceptual walkthrough —
-about 10–15 minutes, layer by layer, from bare Linux host to running application.
+A homelabber or self-hoster with one spare machine (old desktop, cheap VPS, an actual scrap box)
+who wants to run their own applications with a real recovery story, without hand-rolling
+Kubernetes, GitOps, TLS, and backup wiring from scratch every time.
 
-**The core commitment:** SCRAP abstracts *decisions*, not *technologies*. If SCRAP disappeared
-tomorrow, you would still hold an understandable, standards-based Kubernetes platform made of
-maintained upstream components — not a pile of magic you can't operate without it.
+**Probably not for you if** you need multiple nodes, high availability, or multi-tenant isolation —
+SCRAP is deliberately single-node by design, not there yet (see
+[`docs/out-of-scope/`](docs/out-of-scope/)). If you just want to run a couple of Docker containers
+with no interest in Kubernetes at all, this is more platform than you need.
 
-## Two invariants that hold everywhere in this repository
+## What you get
 
-- **T1** — delete every application under `apps/`, and a complete, useful platform remains.
-- **T2** — adding a normal application requires adding files under `apps/` only, plus exactly one
-  Flux `Kustomization` under `clusters/<name>/` that enables it. Nothing under `platform/` or
-  `capabilities/` may need to change.
+- A working Kubernetes platform from one command, on hardware you already own.
+- TLS and routing for free — your applications never declare a certificate or an issuer.
+- One backup engine for the whole platform, with tested restore, not just "we take backups."
+- Optional, composable capabilities you turn on only if you want them: single sign-on, off-site
+  backup, publicly-trusted certificates, and more — see
+  [Choosing your capabilities](docs/choosing-capabilities.md).
+- A documented path for adding your own applications that never requires touching the platform
+  itself — see [Adding an application](docs/adding-an-application.md).
 
-Both are enforced by CI on every pull request, not merely documented. See
-[Architectural invariants CI enforces](#architectural-invariants-ci-enforces).
+**Current status:** pre-release. The core platform, backup engine, observability, identity, public
+TLS, and Grafana are implemented and live-tested end to end, including a real, destructive-restore
+disaster-recovery rehearsal. Several optional capabilities (logs, alert delivery, public ingress,
+heartbeat, dynamic DNS, UPS integration) are designed but not yet built, and host-loss recovery
+(rebuilding onto a completely blank machine) is not yet proven. Nothing here claims otherwise — see
+[`docs/release-readiness.md`](docs/release-readiness.md) for the exact, current, evidence-backed
+boundary between what's proven and what's still open.
 
-## What SCRAP requires, and what it doesn't
+## Start here
 
-**Minimum:** one Linux host, 2 cores, 4 GB RAM, 32 GB SSD, a stable way for clients to reach it, a
-correct clock, and internet access **once, at install time**, to pull images. Nothing else.
-x86-64 is the CI-tested architecture; arm64 is an accepted architecture target (preflight permits
-it) but is **not yet CI-verified** — see `docs/release-readiness.md`.
+**→ [Getting started](docs/getting-started.md)** — clone the repo, make your minimum configuration
+choices, install, and verify it worked. No architecture reading required first.
 
-**Explicitly not required for the minimum platform:** a public IP, public DNS, a registered
-domain, Let's Encrypt or any ACME provider, a cloud account, S3/object storage, hosted Git, an
-identity provider, SMTP, a password manager, multiple machines, or virtualization.
+## Minimum requirements
 
-Richer configurations — publicly-trusted TLS, off-site backup, centralized identity — are fully
-supported, first-class, and tested; public ingress and several other optional capabilities are
-designed but not yet implemented (see `docs/release-readiness.md` for exactly which). Every one of
-them is optional and
-composable, never a hidden prerequisite of the core.
+One Linux host: 2 cores, 4 GB RAM, 32 GB SSD, a stable way for clients to reach it, a correct
+clock, and internet access once, at install time. x86-64 is continuously tested; arm64 is accepted
+but not yet verified to the same standard. Nothing else is required — no public IP, domain, cloud
+account, S3, identity provider, or second machine. See
+[Getting started](docs/getting-started.md#1-check-your-host) for the full detail.
 
-See [`docs/core/`](docs/core/), [`docs/supported/`](docs/supported/),
-[`docs/extensions/`](docs/extensions/), and [`docs/out-of-scope/`](docs/out-of-scope/) for the
-exact, load-bearing boundary between those categories.
+## What happens after install
+
+A successful minimum install gives you a real Kubernetes cluster with certificates, routing,
+storage, backup, and metrics/alerting all reconciling — verified by a live HTTPS request that
+reaches a real pod, not just by objects reporting they exist. See
+[Getting started, step 5](docs/getting-started.md#5-confirm-it-worked) for exactly what to check.
+
+## Where to go next
+
+- **Add your first application** — [Adding an application](docs/adding-an-application.md).
+- **Turn on optional capabilities** — [Choosing your capabilities](docs/choosing-capabilities.md).
+- **Understand what's running underneath, and why** — [Understanding SCRAP](docs/understanding-scrap.md),
+  a 10–15 minute layer-by-layer walkthrough.
+- **See how SCRAP knows any of its claims are true** —
+  [How SCRAP knows its claims are true](docs/engineering-evidence.md).
+- **The full documentation index, organized by CORE / SUPPORTED / EXTENSION / OUT OF SCOPE** —
+  [`docs/README.md`](docs/README.md).
 
 ## Repository structure
 
@@ -91,42 +92,11 @@ docs/            # organized by CORE / FULLY SUPPORTED / EXTENSION / OUT OF SCOP
 tests/           # structural CI assertions, DR rehearsals, acceptance profiles
 ```
 
-Full rationale for this layout: [`docs/core/repository-structure.md`](docs/core/repository-structure.md).
-
-## Architectural invariants CI enforces
-
-Every pull request runs [`tests/assertions/`](tests/assertions/) — small, single-purpose,
-readable scripts, each proven against a deliberately-violating fixture so the check is known to
-actually catch what it claims to catch:
-
-- `platform/` and `capabilities/` never reference `apps/`; `platform/` never references
-  `capabilities/` (the one-directional dependency rule, §8.1 of the architecture)
-- a pull request that touches `apps/` may not also touch `platform/` or `capabilities/` (T2,
-  executed as a diff check, not just asserted)
-- no `Certificate` resource and no `ClusterIssuer` reference exists anywhere under `apps/`
-  (applications never know which TLS issuer is in use — see the TLS decision record)
-- every container image is pinned — no floating tags
-- every `LoadBalancer` Service or `hostPort` claims a port already declared in the reserved-ports
-  allowlist
-- every `${VAR}` referenced anywhere resolves to a documented instance-config key, and no
-  instance-specific literal (an IP address, in particular) appears outside `clusters/`
-- every Flux `Kustomization` dependency graph is acyclic, and no `Certificate` names an
-  `issuerRef` that isn't guaranteed to exist yet by the dependency graph
-
-See [`tests/assertions/README.md`](tests/assertions/README.md) for how to run them locally and
-add a new one.
-
-## Roadmap
-
-1. ~~Repository skeleton + structural CI~~ — **done**
-2. ~~Bootstrap: preflight checks, pinned k3s install, `install.sh`~~ — **done**
-3. ~~Platform core: Gateway API CRDs, cert-manager + private CA + wildcard `Certificate`, Traefik/Gateway, local-path storage, observability core, backup engine~~ — **done**
-4. ~~Example applications (`apps/examples/`) proving the six application patterns~~ — **done, all six**
-5. Capabilities: ~~Authentik (declarative via Blueprints)~~ **done**; ~~ACME/DNS-01 (public TLS)~~ **done** (`capabilities/public-tls/` — the two ACME `ClusterIssuer`s are capability-owned, the wildcard certificate's issuer swap is live-verified with no diff under `apps/`, misconfiguration fails visibly rather than silently reusing the private CA; see `tests/profiles/t-a-public-tls.sh`); ~~Grafana~~ **done** (`capabilities/grafana/` — its own separate `HelmRelease`, never the kube-prometheus-stack's bundled sub-chart; a real Prometheus datasource proven by querying live time series through it, not just that the object exists; declarative Authentik OIDC integration with a real, attributable `Admin` role mapping via a dedicated `scrap-admins` group; anonymous access explicitly off and adversarially checked; see `tests/profiles/t-b-standard.sh`); ~~off-site backup~~ **done** (`capabilities/offsite-backup/` — a real S3-compatible remote write, an independent read using the intended recovery credentials, ADR-0010 host-isolation unaffected by destination, and a genuine, bounded, visible failure on bad credentials; proves artifact placement, not host-loss recovery itself — see `docs/release-readiness.md`; `tests/profiles/t-a-offsite-backup.sh`); logs, alert delivery, external heartbeat, dyndns, UPS, and public ingress still open — each is currently README-only, no manifests exist
-6. Topology B onboarding: a generator producing a minimal, ordinary Flux/Kustomize/SOPS operator repository pinned to a released SCRAP version, host-agnostic (no GitHub requirement), plus an automated test proving a generated repo bootstraps/reconciles a clean install (`docs/decisions/0009-repository-topology.md`)
-7. Dynamic CI profiles: ~~T-A~~ **done** (`tests/profiles/t-a-minimal.sh`, runs on every push/PR); T-B **implemented for identity + P2/P3 + Grafana + recovery-flow-abuse** (`tests/profiles/t-b-standard.sh` — a genuinely separate from-zero bootstrap, `components/ca-trust/` checked directly and attributably for both P2 and Grafana, real scripted OIDC logins the relying-party apps themselves exchange, forward-auth proven both ways including a passing negative control, Grafana proven behaviorally (real datasource query, real OIDC role mapping, adversarial anonymous-access check), identity's recovery flow proven adversarially both structurally and behaviorally with a passing negative control) — **note:** the originally-scoped T-B definition also included logs; that piece remains open because the `logs` capability itself doesn't exist yet, not because of a gap in T-B's own implementation; ~~T-A-public-tls~~ **done** (`tests/profiles/t-a-public-tls.sh` — its own separate from-zero bootstrap; the operator-run, real-domain-requiring counterpart is `capabilities/public-tls/verify-live.sh`, deliberately not CI-executed); ~~T-A-offsite-backup~~ **done** (`tests/profiles/t-a-offsite-backup.sh` — real S3 write/read against an ephemeral MinIO target, credential-isolation and bad-credential negative-control checks; proves artifact placement, not R3 — see `docs/release-readiness.md`); T-C, T-D, T-E, T-F still open — see `tests/profiles/README.md`
-8. ~~Disaster-recovery acceptance: R1 (Authentik/PostgreSQL destructive restore)~~ **done** (`tests/dr/authentik-postgres-restore.sh`, nightly — genuine destruction, full-tier quiescence ordering proven both positively and by a reverted live negative control, restore through the real recovery mechanism, documented-procedure reload with hard error checking, stable-primary-key recovery proven through authentik's own API); R3 host-loss rehearsal (T-E) still open and **must not be claimed as proven by off-site backup alone** — see `docs/core/recovery-model.md` and `docs/decisions/0011-release-candidate-policy.md`
-9. `scrap-patterns` — a deferred, separate companion repository of real-application integration examples
+Full rationale: [`docs/core/repository-structure.md`](docs/core/repository-structure.md). Two
+invariants hold everywhere in this repository — delete every application and the platform still
+works (**T1**), and adding a normal application never requires touching `platform/` or
+`capabilities/` (**T2**) — both enforced by CI on every pull request, not merely documented; see
+[`tests/assertions/README.md`](tests/assertions/README.md).
 
 ## License
 

@@ -1,6 +1,13 @@
 # SCRAP documentation
 
-Documentation is organized by **status**, not just by topic, so it is difficult to mistake
+**New here?** You don't need anything on this page to install SCRAP or add your first
+application. Start with [Getting started](getting-started.md), then
+[Choosing your capabilities](choosing-capabilities.md) and
+[Adding an application](adding-an-application.md). Come back here when you want the deeper
+technical picture — architecture, the full capability contract, and how SCRAP's claims are
+verified.
+
+This page itself is organized by **status**, not just by topic, so it is difficult to mistake
 *possible* for *supported*. Every capability page opens with one of these four labels:
 
 - **CORE** — [`core/`](core/). Mandatory. Present in every SCRAP install. Removing it isn't a
@@ -48,3 +55,6 @@ proven/unproven/deferred snapshot behind the "Implemented?" column below.
   repository is classified by.
 - [`runbooks/`](runbooks/) — operational and disaster-recovery procedures. Sparse today; grows
   alongside `tests/dr/`.
+- [`engineering-evidence.md`](engineering-evidence.md) — how SCRAP knows its claims are true:
+  structural checks vs. live acceptance profiles, what T-A..T-F and R0–R5 mean, why negative
+  controls and exact-SHA release gates exist.
