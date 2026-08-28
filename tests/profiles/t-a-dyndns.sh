@@ -503,7 +503,15 @@ rm -f "$LIVEDIR4/clusters/example/capabilities/dyndns.yaml" \
       "$LIVEDIR4/clusters/example/capabilities/dyndns-secrets.yaml"
 ( cd "$LIVEDIR4" && git add -A && git -c user.email=t-a-dyndns@localhost -c user.name="T-A-dyndns" \
     commit -q -m "T-A-dyndns: revert -- delete dyndns's files" && git push -q origin main )
-rm -rf "$LIVEDIR4"
+# REAL BUG, found live (PLAT-92, 2026-08-28, this exact line): the same
+# transient race bootstrap/install.sh's own analogous cleanup line was
+# hardened against ("rm: cannot remove '$DIR/.git': Directory not empty",
+# a `git clone`'s own `.git` occasionally still settling when `rm -rf`
+# lists its contents) aborted this script here too -- under this script's
+# own `set -eu`, with the real work (the push above) already succeeded.
+# `|| true`, same reasoning as bootstrap/install.sh: $LIVEDIR4 is scratch
+# state with no further purpose once the push lands.
+rm -rf "$LIVEDIR4" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
