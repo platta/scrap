@@ -61,7 +61,6 @@ Each row names the exact claim a release candidate **must not make** until the c
 |---|---|
 | `scrap-patterns` companion repository | Explicitly not a v1 requirement (design record) |
 | Talos as a host OS target | Documented extension/breadcrumb for a future version |
-| Renovate / automated version-bump PRs | Tracked as "can be decided later," not a v1 requirement |
 | A platform web UI | Explicitly out of scope (`docs/out-of-scope/README.md`) |
 | Multi-node, HA, multi-cluster/fleet, distributed storage, multi-tenancy | Explicitly out of scope (`docs/out-of-scope/README.md`) |
 | Dedicated R5 (account/credential loss) acceptance testing | No frozen test profile is tied to R5 specifically; the structural mitigation (dual age recipients) is already proven. Left here deliberately rather than assigned a target — resolving this further would be inventing a decision the frozen architecture doesn't make. |
