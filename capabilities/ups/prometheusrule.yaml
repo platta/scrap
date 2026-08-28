@@ -1,0 +1,49 @@
+# Alert rules over scrap-ups-exporter's own metrics -- the "alerting"
+# half of this capability's in-cluster half. This does not replace
+# upsmon's own SHUTDOWNCMD protective action (docs/decisions/0013); it's
+# the observability half, telling an operator the state upsmon is
+# reacting to, and telling them if the exporter itself loses contact with
+# upsd -- the one failure mode that would otherwise be silent (no metric
+# at all looks identical to "no capability enabled" without this rule).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: scrap-ups
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: scrap-ups
+      rules:
+        - alert: UPSCommunicationLost
+          expr: nut_up == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "scrap-ups-exporter cannot reach upsd -- UPS status is unknown"
+        - alert: UPSOnBattery
+          expr: nut_ups_status_flag{flag="OB"} == 1
+          for: 1m
+          labels: { severity: warning }
+          annotations:
+            summary: "the UPS is running on battery -- mains power may be lost"
+        - alert: UPSLowBattery
+          # LB (low battery) is the same condition upsmon's own
+          # SHUTDOWNCMD path reacts to -- this alert exists so the
+          # operator is told BEFORE the host shuts itself down, not only
+          # after (Alertmanager and this alert's own delivery path live
+          # in the cluster upsmon is about to shut off, so this is a
+          # best-effort early warning, not a substitute for
+          # capabilities/heartbeat/'s own out-of-cluster dead-man's-switch).
+          expr: nut_ups_status_flag{flag="LB"} == 1
+          for: 0m
+          labels: { severity: critical }
+          annotations:
+            summary: "the UPS reports low battery -- host shutdown is imminent (upsmon SHUTDOWNCMD)"
+        - alert: UPSReplaceBattery
+          expr: nut_ups_status_flag{flag="RB"} == 1
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "the UPS reports its battery needs replacing"

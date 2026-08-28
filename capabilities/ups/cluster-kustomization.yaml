@@ -1,0 +1,37 @@
+# Copy this file (and cluster-secrets-kustomization.yaml, next to it)
+# into clusters/<name>/capabilities/ to enable the in-cluster half of UPS
+# (metrics + alerting over upsd's own read-only network protocol) --
+# delete both to disable. This enables ONLY the in-cluster half; the host
+# half (upsd/upsmon, the actual shutdown authority) is a separate,
+# operator-run step -- see capabilities/ups/README.md's own "Enabling
+# this capability" section, and docs/decisions/0013-ups-shutdown-authority.md
+# for why these two halves have two different enabling mechanisms.
+#
+# dependsOn platform-observability (the "monitoring" namespace, CORE,
+# always present) and ups-secrets: this Deployment starts immediately on
+# apply, the same "starts immediately" reasoning
+# capabilities/identity/README.md's own "Enabling this capability"
+# section gives for its own dependsOn direction (the opposite of
+# capabilities/heartbeat/'s CronJob, whose secretKeyRef is only resolved
+# when a Job actually starts).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: ups
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./capabilities/ups
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-observability
+    - name: ups-secrets
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 3m0s

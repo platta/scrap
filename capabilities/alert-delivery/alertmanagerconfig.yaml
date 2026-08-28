@@ -1,0 +1,48 @@
+# The one receiver this capability ships: a generic webhook, Alertmanager's
+# own native receiver type -- see README.md for why webhook, specifically,
+# is the smallest supported mechanism rather than SMTP or a
+# vendor-specific integration. "Anything Alertmanager itself supports"
+# (docs/extensions/README.md's own alert-delivery extension-point row)
+# remains true: swap this receiver's block for `emailConfigs`,
+# `slackConfigs`, or any other native Alertmanager receiver type without
+# touching anything else in this capability.
+#
+# namespace: monitoring -- platform/observability/'s own namespace,
+# CORE, always present, exactly like capabilities/logs/'s and
+# capabilities/grafana/'s own workloads landing there. This object needs
+# no namespace of its own the way capabilities/identity/'s Secret did.
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: scrap-alert-delivery
+  namespace: monitoring
+spec:
+  route:
+    receiver: webhook
+    groupBy: ["alertname"]
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    # Deliberately empty, not omitted -- see
+    # platform/observability/helmrelease.yaml's own
+    # alertmanagerConfigMatcherStrategy comment for exactly what this
+    # would silently NOT match under the chart's default strategy. With
+    # that strategy set to None, an empty matcher list here genuinely
+    # means "every alert this platform fires," not "every alert that
+    # also happens to carry namespace=monitoring."
+    matchers: []
+  receivers:
+    - name: webhook
+      webhookConfigs:
+        # urlSecret, never a literal `url:` -- the webhook URL itself is
+        # credential material (most real receivers, ntfy included,
+        # embed either a topic name or a bearer token directly in the
+        # URL path/query) and lives in
+        # clusters/<name>/secrets/alert-delivery/, never committed here
+        # in plaintext. See clusters/example/secrets/alert-delivery/
+        # for the placeholder this capability ships with, and this
+        # directory's own README for what a real operator sets it to.
+        - urlSecret:
+            name: alert-delivery-credentials
+            key: WEBHOOK_URL
+          sendResolved: true

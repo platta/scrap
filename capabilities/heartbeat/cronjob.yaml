@@ -1,0 +1,89 @@
+# The one workload this capability ships: a CronJob that derives health
+# from platform/observability/'s own Alertmanager -- never a parallel
+# health authority of its own -- and pushes a periodic signal to a
+# third-party dead-man's-switch ONLY while that health check passes. The
+# absence of a push is the alarm: an external heartbeat/uptime provider's
+# own "no ping received within the expected window" detection is what
+# actually tells an operator the cluster itself is unreachable, which is
+# the one thing no in-cluster alert (delivered or not,
+# capabilities/alert-delivery/ included) can ever do -- every other alert
+# lives inside the cluster it monitors and is silent exactly when it
+# matters most. See README.md.
+#
+# namespace: monitoring -- platform/observability/'s own namespace,
+# CORE, always present. This capability needs no namespace of its own.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scrap-heartbeat
+  namespace: monitoring
+spec:
+  # Every 5 minutes -- hardcoded, not instance-configurable, the same
+  # choice platform/backup/'s own CronJobs make for their schedules
+  # (docs/core/configuration-model.md's scalars are for instance-specific
+  # VALUES, not tuning knobs every capability needs its own opt-in flag
+  # for). An operator whose provider needs a different cadence edits this
+  # file directly -- same reasoning capabilities/logs/README.md gives for
+  # its own hardcoded retention window. Whatever you choose, set it to
+  # comfortably less than half your provider's own "grace period" /
+  # "expected interval" setting, so one missed run alone (a node
+  # rebooting during its own maintenance window, say) doesn't false-alarm.
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # A bounded ceiling on one attempt -- same reasoning
+      # platform/backup/backup-cronjob.yaml's own activeDeadlineSeconds
+      # comment gives, scaled down: this job makes two bounded HTTP calls
+      # and nothing else, so 60s is generous, not tight, for either to
+      # complete or definitively fail.
+      activeDeadlineSeconds: 60
+      template:
+        spec:
+          # This job talks to Alertmanager's own Service DNS name and an
+          # external URL -- it never calls the Kubernetes API, so it
+          # needs no ServiceAccount token at all. One fewer credential
+          # sitting in a pod that doesn't use it -- same reasoning
+          # capabilities/logs/README.md gives for avoiding a hostPath
+          # mount its own DaemonSet doesn't need.
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: heartbeat
+              image: curlimages/curl:8.21.0
+              env:
+                - name: HEARTBEAT_PING_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: heartbeat-credentials
+                      key: HEARTBEAT_PING_URL
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  # alertmanager-operated: the headless Service the
+                  # chart creates unconditionally for every Alertmanager
+                  # replica, the same Service
+                  # tests/profiles/t-a-minimal.sh's own
+                  # alert-reaches-surface check already port-forwards to
+                  # from outside the cluster -- reached here in-cluster,
+                  # by its normal DNS name, no port-forward needed.
+                  # /-/healthy is Alertmanager's own liveness endpoint --
+                  # deriving health from it, rather than inventing a
+                  # SCRAP-specific health signal, is the literal
+                  # "deriving health from the observability/Alertmanager
+                  # plane" this capability is required to do.
+                  ALERTMANAGER_URL="http://alertmanager-operated.monitoring.svc.cluster.local:9093"
+                  if curl -sf --max-time 10 "$ALERTMANAGER_URL/-/healthy" >/dev/null; then
+                    echo "Alertmanager reports healthy -- pushing the heartbeat signal"
+                    curl -sf --max-time 10 -o /dev/null "$HEARTBEAT_PING_URL"
+                    echo "heartbeat pushed"
+                  else
+                    echo "Alertmanager is NOT healthy (or unreachable) -- deliberately withholding"
+                    echo "the heartbeat push. This silence IS the alarm: the external service's own"
+                    echo "missed-ping detection is what should fire next, not this job."
+                  fi

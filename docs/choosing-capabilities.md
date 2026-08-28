@@ -20,26 +20,47 @@ complete, useful platform remains.
 
 ## What's optional, what it costs, what it needs from you
 
-| Capability | What you get | What it needs from you | Depends on / pairs with | Status |
-|---|---|---|---|---|
-| **Grafana** | Dashboards over the built-in metrics | Nothing beyond core (~250–400 MB RAM) | Standalone | ✅ Enable today |
-| **Identity** (Authentik) | Single sign-on: native OIDC for apps that support it, a gateway-level check for the ones that don't | ~1 GB RAM; a database it owns and backs up | Standalone. Unlocks the P2/P3 application patterns for other apps | ✅ Enable today |
-| **Public TLS** (ACME/DNS-01) | Certificates every browser and phone already trusts, with no CA to install on client devices | A domain you control, a DNS zone, and a DNS provider that supports programmatic updates | Standalone. Commonly paired with public ingress once that exists | ✅ Enable today |
-| **Off-site backup** | Recovery artifacts stored somewhere whose failure is independent of this machine — one of the two ingredients host-loss recovery needs | An S3-compatible endpoint and its credential | Standalone. Pairs with external Git hosting (see below) for the *other* ingredient | ✅ Enable today |
-| **External Git hosting** | Moves your source of truth off this machine too — the other host-loss-recovery ingredient | A Git host account (GitHub, GitLab, your own server) | No capability file needed — it's a setting on the installer itself (`REPO_URL`) | ✅ Enable today |
-| **Logs** (Loki + Alloy) | Centralized, searchable pod logs, correlated with metrics | ~300 MB RAM once built | Standalone | 🧭 Designed, not yet implemented |
-| **Alert delivery** | Alerts that actually reach you, instead of only being visible if you go look | A reachable SMTP server, ntfy endpoint, or webhook | Uses the core alerting surface, which already exists and evaluates rules — this just adds where alerts go | 🧭 Designed, not yet implemented |
-| **Public ingress** | Reachable from the public internet, not just your LAN | A public IP with router control, or a tunnel provider account; a materially larger threat model | Commonly paired with public TLS (not required by it) | 🧭 Designed, not yet implemented |
-| **External heartbeat** | Told when the *cluster itself* is unreachable — the one failure no in-cluster alert can ever report | A free third-party dead-man's-switch account | Standalone | 🧭 Designed, not yet implemented |
-| **Dynamic DNS** | Keeps a DNS record pointed at your address even if it changes | A dynamic-DNS-capable domain/provider | Commonly paired with public ingress | 🧭 Designed, not yet implemented |
-| **UPS integration** (NUT) | Graceful shutdown on power loss — real corruption protection for a single-disk machine | A UPS with a USB or network data connection to the host | Standalone | 🧭 Designed, not yet implemented |
+Every capability below is implemented and live-tested. Two are enabled a different way than the
+rest, noted in the Enabling column — everything else is a plain Kustomization-file copy (see
+[How enabling a capability actually works](#how-enabling-a-capability-actually-works) below).
 
-✅ means there's a real, tested mechanism you can enable today. 🧭 means the design and documentation
-exist but there's no manifest to enable yet — see each capability's own README under
-`capabilities/<name>/` for exactly what "not yet implemented" covers, and
-[`docs/release-readiness.md`](release-readiness.md) for the authoritative, current snapshot behind
-this table (costs, evidence, and status can change between releases; this page won't be kept in
-sync line-by-line — that document is).
+| Capability | What you get | What it needs from you | Depends on / pairs with | Enabling |
+|---|---|---|---|---|
+| **Grafana** | Dashboards over the built-in metrics | Nothing beyond core (~250–400 MB RAM) | Standalone | Normal copy |
+| **Identity** (Authentik) | Single sign-on: native OIDC for apps that support it, a gateway-level check for the ones that don't | ~1 GB RAM; a database it owns and backs up | Standalone. Unlocks the P2/P3 application patterns for other apps | Normal copy (2 files) |
+| **Public TLS** (ACME/DNS-01) | Certificates every browser and phone already trusts, with no CA to install on client devices | A domain you control, a DNS zone, and a DNS provider that supports RFC2136 updates | Standalone. Commonly paired with public ingress | Normal copy (2 files) |
+| **Off-site backup** | Recovery artifacts stored somewhere whose failure is independent of this machine — one of the two ingredients host-loss recovery needs | An S3-compatible endpoint and its credential | Standalone. Pairs with external Git hosting (below) for the *other* ingredient | Normal copy |
+| **External Git hosting** | Moves your source of truth off this machine too — the other host-loss-recovery ingredient | A Git host account (GitHub, GitLab, your own server) | No capability file needed — it's a setting on the installer itself (`REPO_URL`) | Installer setting |
+| **Logs** (Loki + Alloy) | Centralized, searchable pod logs, correlated with metrics | ~200–700 MB RAM | Standalone | Normal copy |
+| **Alert delivery** | Alerts that actually reach you (webhook — ntfy, or anything Alertmanager itself supports), instead of only being visible if you go look | A reachable webhook receiver | Uses the core alerting surface, which already exists and evaluates rules — this just adds where alerts go | Normal copy (2 files) |
+| **External heartbeat** | Told when the *cluster itself* is unreachable — the one failure no in-cluster alert can ever report | A free third-party dead-man's-switch account | Standalone | Normal copy (2 files) |
+| **Dynamic DNS** | Keeps a DNS record pointed at your address even if it changes | A dynamic-DNS-capable domain/provider supporting RFC2136 | Commonly paired with public ingress, for installs without a static IP | Normal copy (2 files) |
+| **Public ingress** | Reachable from the public internet, not just your LAN | A public IP with router control; a materially larger threat model — the most consequential new assumption in the whole envelope | Commonly paired with public TLS and dyndns (not required by either) | **Operator runbook — ships no manifest at all, by design** |
+| **UPS integration** (NUT) | Graceful shutdown on power loss — real corruption protection for a single-disk machine | A UPS with a USB or network data connection to the host | Standalone | **Two halves: host script + normal in-cluster copy** |
+
+See each capability's own README under `capabilities/<name>/` for the exact mechanics, and
+[`docs/release-readiness.md`](release-readiness.md) for the authoritative, current evidence
+snapshot behind this table (costs and evidence detail can change between releases; this page
+won't be kept in sync line-by-line — that document is).
+
+## Two capabilities that don't use a plain file copy
+
+**Public ingress ships no Kustomization at all.** What actually makes the platform reachable from
+the internet is entirely outside Kubernetes — your router's own NAT table — so there's no cluster
+object to copy in. "Enabling" it means: review
+`platform/ingress/reserved-ports.yaml`, forward TCP 443 (and optionally 80) from your router to
+your node, and set up split-horizon DNS so LAN and internet clients resolving the same hostname
+both reach the right address. "Disabling" it means removing the forwards. Nothing in the cluster
+changes either way. Full runbook: `capabilities/public-ingress/README.md`.
+
+**UPS integration has two independently-enabled halves.** The in-cluster half (a small exporter
+that reads your UPS's status and wires it into the existing alerting surface) is a normal
+Kustomization copy. The half that actually protects your data — the host daemon with authority to
+shut the machine down — is a separate, operator-run script
+(`bootstrap/host/install-nut.sh`) run directly on the host, because it manages a systemd service
+outside anything Flux reconciles. Enabling the in-cluster half alone is meaningful (you get a
+dashboard and alerts) but doesn't protect anything by itself — run both for a real install. Full
+detail: `capabilities/ups/README.md`.
 
 ## Profiles are presets, not a hidden switch
 
@@ -48,10 +69,10 @@ is nothing more than a **suggested, named bundle** of the capabilities above:
 
 - **`minimal`** — nothing optional enabled. What `clusters/example/` ships as, and what this
   repository's own CI tests as the floor every install must work from.
-- **`standard`** — adds Grafana today (and, once built, logs and alert delivery). What most
-  installs will actually run.
-- **`connected`** — adds off-site backup, public TLS, and external Git hosting today (and, once
-  built, external heartbeat). What most installs converge to over time.
+- **`standard`** — adds Grafana, logs, and alert delivery. What most installs will actually run.
+- **`connected`** — adds off-site backup, public TLS, and external heartbeat, plus external Git
+  hosting (an installer setting, no capability file needed). What most installs converge to over
+  time.
 
 **There is no `profile: standard` setting anywhere in this repository.** A profile is just
 documentation for a combination people commonly choose. You are never limited to these three
@@ -69,21 +90,22 @@ in the "Depends on / pairs with" column above.
 
 ## How enabling a capability actually works
 
-A capability is enabled by **copying its Flux `Kustomization` file(s)** into
-`clusters/<your-instance>/capabilities/`. Disabling it is deleting them. That's the entire
-mechanism — no flags, no templating language, no SCRAP-specific configuration format. Every
-enabled file is a normal, reviewable Git diff.
+For every capability except the two called out above, enabling it means **copying its Flux
+`Kustomization` file(s)** into `clusters/<your-instance>/capabilities/`. Disabling it is deleting
+them. No flags, no templating language, no SCRAP-specific configuration format. Every enabled file
+is a normal, reviewable Git diff.
 
-Most capabilities are **one file**. A capability that needs its own credential (identity is the
-concrete example today) is **two files**: the capability's own `Kustomization`, plus a second one
-that installs the credential's own namespace/`Secret` from `clusters/<your-instance>/secrets/` —
-never from `capabilities/` itself, so a real credential never ends up somewhere a separate
-pinned-version topology would treat as shared, upstream content. Each capability's own README
-states exactly which files to copy and what to rename them to — see
-`capabilities/identity/README.md`'s "Enabling this capability" section for the concrete, fully
-worked example.
+Most capabilities are **one file**. A capability that needs its own credential (identity, public
+TLS, alert delivery, heartbeat, dyndns, and UPS's in-cluster half) is **two files**: the
+capability's own `Kustomization`, plus a second one that installs the credential's own
+namespace/`Secret` from `clusters/<your-instance>/secrets/` — never from `capabilities/` itself, so
+a real credential never ends up somewhere a separate pinned-version topology would treat as shared,
+upstream content. Each capability's own README states exactly which files to copy and what to
+rename them to — see `capabilities/identity/README.md`'s "Enabling this capability" section for the
+concrete, fully worked example.
 
-Full mechanical detail: [`docs/core/configuration-model.md`](core/configuration-model.md).
+Full mechanical detail, including the two recorded exceptions above:
+[`docs/core/configuration-model.md`](core/configuration-model.md).
 
 ## The configure-before-install checklist
 
@@ -92,20 +114,22 @@ If you want anything beyond the bare minimum, do this **before** running `bootst
 1. **Copy and rename your instance directory**, if you haven't already:
    `cp -r clusters/example clusters/<your-instance-name>`.
 2. **Populate `instance-config.yaml`** with your real values — domain, node address, timezone,
-   backup retention, and (only if the corresponding capability is enabled) ACME email and DNS-01
-   nameserver/key name. Every field is commented with what it's for.
+   backup retention, and (only for the capabilities you're enabling) ACME/DNS-01, dyndns, or UPS
+   settings. Every field is commented with what it's for.
 3. **Copy in the Kustomization file(s)** for each capability you're enabling, from that
    capability's own directory into `clusters/<your-instance-name>/capabilities/` — see the table
-   above for which capabilities exist to enable, and that capability's own README for the exact
-   filenames.
+   above for what's available, and that capability's own README for the exact filenames. Skip this
+   step entirely for public ingress (no file exists to copy) and for UPS's host half (a script, not
+   a file copy — see below).
 4. **Create any required secret/config files** the enabled capabilities need, under
    `clusters/<your-instance-name>/secrets/` — for example, off-site backup's endpoint credential,
    or public TLS's DNS-01 TSIG key. Never put real credential material anywhere under
    `capabilities/` itself.
 5. **Handle operator-run steps that live outside the cluster entirely**, at the point each
-   capability's own documentation names — for example, DNS provider setup for public TLS. A
-   capability marked 🧭 "designed, not yet implemented" above has no such step yet, because there's
-   nothing to configure until it ships; its README states this plainly.
+   capability's own documentation names — DNS provider setup for public TLS/dyndns, connecting a
+   UPS and running `bootstrap/host/install-nut.sh` on the host, or the router/DNS runbook for
+   public ingress. These are genuinely separate from steps 3–4 above: they change something outside
+   Git, not a file inside it.
 6. **Re-check preflight** (`bootstrap/preflight/run-all.sh`, or just let `bootstrap/install.sh` run
    it for you) before installing — it validates your host, not your configuration values, so a
    passing preflight doesn't mean your `instance-config.yaml` values are correct, only that the
@@ -119,9 +143,10 @@ Everything above assumes you're working inside a clone of this repository (**Top
 simplest path, and what this repository's own tests exercise. If you'd rather not fork/clone the
 whole thing, SCRAP also supports a **separate repository** containing only your `clusters/`,
 `apps/`, and `secrets/`, pinned to a specific released version of everything else
-(**Topology B**) — no merging against upstream changes just to add an application. See
-[`docs/decisions/0009-repository-topology.md`](decisions/0009-repository-topology.md) for the full
-mechanism; it's a one-line change per file (`sourceRef.name`), not a different configuration model.
+(**Topology B**) — no merging against upstream changes just to add an application, and a generator
+(`bootstrap/generate-topology-b.sh`) that produces one for you, pinned to a specific SCRAP commit
+or released tag. See [`docs/decisions/0009-repository-topology.md`](decisions/0009-repository-topology.md)
+for the full mechanism.
 
 ## Where to go next
 

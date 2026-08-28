@@ -21,9 +21,13 @@ this layer carries is "a backup job failed" — see `platform/backup/`.
 Alertmanager runs with **no receiver configured by default**, and that is a stated, visible fact at
 install time, not a silent placeholder — bootstrap's postflight check reports this explicitly rather
 than letting it go unnoticed the way it did in the reference implementation. Configuring a real
-receiver (SMTP, ntfy, webhook) is `capabilities/heartbeat/`-adjacent and documented in
-`docs/supported/`; an external dead-man's-switch heartbeat is a separate, optional capability for
-knowing the *cluster itself* is unreachable, which no in-cluster alert can ever tell you.
+receiver (SMTP, ntfy, webhook) is `capabilities/alert-delivery/`, a separate optional capability
+that wires delivery via a namespace-scoped `AlertmanagerConfig` object — this tier's own base
+config never changes, for any instance, regardless of which capabilities it enables (see that
+capability's own README, and `helmrelease.yaml`'s own `alertmanagerConfigMatcherStrategy` comment
+for a real routing gap that mechanism alone would have hit). `capabilities/heartbeat/` is a
+distinct, separate optional capability for knowing the *cluster itself* is unreachable, which no
+in-cluster alert — delivered or not — can ever tell you.
 
 ## The application contract
 

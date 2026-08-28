@@ -1,0 +1,53 @@
+name: T-A-ups (capabilities/ups/ live acceptance, both halves)
+
+# A separate from-zero bootstrap from T-A's own -- see
+# tests/profiles/t-a-ups.sh's own header for why. The UPS itself is NUT's
+# own dummy-ups driver, installed for real via bootstrap/host/install-nut.sh
+# against this same runner -- no physical hardware, no external account,
+# no paid infrastructure. Runs on every push/PR, the same trigger tier as
+# T-A, T-A-public-tls, T-A-offsite-backup, T-A-alert-heartbeat, T-A-dyndns,
+# and T-A-public-ingress.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-ups:
+    name: T-A-ups -- real host NUT install, SHUTDOWNCMD positive/negative, in-cluster exporter live
+    runs-on: ubuntu-latest
+    # A full bootstrap, a real NUT install, two credential rollout cycles
+    # (each waiting for a pod Ready plus a scrape interval), and a real
+    # on-battery/low-battery detection wait -- sized with the same margin
+    # t-a-alert-heartbeat.yml's own comment explains.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-ups against this runner as a fresh host
+        run: sh tests/profiles/t-a-ups.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide and host NUT state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- scrap-ups-exporter Deployment ---"
+          sudo -E kubectl describe deployment -n monitoring scrap-ups-exporter || true
+          sudo -E kubectl logs -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter --tail=100 || true
+          echo "--- ups-credentials Secret: key NAMES only, never values ---"
+          sudo -E kubectl get secret -n monitoring ups-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          echo "--- host NUT state ---"
+          sudo systemctl status nut-server nut-monitor --no-pager || true
+          sudo journalctl -u nut-server -u nut-monitor --no-pager | tail -200 || true
+          sudo upsc ups@localhost 2>&1 || true
+          cat /etc/nut/scrap-ups-test.dev 2>/dev/null || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

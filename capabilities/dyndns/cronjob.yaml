@@ -1,0 +1,159 @@
+# The one workload this capability ships: a CronJob that looks up this
+# host's current public IP and, only if it actually changed, sends a
+# real RFC2136 DNS UPDATE pointing DYNDNS_HOSTNAME's A record at it --
+# the same generic DNS-update protocol capabilities/public-tls/ already
+# uses for its own DNS-01 solver (see that capability's own README for
+# why RFC2136, not one commercial provider's API: any RFC2136-capable
+# authoritative nameserver works, self-hosted or a provider's own
+# dynamic-DNS zone-update feature). This capability's own TSIG
+# credential is independent of public-tls's -- README.md's own "no
+# dependency on other capabilities" holds: enabling one never requires
+# the other, even though both happen to speak the same wire protocol.
+#
+# namespace: dyndns -- this capability's own namespace (namespace.yaml),
+# not a CORE one. See that file's own comment.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scrap-dyndns
+  namespace: dyndns
+spec:
+  # Every 10 minutes -- hardcoded, not instance-configurable, the same
+  # reasoning capabilities/heartbeat/cronjob.yaml's own comment gives for
+  # its own schedule. A residential IP change is rarely urgent to the
+  # minute; 10 minutes bounds how stale the record can get without
+  # generating DNS-update traffic on every single run the way a shorter
+  # interval would once the "only update if changed" check below is
+  # considered.
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # One IP lookup, one DNS query, at most one DNS update, one
+      # confirmation query -- four bounded network round-trips plus a
+      # package install. 90s is generous, not tight, for all of them to
+      # complete or definitively fail -- same reasoning
+      # platform/backup/backup-cronjob.yaml's own activeDeadlineSeconds
+      # comment gives.
+      activeDeadlineSeconds: 90
+      template:
+        spec:
+          # This job talks to an external IP-lookup URL and a
+          # DNS server -- never the Kubernetes API -- so it needs no
+          # ServiceAccount token at all. Same reasoning
+          # capabilities/heartbeat/cronjob.yaml's own comment gives.
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          containers:
+            - name: dyndns
+              # Pinned, not :latest -- tests/assertions/check_image_pinning.py.
+              # bind-tools (dig, nsupdate) and curl aren't in the base
+              # image -- installed at job start, the same "pull what's
+              # needed at run time" shape t-a-offsite-backup.sh's own
+              # MinIO download already establishes for this project's
+              # test harness; here it's the shipped capability itself,
+              # from Alpine's own official package repository, not a
+              # third party.
+              image: alpine:3.20.3
+              env:
+                - name: DYNDNS_HOSTNAME
+                  value: "${DYNDNS_HOSTNAME}"
+                - name: DYNDNS_NAMESERVER
+                  value: "${DYNDNS_NAMESERVER}"
+                - name: DYNDNS_TSIG_KEY_NAME
+                  value: "${DYNDNS_TSIG_KEY_NAME}"
+                - name: DYNDNS_IP_LOOKUP_URL
+                  value: "${DYNDNS_IP_LOOKUP_URL}"
+                - name: DYNDNS_TSIG_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: dyndns-credentials
+                      key: TSIG_SECRET
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  apk add --no-cache -q bind-tools curl
+
+                  # REAL BUG, found live via t-a-dyndns.sh's own CI run
+                  # once this capability's Kustomization actually gained
+                  # postBuild.substituteFrom (needed for the env: values
+                  # above): Flux's substitution engine is a genuine
+                  # envsubst (github.com/drone/envsubst under the hood,
+                  # per its own error text), which understands bash-style
+                  # parameter expansion operators (%, ##, :-, ...) and
+                  # matches a bare name just as readily as a braced one --
+                  # not the simpler, brace-only, operator-blind pattern
+                  # tests/assertions/check_instance_literals.py's own
+                  # static check looks for. Every shell-local name below
+                  # (never an instance-config key) is therefore prefixed
+                  # with a doubled dollar sign, Flux's own documented
+                  # escape meaning "leave this exact text alone, the
+                  # container's shell evaluates it at runtime" -- a
+                  # doubled dollar sign reduces to a single literal one
+                  # during substitution, the same way capabilities/heartbeat/cronjob.yaml's
+                  # own ALERTMANAGER_URL local was already kept out of
+                  # Flux's substitution reach, just via a stronger
+                  # mechanism now that this capability's own Kustomization
+                  # genuinely needs postBuild.substituteFrom for real
+                  # (heartbeat's own Kustomization never did, so this
+                  # gap never applied there).
+                  RAW_NAMESERVER="$$DYNDNS_NAMESERVER"
+                  NS_HOST="$${RAW_NAMESERVER%%:*}"
+                  NS_PORT="$${RAW_NAMESERVER##*:}"
+
+                  # The IP-lookup contract this capability needs: an
+                  # HTTP(S) URL whose entire response body is a bare
+                  # IPv4 address, nothing else -- the same "any endpoint
+                  # satisfying the contract" genericity
+                  # capabilities/alert-delivery/README.md's own webhook
+                  # section already establishes for a different wire
+                  # shape. Validated, not trusted blindly: a malformed
+                  # response must never reach nsupdate as if it were a
+                  # real address.
+                  CURRENT_IP=$(curl -sf --max-time 10 "$$DYNDNS_IP_LOOKUP_URL" | tr -d '[:space:]')
+                  case "$$CURRENT_IP" in
+                    ''|*[!0-9.]*)
+                      echo "DYNDNS_IP_LOOKUP_URL did not return what looks like a bare IPv4 address (got: '$$CURRENT_IP') -- refusing to send a DNS update with it"
+                      exit 1
+                      ;;
+                  esac
+
+                  EXISTING_IP=$(dig @"$$NS_HOST" -p "$$NS_PORT" +short +time=5 +tries=2 "$$DYNDNS_HOSTNAME" A | tail -n1)
+
+                  if [ "$$CURRENT_IP" = "$$EXISTING_IP" ]; then
+                      echo "public IP unchanged ($$CURRENT_IP) -- no update needed"
+                      exit 0
+                  fi
+
+                  echo "public IP changed (was '$${EXISTING_IP:-<none>}', now '$$CURRENT_IP') -- sending an RFC2136 update"
+                  # DYNDNS_TSIG_SECRET in particular is credential
+                  # material from the Secret this capability's
+                  # secretKeyRef reads (never an instance-config.yaml
+                  # scalar at all) -- escaped the same as every other
+                  # shell-local/runtime-only name here, see this file's
+                  # own comment above.
+                  nsupdate -y "hmac-sha256:$$DYNDNS_TSIG_KEY_NAME:$$DYNDNS_TSIG_SECRET" -v <<UPDATE
+                  server $$NS_HOST $$NS_PORT
+                  update delete $$DYNDNS_HOSTNAME A
+                  update add $$DYNDNS_HOSTNAME 300 A $$CURRENT_IP
+                  send
+                  UPDATE
+
+                  # nsupdate is not reliably non-zero on every failure
+                  # mode -- see this capability's own README,
+                  # "Configuration errors fail visibly", for the real
+                  # reason this job re-queries the nameserver itself
+                  # rather than trusting nsupdate's own exit code alone.
+                  sleep 1
+                  CONFIRMED_IP=$(dig @"$$NS_HOST" -p "$$NS_PORT" +short +time=5 +tries=2 "$$DYNDNS_HOSTNAME" A | tail -n1)
+                  if [ "$$CONFIRMED_IP" = "$$CURRENT_IP" ]; then
+                      echo "update confirmed: $$DYNDNS_HOSTNAME now resolves to $$CONFIRMED_IP at $$NS_HOST"
+                  else
+                      echo "update NOT confirmed: expected $$CURRENT_IP, the nameserver still answers '$${CONFIRMED_IP:-<none>}' -- treating this as a failed update"
+                      exit 1
+                  fi

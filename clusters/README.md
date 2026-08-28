@@ -19,9 +19,11 @@ version of `platform/`/`capabilities/`/`components/` here via a second Flux `Git
 (**Topology B**) — no fork, no merging against upstream changes just to add an application. Every
 `Kustomization` in `clusters/example/` already names its source explicitly
 (`sourceRef.name: flux-system` — the name `flux bootstrap git` itself creates, regardless of
-topology); adopting Topology B is a one-line change to that field, repeated per file. Full
-mechanism, a worked example, and why this needs no SCRAP-specific abstraction:
-`docs/decisions/0009-repository-topology.md`.
+topology); adopting Topology B is a one-line change to that field, repeated per file.
+`bootstrap/generate-topology-b.sh` produces that repository directly — a minimal, ordinary
+Flux/Kustomize/SOPS operator repository with every one of those diffs already applied, so this
+never has to be reconstructed by hand. Full mechanism, a worked example, and why this needs no
+SCRAP-specific abstraction: `docs/decisions/0009-repository-topology.md`.
 
 ## How instance values reach manifests
 

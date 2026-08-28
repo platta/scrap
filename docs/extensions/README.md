@@ -17,6 +17,7 @@ plugin system — every seam below is an ordinary Kubernetes or Flux object SCRA
 | Secrets | the Flux `decryption` provider | Decrypt at reconcile time **and** be decryptable without a running cluster | The second clause disqualifies Sealed Secrets outright — see `docs/decisions/0007-reject-sealed-secrets.md` |
 | Host OS / distribution | `bootstrap/host/` | Meet k3s's prerequisites; satisfy `bootstrap/preflight/` | An immutable-OS approach (e.g. Talos) would replace this layer entirely — a real future direction, not attempted in v1 |
 | Kubernetes distribution | the cluster itself | Conformant, with a default RWO `StorageClass` and a `LoadBalancer` mechanism | k0s, RKE2, kubeadm — SCRAP's bootstrap and preflight are k3s-shaped today |
+| Public ingress (CGNAT / no router control) | the platform Gateway's own Service, `traefik.traefik.svc.cluster.local` | Deliver TCP 443 (and optionally 80) to it **without terminating TLS itself** — the platform's own wildcard certificate must still be what a client sees | A tunnel client forwarding inbound traffic in from an outbound-only connection to a relay you (or a provider) control. `docs/decisions/0014-public-ingress-edge-authority.md`: not shipped or tested in v1 — no vendor-neutral standard exists to pick one the way RFC2136 was chosen for DNS updates; a supported tunnel capability needs its own future recorded decision |
 
 ## What extension is not
 

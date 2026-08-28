@@ -1,0 +1,52 @@
+name: T-A-dyndns (capabilities/dyndns/ live acceptance)
+
+# A separate from-zero bootstrap from T-A's own -- see
+# tests/profiles/t-a-dyndns.sh's own header for why. Both external
+# dependencies this capability has -- an authoritative nameserver and an
+# IP-lookup endpoint -- are real, ephemeral services the script stands up
+# itself on this same runner. No external account, no paid
+# infrastructure. Runs on every push/PR, the same trigger tier as T-A,
+# T-A-public-tls, T-A-offsite-backup, and T-A-alert-heartbeat.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-dyndns:
+    name: T-A-dyndns -- real RFC2136 update, positive/unchanged/wrong-credential negative control
+    runs-on: ubuntu-latest
+    # A full bootstrap plus three triggered CronJob runs (positive,
+    # unchanged, negative), each bounded well under the CronJob's own
+    # activeDeadlineSeconds; sized with the same margin
+    # t-a-alert-heartbeat.yml's own comment explains.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-dyndns against this runner as a fresh host
+        run: sh tests/profiles/t-a-dyndns.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- dyndns CronJob and its Jobs ---"
+          sudo -E kubectl describe cronjob -n dyndns scrap-dyndns || true
+          sudo -E kubectl get jobs -n dyndns -o wide || true
+          echo "--- dyndns-credentials Secret: key NAMES only, never values ---"
+          sudo -E kubectl get secret -n dyndns dyndns-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          echo "--- ephemeral nameserver log ---"
+          cat /tmp/t-a-dyndns-named.log 2>/dev/null || true
+          echo "--- ephemeral IP-lookup echo log ---"
+          cat /tmp/t-a-dyndns-echo.log 2>/dev/null || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

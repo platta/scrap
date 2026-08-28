@@ -18,6 +18,18 @@ Topology B consumer repository, or — the default when `REPO_URL` is unset — 
 repository seeded with a snapshot of this checkout, satisfying D5's minimum path with no hosted
 Git required at all.
 
+## `generate-topology-b.sh`
+
+Produces a Topology B consumer repository — see `docs/decisions/0009-repository-topology.md`.
+`sh bootstrap/generate-topology-b.sh <output-dir> [instance-name]` writes a minimal, ordinary
+Flux/Kustomize/SOPS repository containing only `clusters/<name>/` and `apps/` (no copy of
+`platform/`, `capabilities/`, or `components/`), wired to a separately, independently pinned
+`scrap-platform` `GitRepository`. Host the result anywhere, then bootstrap against it exactly like
+any other repository: `REPO_URL=<hosted-URL> CLUSTER_PATH=./clusters/<name> sudo -E sh
+bootstrap/install.sh`. See the script's own header comment for its full configuration surface, and
+`tests/profiles/t-a-topology-b.sh` for the live acceptance profile proving a generated repository
+actually bootstraps and reconciles this way.
+
 ## `preflight/`
 
 Fail-loud checks, run first, that block installation on a FAIL (not just warn): required ports

@@ -28,6 +28,21 @@ behavior for a path with no `kustomization.yaml` (discover and flatten every YAM
 exactly the semantics this needs: any file placed there is picked up, none of them reference each
 other except via their own explicit `dependsOn`.
 
+**Two recorded exceptions**, each licensed narrowly by its own decision record, neither a general
+escape from this model:
+
+- `docs/decisions/0013-ups-shutdown-authority.md`: the UPS capability's host half — the NUT daemon
+  holding shutdown authority — is enabled by running its operator-run `bootstrap/host/` script and
+  disabled by its documented uninstall path, because what it manages (a systemd unit that can power
+  off the machine) exists outside anything Flux reconciles. Its in-cluster half follows the normal
+  rule above. Licensed for host shutdown authority only.
+- `docs/decisions/0014-public-ingress-edge-authority.md`: public ingress is enabled by performing
+  its documented edge procedure (reserved-ports review, router port-forwards, split-horizon DNS)
+  and disabled by removing the forwards, because what it manages (the operator's router NAT table)
+  exists outside anything Flux reconciles — and outside the host itself. Nothing in the cluster
+  differs either way, so the capability deliberately ships no `Kustomization` at all. Licensed for
+  network-edge exposure only.
+
 **A capability needing its own credential is two files, not one** — a small, real exception to
 "copying one file," found while implementing `capabilities/identity/` (the first capability built).
 The credential itself lives under `clusters/<name>/secrets/`, never under `capabilities/`, so it
@@ -44,10 +59,11 @@ why the dependency between them runs in the direction it does (not always the sa
 A "profile" is just a documented, named set of which capability files are present:
 
 - **`minimal`** — `clusters/example/` as checked in: no capability files. The tested floor.
-- **`standard`** — adds `grafana` (implemented) plus, once built, `logs` and alert delivery — see
-  `docs/release-readiness.md` for which of these exist today. What most installs will actually run.
-- **`connected`** — adds off-site backup and public TLS (both implemented), external Git hosting
-  (already available today via `bootstrap/install.sh`'s own `REPO_URL`, no capability file needed),
-  and, once built, external heartbeat. What most installs converge to over time.
+- **`standard`** — adds `grafana`, `logs`, and `alert-delivery` (all implemented) — see
+  `docs/release-readiness.md` for the current, authoritative snapshot. What most installs will
+  actually run.
+- **`connected`** — adds off-site backup, public TLS, and heartbeat (all implemented), plus external
+  Git hosting (already available today via `bootstrap/install.sh`'s own `REPO_URL`, no capability
+  file needed). What most installs converge to over time.
 
 Profiles are documentation, not a mechanism — there is no `profile: standard` setting anywhere.

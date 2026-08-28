@@ -34,19 +34,20 @@ with no interest in Kubernetes at all, this is more platform than you need.
 - A working Kubernetes platform from one command, on hardware you already own.
 - TLS and routing for free — your applications never declare a certificate or an issuer.
 - One backup engine for the whole platform, with tested restore, not just "we take backups."
-- Optional, composable capabilities you turn on only if you want them: single sign-on, off-site
-  backup, publicly-trusted certificates, and more — see
-  [Choosing your capabilities](docs/choosing-capabilities.md).
+- A full set of optional, composable capabilities you turn on only if you want them: single
+  sign-on, off-site backup, publicly-trusted certificates, centralized logs, alert delivery, an
+  external heartbeat, dynamic DNS, public internet reachability, and UPS-triggered graceful
+  shutdown — see [Choosing your capabilities](docs/choosing-capabilities.md).
 - A documented path for adding your own applications that never requires touching the platform
   itself — see [Adding an application](docs/adding-an-application.md).
 
-**Current status:** pre-release. The core platform, backup engine, observability, identity, public
-TLS, and Grafana are implemented and live-tested end to end, including a real, destructive-restore
-disaster-recovery rehearsal. Several optional capabilities (logs, alert delivery, public ingress,
-heartbeat, dynamic DNS, UPS integration) are designed but not yet built, and host-loss recovery
-(rebuilding onto a completely blank machine) is not yet proven. Nothing here claims otherwise — see
-[`docs/release-readiness.md`](docs/release-readiness.md) for the exact, current, evidence-backed
-boundary between what's proven and what's still open.
+**Current status:** pre-release, release candidate `v0.1.0-rc.1`. The core platform and every
+capability listed above are implemented and live-tested end to end, including a real,
+destructive-restore disaster-recovery rehearsal. What's **not yet proven**: host-loss recovery
+(rebuilding onto a completely blank machine) and arm64 as a tested architecture. Nothing here
+claims otherwise — see [`docs/release-readiness.md`](docs/release-readiness.md) for the exact,
+current, evidence-backed boundary, and [`CHANGELOG.md`](CHANGELOG.md) /
+[`docs/releases/`](docs/releases/) for this release candidate's own content.
 
 ## Start here
 
@@ -58,8 +59,10 @@ choices, install, and verify it worked. No architecture reading required first.
 One Linux host: 2 cores, 4 GB RAM, 32 GB SSD, a stable way for clients to reach it, a correct
 clock, and internet access once, at install time. x86-64 is continuously tested; arm64 is accepted
 but not yet verified to the same standard. Nothing else is required — no public IP, domain, cloud
-account, S3, identity provider, or second machine. See
-[Getting started](docs/getting-started.md#1-check-your-host) for the full detail.
+account, S3, identity provider, or second machine. Richer configurations (public TLS, off-site
+backup, identity, and everything else in [What you get](#what-you-get)) are fully supported and
+tested, but every one of them is optional and composable, never a hidden prerequisite of the core.
+See [Getting started](docs/getting-started.md#1-check-your-host) for the full detail.
 
 ## What happens after install
 
@@ -92,11 +95,12 @@ docs/            # organized by CORE / FULLY SUPPORTED / EXTENSION / OUT OF SCOP
 tests/           # structural CI assertions, DR rehearsals, acceptance profiles
 ```
 
-Full rationale: [`docs/core/repository-structure.md`](docs/core/repository-structure.md). Two
-invariants hold everywhere in this repository — delete every application and the platform still
-works (**T1**), and adding a normal application never requires touching `platform/` or
-`capabilities/` (**T2**) — both enforced by CI on every pull request, not merely documented; see
-[`tests/assertions/README.md`](tests/assertions/README.md).
+Full rationale for this layout: [`docs/core/repository-structure.md`](docs/core/repository-structure.md).
+Two invariants hold everywhere in this repository — delete every application and the platform
+still works (**T1**), and adding a normal application never requires touching `platform/` or
+`capabilities/` (**T2**) — both enforced by CI on every pull request, not merely documented. See
+[`tests/assertions/README.md`](tests/assertions/README.md) for how those checks work and how to
+run them locally.
 
 ## License
 

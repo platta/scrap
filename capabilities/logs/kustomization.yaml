@@ -1,0 +1,9 @@
+# No namespace.yaml here -- same reasoning as capabilities/grafana/kustomization.yaml:
+# both workloads land in "monitoring", which platform/observability/ already
+# creates unconditionally (CORE, always present).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrepository.yaml
+  - helmrelease-loki.yaml
+  - helmrelease-alloy.yaml

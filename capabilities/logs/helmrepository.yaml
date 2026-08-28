@@ -1,0 +1,18 @@
+# Named "loki-alloy", not "grafana" -- capabilities/grafana/helmrepository.yaml
+# already owns a HelmRepository object named "grafana" in this same
+# namespace, via ITS OWN Kustomization. Two Kustomizations cannot both own
+# one object of the same kind/name/namespace (Flux reports that as an
+# ownership conflict, not a merge) -- and even if it could, this capability
+# must stay independently deletable (T1: delete capabilities/logs/,
+# capabilities/grafana/ is completely unaffected, and vice versa). Same
+# upstream URL as capabilities/grafana/'s own HelmRepository, on purpose --
+# Loki and Grafana Alloy are published from the same chart repository -- but
+# a genuinely separate object, owned by this capability's own Kustomization.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: loki-alloy
+  namespace: monitoring
+spec:
+  interval: 1h
+  url: https://grafana.github.io/helm-charts

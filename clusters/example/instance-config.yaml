@@ -11,7 +11,7 @@
 # CI validates: every ${VAR_NAME} referenced anywhere in the repository
 # resolves to a key defined in some instance's config (this file, or another
 # instance's equivalent). It does not validate that YOUR values are correct —
-# that's what bootstrap/preflight/ is for, once implemented.
+# that's what bootstrap/preflight/ is for.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -70,6 +70,21 @@ data:
   ACME_DNS01_NAMESERVER: "ns.example.internal:53"
   ACME_DNS01_TSIG_KEY_NAME: "example-tsig-key"
 
+  # capabilities/dyndns/ -- keeps DYNDNS_HOSTNAME's A record pointed at
+  # this host's current public IP via the same generic RFC2136 DNS
+  # UPDATE protocol as ACME_DNS01_* above, but with its own, separate
+  # TSIG key (narrower blast radius) and no dependency on
+  # capabilities/public-tls/ being enabled at all. Only consumed if
+  # dyndns is enabled; harmless to leave as placeholders otherwise. See
+  # capabilities/dyndns/README.md.
+  DYNDNS_HOSTNAME: "example.internal"
+  DYNDNS_NAMESERVER: "ns.example.internal:53"
+  DYNDNS_TSIG_KEY_NAME: "example-dyndns-tsig-key"
+  # Any HTTP(S) URL whose entire response body is a bare IPv4 address --
+  # ipify is a free, dedicated, no-account service built for exactly
+  # this; swap for any other endpoint satisfying that same contract.
+  DYNDNS_IP_LOOKUP_URL: "https://api.ipify.org"
+
   # Backup retention policy, passed straight to `restic forget`.
   BACKUP_RETENTION_DAILY: "7"
   BACKUP_RETENTION_WEEKLY: "4"
@@ -95,6 +110,15 @@ data:
   # setting at all (T2: adding an app, or tuning an instance value, never
   # requires editing platform/).
   BACKUP_JOB_DEADLINE_SECONDS: "600"
+
+  # capabilities/ups/'s in-cluster exporter reads upsd over the LAN at
+  # NODE_ADDRESS:3493 (above) and needs the same UPS name
+  # bootstrap/host/install-nut.sh configured in /etc/nut/ups.conf's own
+  # [section] -- the two must match, or every query fails with "unknown
+  # UPS" (fails visibly -- nut_up reports 0, see
+  # capabilities/ups/README.md). Only consumed if the ups in-cluster
+  # capability is enabled; harmless to leave as a placeholder otherwise.
+  UPS_NAME: "ups"
 
   # apps/examples/p6-external-proxy/'s demonstration backend -- a NAS, a
   # router admin UI, a hypervisor console, anything real on your LAN with

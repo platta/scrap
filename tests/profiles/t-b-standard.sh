@@ -18,13 +18,15 @@
 # (forward-auth) end to end, including the adversarial claim P3's own
 # README makes: an unauthenticated request must never reach the
 # protected application. Also proves Grafana (dashboards + native OIDC +
-# its own adversarial anonymous-access claim) and identity's own
-# recovery-flow-abuse obligation (docs/decisions/0002-identity-implementation.md)
-# -- no unauthenticated path to a password-set form, checked both
-# structurally and behaviorally. This is NOT yet the full "Standard"
-# profile tests/profiles/README.md originally sketched (logs is still
-# open) -- see that file's own status note for exactly what's covered
-# here and what's still open.
+# its own adversarial anonymous-access claim), logs (a real workload's
+# own stdout marker shipped by Alloy, stored in Loki, and retrieved
+# through Grafana's own configured Loki datasource, with a passing
+# negative control), and identity's own recovery-flow-abuse obligation
+# (docs/decisions/0002-identity-implementation.md) -- no unauthenticated
+# path to a password-set form, checked both structurally and
+# behaviorally. This is now the full "Standard" profile
+# tests/profiles/README.md originally sketched (identity + Grafana +
+# logs) -- see that file's own status note.
 #
 # A human can run this identically on their own scratch VM:
 #   sh tests/profiles/t-b-standard.sh
@@ -107,6 +109,16 @@ cp "$REPO_ROOT/capabilities/grafana/cluster-kustomization.yaml" \
     "$REPO_ROOT/clusters/example/capabilities/grafana.yaml"
 cp "$REPO_ROOT/capabilities/grafana/cluster-secrets-kustomization.yaml" \
     "$REPO_ROOT/clusters/example/capabilities/grafana-secrets.yaml"
+
+# capabilities/logs/README.md's own "Enabling this capability" -- one
+# file, no credential. Enabled alongside Grafana for the same reason:
+# proving the frozen T-B definition (identity + Grafana + logs) as a
+# whole, and proving Grafana's own Loki datasource (provisioned
+# unconditionally, capabilities/grafana/helmrelease.yaml) actually
+# answers real queries once logs exists, not just that the datasource
+# object is present.
+cp "$REPO_ROOT/capabilities/logs/cluster-kustomization.yaml" \
+    "$REPO_ROOT/clusters/example/capabilities/logs.yaml"
 
 NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 
@@ -756,6 +768,129 @@ else
         fail T-B/identity-adversarial-recovery "an anonymous request was shown a recovery-related field: identification stage=$id_leak, password stage=$pw_leak -- see the raw challenges above"
     fi
 fi
+
+# 3k. logs -- both HelmReleases owned by capabilities/logs/'s own
+# Kustomization, not any other -- the same T1 proof
+# capabilities/grafana/'s own "grafana-capability-owned" check (3e above)
+# already establishes for Grafana.
+loki_owner=$(kc get helmrelease -n monitoring loki -o jsonpath='{.metadata.labels.kustomize\.toolkit\.fluxcd\.io/name}' 2>/dev/null || true)
+alloy_owner=$(kc get helmrelease -n monitoring alloy -o jsonpath='{.metadata.labels.kustomize\.toolkit\.fluxcd\.io/name}' 2>/dev/null || true)
+if [ "$loki_owner" = "logs" ] && [ "$alloy_owner" = "logs" ]; then
+    ok T-B/logs-capability-owned "both the Loki and Alloy HelmReleases are owned by the capabilities/logs/ Kustomization, not platform/observability/ -- T1 holds"
+else
+    fail T-B/logs-capability-owned "expected both HelmReleases' owning Kustomization to be 'logs', got loki='$loki_owner' alloy='$alloy_owner'"
+fi
+
+# 3l/3m. logs -- a known log record from a REAL workload, shipped,
+# stored, and retrieved through Grafana's own configured Loki datasource,
+# plus a negative control. Not `kubectl exec ... echo`: exec attaches a
+# NEW process to the API server's own exec stream, never the container's
+# own stdout the kubelet/container-runtime captures as its log file -- it
+# would never reach Alloy at all, silently proving nothing. A small,
+# disposable Pod's own PID 1 stdout is the only thing this capability's
+# actual collection path (loki.source.kubernetes, tailing via the
+# Kubernetes API) reads -- the exact same mechanism any real application
+# in this cluster is tailed through, no special-casing.
+urlencode() { python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=''))" "$1"; }
+
+LOG_MARKER="scrap-tb-logs-marker-$(date +%s)-$$"
+kc run scrap-logs-marker -n default --image=busybox:1.36 --restart=Never \
+    --command -- sh -c "echo ${LOG_MARKER}; sleep 3" >/dev/null 2>&1 || true
+
+grafana_ds_list=$(curl -s --max-time 15 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
+    "https://grafana.${BASE_DOMAIN}/api/datasources" 2>/dev/null || true)
+loki_ds_uid=$(echo "$grafana_ds_list" | jq -r '.[] | select(.type=="loki") | .uid' 2>/dev/null | head -1)
+
+# loki_query <logql> <body-out-file> -- queries Loki through Grafana's
+# own datasource proxy, writes the raw response body to <body-out-file>,
+# and echoes the number of matching log lines to stdout -- or nothing
+# (empty stdout) if either the HTTP call itself failed/timed out OR the
+# body didn't parse into the expected streams shape. Callers MUST treat
+# empty stdout as "inconclusive", never as zero.
+#
+# REAL BUG, found live via this exact check's own first CI run: the
+# original version wrapped its curl call in a blanket `|| true` and
+# folded a jq parse failure into `|| echo 0` -- so a slow Loki query
+# genuinely timing out under CI resource contention (14+ pods starting
+# cold on a shared runner) was silently indistinguishable from "queried
+# successfully, found nothing yet". Confirmed live: the FAIL message's
+# own truncated dump of the last attempt showed the real marker text
+# already present in what curl HAD received before its own --max-time
+# cut the transfer short -- proof the underlying collection/storage path
+# worked and only the query itself was too tight on time, not that the
+# marker "never appeared". This is exactly the failure-to-empty-output
+# class PLAT-13 hardened elsewhere (t-a-minimal.sh's Grafana-absence
+# check) -- caught here by this capability's own negative control
+# actually being exercised for real during development, not assumed
+# sound.
+# This whole function must ALWAYS return exit status 0 (see the `|| true`
+# / explicit `return 0` below) -- under this script's own `set -eu`, a
+# non-zero exit from a function called as `x=$(f)` aborts the WHOLE
+# script immediately, not just the function, which would defeat the
+# entire point of distinguishing "inconclusive" from "genuinely zero" by
+# INSTEAD crashing the script outright the first time a query is slow.
+# Confirmed live in isolation (dash, `set -eu`) before relying on it here.
+# "Inconclusive" is communicated to the caller via empty STDOUT only,
+# never via this function's own exit code.
+loki_query() {
+    logql="$1"; out_file="$2"
+    q=$(urlencode "$logql")
+    range_start=$(( $(date +%s) - 300 ))000000000
+    range_end=$(( $(date +%s) + 60 ))000000000
+    if curl -sf --max-time 30 --cacert "$CA_CERT" $RESOLVE_ARGS -u "admin:$GRAFANA_ADMIN_PASS" \
+        "https://grafana.${BASE_DOMAIN}/api/datasources/proxy/uid/${loki_ds_uid}/loki/api/v1/query_range?query=${q}&start=${range_start}&end=${range_end}&limit=10" \
+        -o "$out_file" 2>/dev/null; then
+        jq -e '[.data.result[]?.values[]?[1]] | length' "$out_file" 2>/dev/null || true
+    else
+        echo "(curl itself failed or timed out against the Loki datasource proxy)" > "$out_file"
+    fi
+    return 0
+}
+
+if [ -n "$loki_ds_uid" ]; then
+    marker_found=""
+    marker_lines=""
+    i=0
+    while [ "$i" -lt 12 ]; do
+        marker_lines=$(loki_query "{namespace=\"default\"} |= \"${LOG_MARKER}\"" /tmp/t-b-logs-marker-response)
+        if [ -n "$marker_lines" ] && [ "$marker_lines" -gt 0 ]; then
+            marker_found=1
+            break
+        fi
+        sleep 5
+        i=$((i + 1))
+    done
+    if [ -n "$marker_found" ]; then
+        ok T-B/logs-marker-ingested-and-queried "a real workload's own stdout marker ($LOG_MARKER) was shipped by Alloy, stored in Loki, and retrieved THROUGH Grafana's own configured Loki datasource -- the full collection/storage/query path, not just component Ready status"
+    elif [ -z "$marker_lines" ]; then
+        fail T-B/logs-marker-ingested-and-queried "the Loki query itself never succeeded/parsed after 60s of retries -- inconclusive, not evidence the marker is genuinely absent: $(head -c 500 /tmp/t-b-logs-marker-response)"
+    else
+        fail T-B/logs-marker-ingested-and-queried "the query succeeded every time but marker $LOG_MARKER never appeared after 60s: $(head -c 500 /tmp/t-b-logs-marker-response)"
+    fi
+
+    # 3m. Negative control -- the SAME query mechanism (loki_query,
+    # above), for a marker that was never emitted anywhere, proving this
+    # oracle can actually turn red rather than a query that always
+    # reports "found something". A curl/parse failure here must NOT read
+    # as a pass -- that would itself be a vacuous negative control (the
+    # same class of mistake this function's own header comment just
+    # described) -- so an inconclusive query result is reported as its
+    # own distinct outcome, never silently folded into "0 lines found".
+    absent_marker="scrap-tb-logs-marker-NEVER-EMITTED-$$-$(date +%s)"
+    absent_lines=$(loki_query "{namespace=\"default\"} |= \"${absent_marker}\"" /tmp/t-b-logs-absent-response)
+    if [ -z "$absent_lines" ]; then
+        fail T-B/logs-negative-control "the Loki query itself never succeeded/parsed for the never-emitted marker either -- inconclusive, not a genuine negative-control pass: $(head -c 500 /tmp/t-b-logs-absent-response)"
+    elif [ "$absent_lines" -eq 0 ]; then
+        ok T-B/logs-negative-control "querying for a marker that was never emitted anywhere returns zero log lines through the identical, successfully-parsed query path -- the positive result above is attributable, not a query that always reports 'found'"
+    else
+        fail T-B/logs-negative-control "expected zero results for a never-emitted marker, got $absent_lines -- the query oracle may be vacuous: $(head -c 500 /tmp/t-b-logs-absent-response)"
+    fi
+else
+    fail T-B/logs-marker-ingested-and-queried "no loki-type datasource found via Grafana's own API: $(echo "$grafana_ds_list" | head -c 500)"
+    fail T-B/logs-negative-control "skipped -- no loki-type datasource found, see logs-marker-ingested-and-queried above"
+fi
+
+kc delete pod -n default scrap-logs-marker --ignore-not-found --wait=false >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
 log "T-B: Phase 4/4: result"

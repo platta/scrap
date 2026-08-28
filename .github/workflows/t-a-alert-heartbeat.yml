@@ -1,0 +1,57 @@
+name: T-A-alert-heartbeat (capabilities/alert-delivery/ and capabilities/heartbeat/ live acceptance)
+
+# A separate from-zero bootstrap from T-A's own -- see
+# tests/profiles/t-a-alert-heartbeat.sh's own header for why, and why
+# both capabilities share one profile. The webhook/ping receiver is a
+# real, ephemeral HTTP listener the script stands up itself on this same
+# runner -- no external account, no paid infrastructure. Runs on every
+# push/PR, the same trigger tier as T-A, T-A-public-tls, and
+# T-A-offsite-backup.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-alert-heartbeat:
+    name: T-A-alert-heartbeat -- real webhook delivery, dead-man's-switch positive/negative
+    runs-on: ubuntu-latest
+    # BackupJobFailed's own real, shipped `for: 5m` plus a full bootstrap
+    # and two heartbeat negative-control cycles (including waiting for a
+    # StatefulSet pod to fully terminate and come back Ready) comfortably
+    # fit inside this; sized the same way T-A-offsite-backup.yml's own
+    # comment explains its margin.
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-alert-heartbeat against this runner as a fresh host
+        run: sh tests/profiles/t-a-alert-heartbeat.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- AlertmanagerConfig, full describe ---"
+          sudo -E kubectl describe alertmanagerconfig -n monitoring scrap-alert-delivery || true
+          echo "--- alert-delivery-credentials Secret: key NAMES only, never values ---"
+          sudo -E kubectl get secret -n monitoring alert-delivery-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          echo "--- heartbeat CronJob and its Jobs ---"
+          sudo -E kubectl describe cronjob -n monitoring scrap-heartbeat || true
+          sudo -E kubectl get jobs -n monitoring -o wide || true
+          echo "--- Alertmanager StatefulSet and pods ---"
+          sudo -E kubectl get statefulset,pods -n monitoring -l app.kubernetes.io/name=alertmanager -o wide || true
+          echo "--- ephemeral receiver process log ---"
+          cat /tmp/t-a-alert-heartbeat-receiver.log 2>/dev/null || true
+          echo "--- ephemeral receiver request log ---"
+          cat /tmp/t-a-alert-heartbeat-requests.log 2>/dev/null || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true

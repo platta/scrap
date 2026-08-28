@@ -20,6 +20,11 @@ Local admin authentication works unconditionally — the chart's own default adm
 this repository manages. Anonymous access is explicitly disabled (`auth.anonymous.enabled: false`),
 stated plainly in `helmrelease.yaml` rather than left to trust the chart's own default.
 
+Also ships a **Loki** datasource, provisioned the same unconditional way — see "The dependency
+direction that matters" below. It answers real queries once `capabilities/logs/` is also enabled;
+until then it's simply inert, the same as the OIDC Provider identity provisions whether or not this
+capability is ever enabled.
+
 ## The dependency direction that matters
 
 When `capabilities/identity/` is also enabled, **the identity capability** supplies Grafana's OIDC
