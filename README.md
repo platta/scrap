@@ -36,8 +36,8 @@ the Topology B onboarding generator) are now implemented, each with its own live
 (see below); T-E/R3, R4, T-C, T-D (arm64), and T-F remain unproven, must not be claimed, and are
 what the RC qualification window itself exists for. See [Roadmap](#roadmap) below.
 
-**No release has been tagged yet.** See [`CHANGELOG.md`](CHANGELOG.md) and
-[`docs/releases/`](docs/releases/) for the `v0.1.0-rc.1` candidate's intended content, and
+See [`CHANGELOG.md`](CHANGELOG.md) and [`docs/releases/`](docs/releases/) for the `v0.1.0-rc.1`
+release candidate's content, and
 [`docs/decisions/0015-versioning-and-release-process.md`](docs/decisions/0015-versioning-and-release-process.md)
 for the versioning scheme and how a tag actually gets cut.
 

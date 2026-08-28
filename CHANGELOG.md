@@ -12,13 +12,15 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 
 Nothing has landed since the `v0.1.0-rc.1` candidate content below was assembled.
 
-## [v0.1.0-rc.1] — candidate, not yet tagged
+## [v0.1.0-rc.1] — first release candidate
 
-**No `v0.1.0-rc.1` Git tag or GitHub Release exists yet.** This entry describes the intended
-content of the first release candidate; cutting the tag is a separate, independently-adjudicated
-step (`docs/decisions/0011-release-candidate-policy.md`). Full notes, including the evidence
-boundary a first external tester should read before relying on this candidate:
-[`docs/releases/v0.1.0-rc.1.md`](docs/releases/v0.1.0-rc.1.md).
+This is the release-notes content for the `v0.1.0-rc.1` tag. Per
+`docs/decisions/0015-versioning-and-release-process.md`, the tag is created only after independent
+exact-candidate adjudication of a specific `main` commit SHA — see
+`docs/decisions/0011-release-candidate-policy.md` for what a release candidate may still leave
+unproven. Full notes, including the evidence boundary a first external tester should read before
+relying on this candidate:
+[`docs/releases/v0.1.0-rc.1.md`](https://github.com/platta/scrap/blob/v0.1.0-rc.1/docs/releases/v0.1.0-rc.1.md).
 
 ### Added
 
