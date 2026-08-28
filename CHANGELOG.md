@@ -10,7 +10,9 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 
 ## [Unreleased]
 
-Nothing has landed since the `v0.1.0-rc.1` candidate content below was assembled.
+No new release/candidate entry has been assembled here yet. Changes may have landed since the
+`v0.1.0-rc.1` content below was assembled; see this repository's commit history for what they
+were and whether they warrant a new entry.
 
 ## [v0.1.0-rc.1] — first release candidate
 
