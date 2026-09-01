@@ -8,7 +8,7 @@ name: T-B (standard acceptance profile)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 

@@ -10,7 +10,7 @@ name: T-A-ups (capabilities/ups/ live acceptance, both halves)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 

@@ -10,7 +10,7 @@ name: T-A-offsite-backup (capabilities/offsite-backup/ live acceptance)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 

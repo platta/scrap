@@ -13,7 +13,7 @@ name: T-A-public-ingress (capabilities/public-ingress/verify-live.sh live accept
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
