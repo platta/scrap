@@ -322,7 +322,12 @@ rm -f "$EDIT_SCRIPT"
 ( cd "$LIVEDIR" && git add -A && git -c user.email=t-a-dyndns@localhost -c user.name="T-A-dyndns" \
     commit -q -m "T-A-dyndns: enable dyndns against the ephemeral nameserver" && \
     git push -q origin main )
-rm -rf "$LIVEDIR"
+# Same disposable post-push scratch-cleanup race as this file's own
+# $LIVEDIR4 site below (PLAT-92) and bootstrap/install.sh's
+# `rm -rf "$WORKDIR" || true`: the git push above already landed the
+# real work, and $LIVEDIR is a `mktemp -d` clone with no further
+# purpose. PLAT-93.
+rm -rf "$LIVEDIR" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
@@ -465,7 +470,9 @@ sudo sh "$EDIT_SCRIPT2"
 rm -f "$EDIT_SCRIPT2"
 ( cd "$LIVEDIR3" && git add -A && git -c user.email=t-a-dyndns@localhost -c user.name="T-A-dyndns" \
     commit -q -m "T-A-dyndns: negative control -- deliberately wrong TSIG secret" && git push -q origin main )
-rm -rf "$LIVEDIR3"
+# Same reasoning as $LIVEDIR above (PLAT-93): the push already landed,
+# $LIVEDIR3 has no further purpose.
+rm -rf "$LIVEDIR3" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization dyndns-secrets --with-source >/dev/null 2>&1 || true

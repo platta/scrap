@@ -193,7 +193,14 @@ rm -f "$EDIT_SCRIPT"
 ( cd "$LIVEDIR" && git add -A && git -c user.email=t-a-offsite-backup@localhost -c user.name="T-A-offsite-backup" \
     commit -q -m "T-A-offsite-backup: enable off-site backup against the ephemeral MinIO target" && \
     git push -q origin main )
-rm -rf "$LIVEDIR"
+# Same disposable post-push scratch-cleanup race bootstrap/install.sh's
+# own `rm -rf "$WORKDIR" || true` and t-a-dyndns.sh's `$LIVEDIR4` site
+# (PLAT-92) are hardened against ("rm: cannot remove '.../.git':
+# Directory not empty", a `git clone`'s own `.git` occasionally still
+# settling by the time `rm -rf` lists it): the git push above already
+# landed the real work, and $LIVEDIR is a `mktemp -d` clone with no
+# further purpose. PLAT-93.
+rm -rf "$LIVEDIR" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
@@ -294,7 +301,9 @@ rm -f "$EDIT_SCRIPT2"
 ( cd "$LIVEDIR2" && git add -A && git -c user.email=t-a-offsite-backup@localhost -c user.name="T-A-offsite-backup" \
     commit -q -m "T-A-offsite-backup: NEGATIVE CONTROL -- deliberately wrong AWS_SECRET_ACCESS_KEY" && \
     git push -q origin main )
-rm -rf "$LIVEDIR2"
+# Same reasoning as $LIVEDIR above (PLAT-93): the push already landed,
+# $LIVEDIR2 has no further purpose.
+rm -rf "$LIVEDIR2" || true
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
 flux reconcile kustomization platform-secrets --with-source >/dev/null 2>&1 || true
@@ -347,7 +356,9 @@ sed -i 's|^\(  BACKUP_DESTINATION: \).*|\1"local:/var/lib/scrap-backup"|' "$LIVE
 ( cd "$LIVEDIR3" && git add -A && git -c user.email=t-a-offsite-backup@localhost -c user.name="T-A-offsite-backup" \
     commit -q -m "T-A-offsite-backup: revert BACKUP_DESTINATION to local, revert AWS_SECRET_ACCESS_KEY" && \
     git push -q origin main )
-rm -rf "$LIVEDIR3"
+# Same reasoning as $LIVEDIR above (PLAT-93): the push already landed,
+# $LIVEDIR3 has no further purpose.
+rm -rf "$LIVEDIR3" || true
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
 # REAL BUG, found live by this exact check failing on a real run: this
