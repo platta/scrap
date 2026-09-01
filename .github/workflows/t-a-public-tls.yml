@@ -9,7 +9,7 @@ name: T-A-public-tls (capabilities/public-tls/ live acceptance)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 

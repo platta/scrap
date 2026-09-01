@@ -10,7 +10,7 @@ name: T-A-dyndns (capabilities/dyndns/ live acceptance)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 

@@ -78,6 +78,12 @@ for the versioning scheme and procedure, [`CHANGELOG.md`](../CHANGELOG.md) and
 workflow. This is machinery only — it does not itself constitute cutting, approving, or claiming
 `v0.1.0-rc.1`; see `docs/releases/v0.1.0-rc.1.md` for that candidate's own current status.
 
+**Resolved 2026-09-01 (PLAT-114).** With `v0.1.0-rc.1` tagged, ordinary post-RC development and
+RC-remediation fixes need different targets so the release line isn't destabilized by unrelated
+work: see
+[`docs/decisions/0016-post-rc-branching-policy.md`](decisions/0016-post-rc-branching-policy.md)
+for the `develop`/`main` split and the fix-propagation procedure.
+
 ## Deliberately unresolved ambiguities
 
 Recorded here rather than silently decided one way or the other:

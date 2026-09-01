@@ -8,7 +8,7 @@ name: T-A-topology-b (ADR-0009 Topology B onboarding live acceptance)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
