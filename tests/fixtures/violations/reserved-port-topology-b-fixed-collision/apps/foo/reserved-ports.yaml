@@ -1,0 +1,10 @@
+# VIOLATION: this fixture has no platform/ directory at all (Topology-B
+# shaped -- the operator's own repo never contains platform/). port 443/TCP
+# is one of PLATFORM_FIXED_PORTS in check_reserved_ports.py -- always
+# reserved by the ingress Gateway, every topology -- so an app declaring it
+# for itself is a collision, not a fresh reservation.
+reservedPorts:
+  - port: 443
+    protocol: TCP
+    owner: foo
+    note: "fixture: collides with the ingress Gateway's own fixed port"

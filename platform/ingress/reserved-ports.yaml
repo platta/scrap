@@ -1,12 +1,26 @@
-# The single source of truth for every host port SCRAP is allowed to claim,
-# via a LoadBalancer Service or a container hostPort. Checked by
-# tests/assertions/check_reserved_ports.py on every pull request.
+# The platform-owned host ports SCRAP claims via a LoadBalancer Service or a
+# container hostPort. Checked by tests/assertions/check_reserved_ports.py on
+# every pull request.
 #
-# Adding a raw TCP/UDP application (pattern P4, docs/patterns/) means adding
-# its port here, in the same pull request that adds the application -- one
-# reviewable, diffable change, not a live surprise. This is the direct,
-# structural fix for a real incident: an ingress controller's default
-# LoadBalancer Service silently claiming a host's real production ports.
+# Since docs/decisions/0017-p4-port-reservation-ownership.md, a P4
+# (raw TCP/UDP, docs/patterns/) *application*'s own port is declared in a
+# `reserved-ports.yaml` colocated with the app itself, under apps/<name>/,
+# not here -- so adding a P4 app never requires touching platform/ (T2).
+# check_reserved_ports.py merges both kinds into one namespace and fails if
+# any two sources claim the same port.
+#
+# This file's port 9000 entry below predates 0017 and is a **deliberately
+# unmigrated legacy entry** (see that record's "What this record leaves
+# undone" for why) -- still valid, still checked, just not moved to the new
+# per-app location yet. Every *new* platform-owned reservation added here
+# from now on should genuinely be platform-owned (today: only 80/443, the
+# ingress Gateway's own fixed ports -- also hardcoded as
+# PLATFORM_FIXED_PORTS in check_reserved_ports.py for topologies where this
+# file isn't present at all).
+#
+# This mechanism is still the direct, structural fix for a real incident: an
+# ingress controller's default LoadBalancer Service silently claiming a
+# host's real production ports.
 reservedPorts:
   - port: 80
     protocol: TCP
@@ -23,4 +37,4 @@ reservedPorts:
     # platform/, and check_core_boundary.py forbids platform/ from
     # referencing apps/ or capabilities/ even in a comment string. See
     # docs/patterns/README.md#p4 for the pattern this port demonstrates.
-    note: "P4 pattern demo -- raw TCP echo server (docs/patterns/README.md#p4)"
+    note: "P4 pattern demo -- raw TCP echo server (docs/patterns/README.md#p4). Legacy entry predating 0017, deliberately not yet migrated -- see that record."

@@ -1,0 +1,9 @@
+# Proves the supported path: an app's own reserved-ports.yaml legitimately
+# authorizes its own manifest's port, with no platform/ directory present at
+# all (Topology-B shaped). check_reserved_ports.py must find zero violations
+# here. See docs/decisions/0017-p4-port-reservation-ownership.md.
+reservedPorts:
+  - port: 6000
+    protocol: TCP
+    owner: demo
+    note: "fixture: the supported per-app P4 declaration path"

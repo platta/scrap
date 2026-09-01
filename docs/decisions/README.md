@@ -24,6 +24,7 @@ attractive.
 | [0014](0014-public-ingress-edge-authority.md) | Public-ingress exposure mechanism | Router port-forwarding + split-horizon DNS is the supported v1 mechanism; the capability is operator-edge configuration end to end — implemented as a runbook plus operator-run verification whose oracle is CI-proven, no manifests by design; CGNAT/tunnel is an extension contract only, a supported tunnel needs its own future record; inert manifests outlawed |
 | [0015](0015-versioning-and-release-process.md) | Versioning and release process | `v`-prefixed SemVer 2.0.0 Git tags (`v0.1.0-rc.1`, ...), created manually only after independent exact-candidate adjudication; a tag-triggered workflow publishes the GitHub Release from `CHANGELOG.md`, never creates the tag itself |
 | [0016](0016-post-rc-branching-policy.md) | Post-RC branching policy | `develop` (created from the `v0.1.0-rc.1` baseline) is the ordinary-work integration branch; `main` stays the release-quality line, advanced only by adjudicated RC-remediation fixes that are then propagated back to `develop`; no full GitFlow hierarchy |
+| [0017](0017-p4-port-reservation-ownership.md) | P4 port reservation ownership | An application's own P4 port is declared in a `reserved-ports.yaml` colocated with the app under `apps/<name>/`, not in `platform/ingress/reserved-ports.yaml` — resolves a real T2/reserved-port contradiction and makes Topology B's "no fork required" promise hold for P4 |
 
 ## Format
 

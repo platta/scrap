@@ -30,13 +30,16 @@ Provides:
 ## The application contract
 
 An application declares an `HTTPRoute` attached to this Gateway by name, or (for raw TCP/UDP) a
-`Service` of type `LoadBalancer` whose port is declared in the reserved-ports allowlist
-(`platform/ingress/reserved-ports.yaml`) — checked by `tests/assertions/check_reserved_ports.py`
-on every pull request. **Correction, found live via PLAT-36:** this parenthetical previously read
-"once implemented" — stale by the time it was found; the allowlist and its check have both existed
-and been CI-gated since this file's own `reserved-ports.yaml` was added. This is the direct, structural fix for a real incident: an ingress controller's
-default `LoadBalancer` Service silently claiming a host's real production ports via k3s's
-ServiceLB. SCRAP makes that class of mistake CI-detectable rather than a live incident.
+`Service` of type `LoadBalancer` whose port is declared reserved — for a *new* P4 application, in
+a `reserved-ports.yaml` colocated with the application itself, under `apps/<name>/`, **not** this
+directory's own `reserved-ports.yaml` — checked by `tests/assertions/check_reserved_ports.py` on
+every pull request. See `docs/decisions/0017-p4-port-reservation-ownership.md` for why: a central
+platform file made a new P4 app's pull request touch both `apps/` and `platform/` at once, which
+T2 forbids (this directory's own `reserved-ports.yaml` still carries one legacy entry predating
+that record — see its own header comment). This is still the direct, structural fix for a real
+incident: an ingress controller's default `LoadBalancer` Service silently claiming a host's real
+production ports via k3s's ServiceLB. SCRAP makes that class of mistake CI-detectable rather than
+a live incident.
 
 ## In-cluster hostname resolution
 
