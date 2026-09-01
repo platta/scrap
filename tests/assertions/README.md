@@ -22,7 +22,7 @@ python3 tests/assertions/self_test.py     # proves each check catches its fixtur
 | `check_app_addition_boundary.py` | T2 as a diff rule — a pull request touching `apps/` may not also touch `platform/` or `capabilities/` |
 | `check_image_pinning.py` | No floating `:latest` tags, no bare (implicitly-latest) image references |
 | `check_no_cert_in_apps.py` | No `Certificate` or `ClusterIssuer` object, and no `issuerRef`, exists under `apps/` |
-| `check_reserved_ports.py` | Every `LoadBalancer` port and container `hostPort` is declared in `platform/ingress/reserved-ports.yaml` |
+| `check_reserved_ports.py` | Every `LoadBalancer` port and container `hostPort` is declared reserved — platform-owned ports in `platform/ingress/reserved-ports.yaml`, an app's own P4 port in its own `apps/<name>/reserved-ports.yaml` — and no two sources declare the same port ([`0017`](../../docs/decisions/0017-p4-port-reservation-ownership.md)) |
 | `check_instance_literals.py` | Every `${VAR}` resolves to a defined `clusters/*/instance-config.yaml` key; no literal IPv4 address appears outside `clusters/` |
 | `check_kustomization_dag.py` | The Flux `Kustomization` dependency graph is acyclic; no `Certificate` names an `issuerRef` that isn't guaranteed to exist by the dependency graph |
 | `check_helm_strict.py` | Every `HelmRelease` renders under `helm template` and passes `helm lint --strict` — see the script's own docstring for what this does and does **not** guarantee, found by actually running it |

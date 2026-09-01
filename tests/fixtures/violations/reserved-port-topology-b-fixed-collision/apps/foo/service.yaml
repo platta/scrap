@@ -1,0 +1,13 @@
+# Part of the same VIOLATION as this directory's reserved-ports.yaml: this
+# app's own declaration collides with PLATFORM_FIXED_PORTS (443/TCP), so the
+# manifest below sits behind a port this app was never entitled to claim.
+apiVersion: v1
+kind: Service
+metadata:
+  name: foo
+  namespace: foo
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 443
+      protocol: TCP
