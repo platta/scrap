@@ -196,7 +196,14 @@ rm -f "$EDIT_SCRIPT"
 ( cd "$LIVEDIR" && git add -A && git -c user.email=t-a-alert-heartbeat@localhost -c user.name="T-A-alert-heartbeat" \
     commit -q -m "T-A-alert-heartbeat: enable alert-delivery and heartbeat against the ephemeral receiver" && \
     git push -q origin main )
-rm -rf "$LIVEDIR"
+# Same disposable post-push scratch-cleanup race bootstrap/install.sh's
+# own `rm -rf "$WORKDIR" || true` and t-a-dyndns.sh's `$LIVEDIR4` site
+# (PLAT-92) are hardened against ("rm: cannot remove '.../.git':
+# Directory not empty", a `git clone`'s own `.git` occasionally still
+# settling by the time `rm -rf` lists it): the git push above already
+# landed the real work, and $LIVEDIR is a `mktemp -d` clone with no
+# further purpose. PLAT-93.
+rm -rf "$LIVEDIR" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
@@ -399,7 +406,9 @@ rm -f "$LIVEDIR2/clusters/example/capabilities/alert-delivery.yaml" \
       "$LIVEDIR2/clusters/example/capabilities/heartbeat-secrets.yaml"
 ( cd "$LIVEDIR2" && git add -A && git -c user.email=t-a-alert-heartbeat@localhost -c user.name="T-A-alert-heartbeat" \
     commit -q -m "T-A-alert-heartbeat: revert -- delete both capabilities' files" && git push -q origin main )
-rm -rf "$LIVEDIR2"
+# Same reasoning as $LIVEDIR above (PLAT-93): the push already landed,
+# $LIVEDIR2 has no further purpose.
+rm -rf "$LIVEDIR2" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null

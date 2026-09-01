@@ -141,7 +141,14 @@ sed -i 's|^\(  ACME_DNS01_NAMESERVER: \).*|\1"192.0.2.53:53"|' "$LIVE_CLUSTER_DI
 ( cd "$LIVEDIR" && git add -A && git -c user.email=t-a-public-tls@localhost -c user.name="T-A-public-tls" \
     commit -q -m "T-A-public-tls: enable public-tls, swap TLS_ISSUER to scrap-acme-staging" && \
     git push -q origin main )
-rm -rf "$LIVEDIR"
+# Same disposable post-push scratch-cleanup race bootstrap/install.sh's
+# own `rm -rf "$WORKDIR" || true` and t-a-dyndns.sh's `$LIVEDIR4` site
+# (PLAT-92) are hardened against ("rm: cannot remove '.../.git':
+# Directory not empty", a `git clone`'s own `.git` occasionally still
+# settling by the time `rm -rf` lists it): the git push above already
+# landed the real work, and $LIVEDIR is a `mktemp -d` clone with no
+# further purpose. PLAT-93.
+rm -rf "$LIVEDIR" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
@@ -272,7 +279,9 @@ git clone -q "$BARE_REPO" "$LIVEDIR2"
 sed -i 's|^\(  TLS_ISSUER: \).*|\1"scrap-ca"|' "$LIVEDIR2/clusters/example/instance-config.yaml"
 ( cd "$LIVEDIR2" && git add -A && git -c user.email=t-a-public-tls@localhost -c user.name="T-A-public-tls" \
     commit -q -m "T-A-public-tls: revert TLS_ISSUER to scrap-ca" && git push -q origin main )
-rm -rf "$LIVEDIR2"
+# Same reasoning as $LIVEDIR above (PLAT-93): the push already landed,
+# $LIVEDIR2 has no further purpose.
+rm -rf "$LIVEDIR2" || true
 
 flux reconcile source git flux-system >/dev/null
 flux reconcile kustomization flux-system --with-source >/dev/null
