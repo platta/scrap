@@ -1,0 +1,7 @@
+# VIOLATION: this app and apps/echo-b/ both declare port 7777/TCP reserved.
+# check_reserved_ports.py must catch two sources claiming the same port.
+reservedPorts:
+  - port: 7777
+    protocol: TCP
+    owner: echo-a
+    note: "fixture: colliding declaration A"

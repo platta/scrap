@@ -16,7 +16,7 @@ consumes nothing but deployment is a complete, valid SCRAP application.
 | Persistent storage | `platform/storage/` | A `PersistentVolumeClaim` | The `StorageClass` implementation |
 | HTTP routing | `platform/ingress/` | An `HTTPRoute` | Which controller implements Gateway API |
 | TLS | `platform/cert-manager/` | **Nothing** | Which issuer is active — private CA or ACME, never referenced |
-| Raw TCP/UDP | `platform/ingress/` | A `LoadBalancer` `Service`, port in the reserved allowlist | ServiceLB internals |
+| Raw TCP/UDP | `platform/ingress/` | A `LoadBalancer` `Service`, port declared in the app's own `reserved-ports.yaml` ([`0017`](../decisions/0017-p4-port-reservation-ownership.md)) | ServiceLB internals |
 | Backup | `platform/backup/` | A label, optionally a consistency method via `components/backup/` | Destination, credentials, schedule, retention |
 | Restore | `platform/backup/` | Nothing | The restore procedure itself |
 | Metrics | `platform/observability/` | A pod label + a port named `metrics` | The scrape config |
