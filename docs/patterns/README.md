@@ -32,9 +32,10 @@ it isn't one.
 ## P4 — Raw TCP/UDP exposure
 
 A dedicated `Service` of type `LoadBalancer`, never `hostNetwork`, never an ad hoc host port. Its
-port must be declared in `platform/ingress/reserved-ports.yaml` and CI checks that on every pull
-request — the direct, structural fix for an ingress controller silently claiming a host's real
-production ports.
+port must be declared reserved in a `reserved-ports.yaml` colocated with the application itself,
+under `apps/<name>/` — not a `platform/` file, so adding a P4 app stays within T2 — and CI checks
+that on every pull request (`docs/decisions/0017-p4-port-reservation-ownership.md`) — the direct,
+structural fix for an ingress controller silently claiming a host's real production ports.
 
 ## P5 — Stateful application with a declared consistency method
 

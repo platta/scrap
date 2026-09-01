@@ -43,6 +43,8 @@ FIXTURE_CASES = [
     ("cert-in-apps", check_no_cert_in_apps),
     ("tls-issuer-in-apps", check_tls_issuer_not_in_apps),
     ("unreserved-port", check_reserved_ports),
+    ("reserved-port-collision", check_reserved_ports),
+    ("reserved-port-topology-b-fixed-collision", check_reserved_ports),
     ("undefined-var", check_instance_literals),
     ("ip-literal", check_instance_literals),
     ("ip-literal-in-url", check_instance_literals),
@@ -110,6 +112,18 @@ report(
 report(
     len(check_app_addition_boundary.check(["platform/ingress/gateway.yaml"])) == 0,
     "a platform/-only change (no apps/ touched) is not this rule's concern",
+)
+
+print()
+print("=== check_reserved_ports.py: the supported per-app declaration path must pass cleanly ===")
+valid_root = REPO_ROOT / "tests" / "fixtures" / "valid" / "p4-app-owned-port"
+violations = check_reserved_ports.run(valid_root)
+if violations:
+    for v in violations:
+        print(f"      unexpected: {v}")
+report(
+    len(violations) == 0,
+    "an app's own reserved-ports.yaml authorizes its own port with no platform/ present",
 )
 
 print()
