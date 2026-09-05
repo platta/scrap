@@ -82,6 +82,25 @@ reaches a real pod, not just by objects reporting they exist. See
 - **The full documentation index, organized by CORE / SUPPORTED / EXTENSION / OUT OF SCOPE** —
   [`docs/README.md`](docs/README.md).
 
+## Reporting problems
+
+[GitHub Issues](https://github.com/platta/scrap/issues) is this project's only support channel
+today — for bugs, install/support questions, and feature requests alike:
+
+- **Something is broken** — a script errors, a documented step doesn't do what it says, a
+  capability fails to reconcile — open a **Bug report**. It asks for your SCRAP version/ref,
+  topology, enabled capabilities, and exact commands/output, which is what makes a first report
+  actionable.
+- **You followed the docs and got stuck** — open an **Installation/support question** with the
+  same information. If the docs turn out to be the problem, that's a real finding too.
+- **Nothing's broken, but something's missing** — open a bug report and say so; it's handled the
+  same way, just labeled differently.
+
+Security-sensitive issues (credential exposure, an auth-bypass class problem) should **not** be
+filed as a public issue — see [`SECURITY.md`](SECURITY.md) for how to report those privately.
+
+Want to fix something yourself instead? See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Repository structure
 
 ```

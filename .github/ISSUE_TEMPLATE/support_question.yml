@@ -1,0 +1,55 @@
+name: Installation / support question
+description: You followed the docs and got stuck, or something is unclear.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If the documentation is what confused you, that's worth reporting on its own — every
+        confusion here doubles as a doc defect, so please say exactly what the docs said (or
+        didn't say) at the point you got stuck.
+
+  - type: input
+    id: version
+    attributes:
+      label: SCRAP version/ref
+      description: Output of `git describe --tags` (or the tag/branch/commit SHA you installed from).
+      placeholder: v0.1.0-rc.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: topology
+    attributes:
+      label: Topology
+      options:
+        - "Topology A (single clone, installed in place)"
+        - "Topology B (separate operator repository)"
+        - "Not sure / haven't installed yet"
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you were trying to do, and what you tried
+      description: The doc/section you were following and the commands you ran.
+      render: sh
+    validations:
+      required: true
+
+  - type: textarea
+    id: docsaid
+    attributes:
+      label: What the documentation said (or didn't say) at the point of confusion
+      description: Quote the relevant sentence, or say which document you expected an answer from and didn't find one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: What happened instead
+      render: text
+    validations:
+      required: false
