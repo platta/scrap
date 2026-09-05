@@ -89,6 +89,39 @@ safe for the namespace-creating Kustomization to come first. Authentik's server/
 a real, reproducible `CreateContainerConfigError: secret "identity-credentials" not found`. See
 `cluster-kustomization.yaml` and `clusters/example/secrets/identity/namespace.yaml`'s own comments.
 
+**Replace every value in `identity-credentials.sops.yaml` before relying on this capability for
+real — re-keying the file to your own age keys (`clusters/example/secrets/README.md`) changes who
+can decrypt it, not what it decrypts to.** The reference file ships seven credential values, all
+still the well-known reference placeholders until you change them yourself, **on every install
+path, including `install.sh`'s** (that path re-keys the file automatically; it never rewrites the
+values inside it):
+
+- `AUTHENTIK_SECRET_KEY` — Authentik's own session/cookie signing key.
+- `AUTHENTIK_BOOTSTRAP_PASSWORD` / `AUTHENTIK_BOOTSTRAP_TOKEN` — the `akadmin` superuser's password
+  and API token (see "Non-interactive bootstrap" below). Anyone who knows the published reference
+  value can log in as your SSO superuser or call the API with it until you change these.
+- `password` and `AUTHENTIK_POSTGRESQL__PASSWORD` — **must stay equal to each other.** Both name the
+  same Bitnami-chart application-user password: `password` is the key the chart's own
+  `postgresql.auth.existingSecret` mechanism reads (see `helmrelease.yaml`); `AUTHENTIK_POSTGRESQL__PASSWORD`
+  is Authentik's own nested-config-via-env-var override that must match it, or Authentik fails to
+  authenticate to its own database. Change both to the same new value together.
+- `postgres-password` — a **third, distinct** value: the Postgres `postgres` superuser's own
+  password (the chart's other default `secretKeys` entry). It does not need to match the pair above,
+  and nothing reads it except the database engine itself.
+- `GRAFANA_OIDC_CLIENT_SECRET` — the OIDC client secret this capability's Blueprint provisions for
+  Grafana unconditionally. If `capabilities/grafana/` is also enabled, this value and
+  `clusters/<name>/secrets/grafana/grafana-oidc-credentials.sops.yaml`'s copy must match — see
+  `capabilities/grafana/README.md`.
+
+Change each with `cd clusters/<name>/secrets/identity && sops identity-credentials.sops.yaml` —
+`sops` re-encrypts on save to whatever recipients `.sops.yaml` currently names, exactly like every
+other secret in this repository (`clusters/example/secrets/README.md`).
+
+**Where to log in, once real credentials are set:** `https://auth.${BASE_DOMAIN}/`, username
+`akadmin`, password `AUTHENTIK_BOOTSTRAP_PASSWORD` above — this is the operator's own login, not
+only validation evidence for this repository. The bootstrap token doubles as an API credential for
+scripted access to the same account.
+
 ## Non-interactive bootstrap
 
 `AUTHENTIK_BOOTSTRAP_EMAIL` / `_PASSWORD` / `_TOKEN` (authentik's own documented mechanism, wired

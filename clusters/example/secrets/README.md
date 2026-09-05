@@ -64,7 +64,18 @@ anywhere can decrypt this instance's secrets. This is the same pattern already e
 scalars.
 
 If you are setting up a real instance by hand instead of via `install.sh` (Topology B, or any
-manual path — see `docs/decisions/0009-repository-topology.md`), do the equivalent yourself:
+manual path — see `docs/decisions/0009-repository-topology.md`), do the equivalent yourself.
+
+**Re-key every `*.sops.yaml` file, not just this one.** `clusters/<name>/secrets/` ships one
+reference secret per credential-bearing capability (identity, grafana, public-tls, alert-delivery,
+heartbeat, dyndns, ups, plus this file, restic) — most of them one directory deeper than this file
+(e.g. `identity/identity-credentials.sops.yaml`), not flat alongside it. Re-keying only this file
+and then deleting the reference key below strands every other file encrypted to a key you just
+removed: the first time you enable any of those capabilities, Flux fails to decrypt its secret with
+`age: no identity matched`, an error that gives no hint the real cause was this step. This is the
+exact bug `bootstrap/install.sh` documents having found and fixed in its own automated re-keying
+(a flat glob that missed subdirectories) — use the same `find`-based approach here so the manual
+path can't repeat it:
 
 ```sh
 age-keygen -o /etc/scrap/age/operational.agekey   # keep private, on this host only
@@ -77,8 +88,9 @@ ESCROW_PUB=$(age-keygen -y /etc/scrap/age/escrow.agekey)
 #   age: <OP_PUB>,<ESCROW_PUB>
 
 cd clusters/<name>/secrets   # see the CWD warning above -- this cd is not optional
-SOPS_AGE_KEY_FILE=PUBLISHED-NOT-SECRET-reference.agekey \
-    sops updatekeys -y restic-credentials.sops.yaml
+find . -name '*.sops.yaml' -print | sed 's#^\./##' | while IFS= read -r f; do
+    SOPS_AGE_KEY_FILE=PUBLISHED-NOT-SECRET-reference.agekey sops updatekeys -y "$f"
+done
 rm PUBLISHED-NOT-SECRET-reference.agekey
 cd -
 ```
@@ -89,3 +101,16 @@ new recipients automatically on save). **Escrow this password separately from
 the age keys** — it is one of the three fatal-if-lost secrets in the whole platform
 (`docs/core/recovery-model.md`); losing it makes every existing backup permanently unrecoverable even
 with valid access to the storage.
+
+**Re-keying is not the same as replacing values.** The loop above re-encrypts every file's
+*existing* placeholder values to your own keys — it does not change what those values are. Every
+other credential-bearing capability ships a real, working placeholder so `install.sh` can bootstrap
+with zero manual steps, the same reason `instance-config.yaml` ships real placeholder values instead
+of empty ones (see `PUBLISHED-NOT-SECRET-reference.agekey` above). You must still replace those
+placeholder values yourself before enabling the capability for real — see each capability's own
+README, "Enabling this capability" section, for exactly which keys and how
+(`cd clusters/<name>/secrets/<capability> && sops <file>.sops.yaml`, the same re-encrypt-on-save
+flow used above). This matters most for **identity**: its reference file carries the SSO superuser's
+bootstrap password and API token, and — unlike a value only you can decrypt once re-keyed — those
+specific values are also publicly known, from this repository's own history, until you actually
+change them. See `capabilities/identity/README.md`.

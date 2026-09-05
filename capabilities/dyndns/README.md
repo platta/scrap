@@ -78,7 +78,10 @@ Then, in your own `instance-config.yaml`:
 
 And replace the placeholder `TSIG_SECRET` value in `dyndns-credentials.sops.yaml` with your real key's
 base64 secret (`cd clusters/<name>/secrets/dyndns && sops dyndns-credentials.sops.yaml` — see
-`clusters/example/secrets/README.md` for the general re-encrypt-on-save pattern).
+`clusters/example/secrets/README.md` for the general re-encrypt-on-save pattern). Don't have a TSIG
+key yet? `capabilities/public-tls/README.md`'s "Obtaining a TSIG key" section covers generating one
+(`tsig-keygen`) and scoping it to your zone — the mechanism is identical here; just use a
+**separate** key from `public-tls`'s, per that same section.
 
 ## Configuration errors fail visibly — verified, not assumed
 

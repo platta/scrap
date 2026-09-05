@@ -20,6 +20,12 @@ Local admin authentication works unconditionally — the chart's own default adm
 this repository manages. Anonymous access is explicitly disabled (`auth.anonymous.enabled: false`),
 stated plainly in `helmrelease.yaml` rather than left to trust the chart's own default.
 
+**Where to log in:** `https://grafana.${BASE_DOMAIN}/`. The admin password is chart-generated, not
+something this repository sets — retrieve it with
+`kubectl get secret grafana -n monitoring -o jsonpath='{.data.admin-password}' | base64 -d`. If
+`capabilities/identity/` is also enabled, OIDC login through it (see below) is the operator-facing
+alternative; the local admin account keeps working either way.
+
 Also ships a **Loki** datasource, provisioned the same unconditional way — see "The dependency
 direction that matters" below. It answers real queries once `capabilities/logs/` is also enabled;
 until then it's simply inert, the same as the OIDC Provider identity provisions whether or not this
