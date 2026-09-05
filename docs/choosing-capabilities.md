@@ -129,6 +129,19 @@ upstream content. Each capability's own README states exactly which files to cop
 rename them to — see `capabilities/identity/README.md`'s "Enabling this capability" section for the
 concrete, fully worked example.
 
+**Renaming the copied secrets file is not enough — you must also edit its `spec.path`.** All seven
+of these second files ship `spec.path: ./clusters/example/secrets/<capability>`, hardcoded to the
+reference instance, with a comment explaining *why* it says `example` ("rename to match your own
+instance"). That comment is about the whole pattern this repository uses, not an instruction to
+edit only the filename: if you copy `clusters/example/` to `clusters/<your-instance>/` (the normal
+first step — see the checklist below) and only rename the copied Kustomization file, `spec.path`
+still points at `clusters/example/secrets/<capability>` — the *reference* instance's secrets, not
+yours. The result is either a decryption failure (if `clusters/example/` still exists) or a
+path-not-found (if you deleted it), pointed at a directory you never touched and gave you no reason
+to suspect. After copying and renaming one of these files, open it and change `spec.path` to
+`./clusters/<your-instance>/secrets/<capability>` — matching the instance directory name you
+actually used.
+
 Off-site backup is not a variation of this mechanism — it has no capability-owned file to copy at
 all, one Kustomization or otherwise; see above.
 
@@ -151,7 +164,12 @@ If you want anything beyond the bare minimum, do this **before** running `bootst
    above for what's available, and that capability's own README for the exact filenames. Skip this
    step entirely for **off-site backup** (no capability manifest exists — go straight to step 2's
    `instance-config.yaml` for `BACKUP_DESTINATION`), **public ingress** (no file exists to copy),
-   and **UPS's host half** (a script, not a file copy — see below).
+   and **UPS's host half** (a script, not a file copy — see below). **If the capability has a
+   second, credential-owning file** (identity, public TLS, alert delivery, heartbeat, dyndns, UPS's
+   in-cluster half — see the table's Enabling column above), copying and renaming it is not the
+   whole step: you must also edit its `spec.path` to point at your own instance directory, not
+   `clusters/example/` — see the highlighted note in the previous section for exactly what to
+   change.
 4. **Create any required secret/config files** the enabled capabilities need, under
    `clusters/<your-instance-name>/secrets/` — for example, adding the S3 credential fields to the
    already-existing `restic-credentials.sops.yaml` for off-site backup, or public TLS's DNS-01

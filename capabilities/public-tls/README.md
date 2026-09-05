@@ -72,14 +72,51 @@ never under `capabilities/`. Copy both into `clusters/<name>/capabilities/`:
 
 Then, in your own `instance-config.yaml`:
 
+- `BASE_DOMAIN`: a real domain you control, with a public DNS zone. Leaving this at the reference
+  default (`example.internal`) guarantees an ACME `Order` failure at identifier validation — Let's
+  Encrypt rejects the request before ever reaching your DNS-01 solver — for the unglamorous reason
+  that `.internal` isn't a publicly resolvable TLD (see "Acceptance evidence" below for exactly
+  where this surfaces). This is the one value every other capability leaves at its safe placeholder;
+  public TLS is the exception, since the whole point is a certificate the public CA system will
+  actually issue for this name.
 - `TLS_ISSUER`: `scrap-acme-staging`, then `scrap-acme` once staging issuance is confirmed working.
 - `ACME_EMAIL`: your real address — Let's Encrypt uses this for expiry/problem notifications.
 - `ACME_DNS01_NAMESERVER`: your authoritative nameserver's address, `host:53`.
-- `ACME_DNS01_TSIG_KEY_NAME`: the TSIG key name configured on that nameserver.
+- `ACME_DNS01_TSIG_KEY_NAME`: the TSIG key name configured on that nameserver (see "Obtaining a
+  TSIG key" below if you don't have one yet).
 
 And replace the placeholder `TSIG_SECRET` value in `public-tls-credentials.sops.yaml` with your
 real key's base64 secret (`cd clusters/<name>/secrets/public-tls && sops public-tls-credentials.sops.yaml`
 — see `clusters/example/secrets/README.md` for the general pattern).
+
+### Obtaining a TSIG key
+
+This is the least-approachable prerequisite in the whole capability envelope for a self-hoster, and
+it gates two capabilities (this one and `capabilities/dyndns/`, which links back here) — worth
+spelling out even though none of it is SCRAP-specific.
+
+A TSIG key authorizes RFC2136 DNS `UPDATE`s against one zone on your authoritative nameserver;
+BIND's own `tsig-keygen` (packaged as part of `bind9utils`/`bind9-dnsutils` on Debian/Ubuntu, and
+widely available for other nameservers that speak RFC2136) generates one:
+
+```sh
+tsig-keygen scrap-public-tls
+```
+
+This prints a `key "scrap-public-tls" { algorithm hmac-sha256; secret "<base64 blob>"; };` stanza.
+Two things to take from it:
+
+- **The `secret` value — the base64 blob, nothing else — is what goes in `TSIG_SECRET`** above; the
+  surrounding `key { ... }` syntax is nameserver configuration, not a SOPS value.
+- **The key name (`scrap-public-tls` in this example) is what `ACME_DNS01_TSIG_KEY_NAME` names** —
+  pick whatever name you configured on the nameserver, this is just a label.
+
+You then add the generated `key { ... }` stanza to your nameserver's own configuration and scope it
+to the specific zone this capability needs to update (BIND: an `update-policy` grant naming the key
+and the zone; other RFC2136-capable nameservers use their own equivalent authorization mechanism) —
+narrower than "this key can update any zone on this server." Use a **separate** key from
+`capabilities/dyndns/`'s, even against the same nameserver, for the same narrower-blast-radius
+reason that capability's own README gives.
 
 ## Configuration errors fail visibly — verified, not assumed
 

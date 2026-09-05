@@ -56,6 +56,24 @@ for a capability-owned secret to attach to. This keeps `platform/` depending on 
 (`capabilities/README.md`'s one rule: core may never depend on an optional capability) while still
 making the destination and credential genuinely optional and instance-scoped.
 
+## Confirming your first off-site backup landed
+
+Unlike every other credential-bearing capability, there is no `kubectl get jobs`/`Ready` condition
+to check here — `platform/backup/`'s CronJobs run on their own schedule and this capability only
+changes where they write. To confirm a snapshot has actually reached your destination, query the
+repository directly with the same credentials `restic-credentials.sops.yaml` holds:
+
+```sh
+RESTIC_PASSWORD=<value> AWS_ACCESS_KEY_ID=<value> AWS_SECRET_ACCESS_KEY=<value> \
+    restic -r <BACKUP_DESTINATION> snapshots --host <INSTANCE_NAME>
+```
+
+Run from any host with the `restic` binary and network access to the destination (values from
+`clusters/<name>/secrets/restic-credentials.sops.yaml` and `instance-config.yaml`). An empty list
+before the first scheduled `backup-cronjob.yaml` run is expected, not a failure — re-check after one
+has run, or trigger one manually
+(`kubectl create job -n scrap-backup --from=cronjob/scrap-backup manual-check`).
+
 ## Credential isolation
 
 Read `platform/backup/README.md`'s credential-isolation section before standing up a second
