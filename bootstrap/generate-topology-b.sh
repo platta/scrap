@@ -52,12 +52,14 @@
 #                         operator must create themselves (an SSH keypair
 #                         Flux can present to that host), documented in the
 #                         generated repository's own README.
-#   OP_AGE_PUB             If BOTH this and ESCROW_AGE_PUB are set, the
-#                         reference secret this generator ships
-#                         (clusters/<name>/secrets/restic-credentials.sops.yaml)
-#                         is re-encrypted to these two age public keys
-#                         instead of the published, non-secret reference
-#                         keypair -- the same one-time re-encryption
+#   OP_AGE_PUB             If BOTH this and ESCROW_AGE_PUB are set, EVERY
+#                         *.sops.yaml this generator ships under
+#                         clusters/<name>/secrets/ -- the restic credential
+#                         and one per credential-bearing capability, in their
+#                         own subdirectories -- is re-encrypted to these two
+#                         age public keys instead of the published,
+#                         non-secret reference keypair, which is then
+#                         removed. The same one-time re-encryption
 #                         clusters/example/secrets/README.md documents for a
 #                         real instance, done here instead of by hand.
 #   ESCROW_AGE_PUB         See OP_AGE_PUB above. Leave both unset to get the
@@ -266,15 +268,49 @@ targets \`./capabilities/<name>\`, which (like \`platform/\`) exists only in the
 this generator already applied to every platform-tier Kustomization -- see
 \`docs/decisions/0009-repository-topology.md\`. A capability's own credentials Kustomization
 (when it has one) stays \`sourceRef: flux-system\` unchanged -- it targets
-\`clusters/$INSTANCE_NAME/secrets/\`, part of this repository, not the pinned upstream.
+\`clusters/$INSTANCE_NAME/secrets/\`, part of this repository, not the pinned upstream. That
+directory really does ship here: \`clusters/$INSTANCE_NAME/secrets/\` carries a subdirectory for
+every credential-bearing capability, already re-keyed to this instance.
+
+**One edit that copied file does need, though:** its \`spec.path\` is hardcoded to
+\`./clusters/example/secrets/<name>\` -- the upstream repository's own reference instance -- and
+must be changed to \`./clusters/$INSTANCE_NAME/secrets/<name>\`. Renaming the copied file does
+not change \`spec.path\`, and left as shipped it points Flux at a directory this repository does
+not contain. See \`clusters/$INSTANCE_NAME/secrets/README.md\`.
 EOF
 
 # ---------------------------------------------------------------------------
-log "secrets/ -- the reference restic credential, re-keyed if OP_AGE_PUB/ESCROW_AGE_PUB were given"
-cp "$REF_CLUSTER_DIR/secrets/kustomization.yaml" "$CLUSTER_DIR/secrets/kustomization.yaml"
-cp "$REF_CLUSTER_DIR/secrets/restic-credentials.sops.yaml" "$CLUSTER_DIR/secrets/restic-credentials.sops.yaml"
-cp "$REF_CLUSTER_DIR/secrets/PUBLISHED-NOT-SECRET-reference.agekey" "$CLUSTER_DIR/secrets/PUBLISHED-NOT-SECRET-reference.agekey"
+log "secrets/ -- the WHOLE reference secrets tree, re-keyed if OP_AGE_PUB/ESCROW_AGE_PUB were given"
+# REAL DEFECT, found in the PLAT-167 external-adoption review (E5): this
+# block used to copy exactly three files -- secrets/kustomization.yaml,
+# restic-credentials.sops.yaml, and the reference key -- while the
+# capabilities/README.md this same script generates told the operator that a
+# capability's credentials Kustomization "targets clusters/<name>/secrets/,
+# part of this repository". The per-capability secret subdirectories that
+# claim names (identity/, grafana/, public-tls/, alert-delivery/,
+# heartbeat/, dyndns/, ups/) were never created, so a Topology B operator
+# enabling any credential-bearing capability got a Flux path-not-found
+# against a directory they had no documented way to reconstruct -- the
+# templates live in the upstream repository their whole topology exists to
+# avoid checking out.
+#
+# Copying the whole tree, rather than an enumerated file list, is the
+# structural half of the fix: an enumeration is exactly what drifted here,
+# and would drift again the next time a capability adds a secret directory.
+# README.md is the one deliberate exclusion -- it documents clusters/example/
+# specifically, and this script writes an instance-accurate replacement below.
+cp -R "$REF_CLUSTER_DIR/secrets/." "$CLUSTER_DIR/secrets/"
+rm -f "$CLUSTER_DIR/secrets/README.md"
 cp "$REF_CLUSTER_DIR/.sops.yaml" "$CLUSTER_DIR/.sops.yaml"
+# The copied .sops.yaml's own comments carry the sops CWD warning and point
+# at clusters/example/ paths that do not exist in this repository at all.
+# Retarget them so the warning is actionable where it actually lands.
+sed -i "s|clusters/example/|clusters/$INSTANCE_NAME/|g" "$CLUSTER_DIR/.sops.yaml"
+
+# The per-capability secret directories actually produced above, discovered
+# rather than hardcoded, so the generated documentation below can never
+# claim a directory this run didn't create.
+CAP_SECRET_DIRS=$(find "$CLUSTER_DIR/secrets" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
 
 REKEYED=0
 if [ -n "$OP_AGE_PUB" ] && [ -n "$ESCROW_AGE_PUB" ]; then
@@ -284,14 +320,162 @@ if [ -n "$OP_AGE_PUB" ] && [ -n "$ESCROW_AGE_PUB" ]; then
     # .sops.yaml's recipients, re-encrypt using the published reference
     # private key (never secret -- see that README), then remove it.
     sed -i "s|^\( *age: \).*|\1${OP_AGE_PUB},${ESCROW_AGE_PUB}|" "$CLUSTER_DIR/.sops.yaml"
-    ( cd "$CLUSTER_DIR/secrets" && \
-        SOPS_AGE_KEY_FILE="./PUBLISHED-NOT-SECRET-reference.agekey" \
-        sops updatekeys -y restic-credentials.sops.yaml >/dev/null )
+    # `find`, not one hardcoded filename: bootstrap/install.sh:280-298
+    # records finding this exact class of bug the hard way on its own side --
+    # a flat `*.sops.yaml` glob never reached
+    # secrets/identity/identity-credentials.sops.yaml one directory deeper,
+    # whose only usable key was then deleted two lines later, producing
+    # "age: identity did not match any of the recipients" the first time Flux
+    # tried to decrypt it. This generator shipped the narrower version of the
+    # same defect (a single named file) and, now that it copies every shipped
+    # ciphertext rather than one, would strand all but the restic credential.
+    # The `cd` is not optional either: sops resolves .sops.yaml by walking up
+    # from the CURRENT WORKING DIRECTORY, so this must run from inside
+    # secrets/ against bare relative paths -- exactly as a human must.
+    #
+    # Both guards below exist because the failure they prevent is silent and
+    # irreversible: the very next statement deletes the only key that can
+    # still decrypt anything this loop missed. `set -e` does NOT cover either
+    # case on its own -- a `while` loop's status is its last iteration's, so a
+    # sops failure partway through is swallowed, and an empty loop succeeds
+    # vacuously. Fail loudly instead of shipping a repository whose secrets
+    # nobody can ever decrypt again.
+    SOPS_FILE_COUNT=$(find "$CLUSTER_DIR/secrets" -name '*.sops.yaml' | wc -l | tr -d ' ')
+    if [ "$SOPS_FILE_COUNT" -eq 0 ]; then
+        echo "No *.sops.yaml found under $CLUSTER_DIR/secrets -- refusing to remove the reference key." >&2
+        exit 1
+    fi
+    if ! ( cd "$CLUSTER_DIR/secrets" && find . -name '*.sops.yaml' -print | sed 's#^\./##' | \
+        while IFS= read -r f; do
+            SOPS_AGE_KEY_FILE="./PUBLISHED-NOT-SECRET-reference.agekey" \
+                sops updatekeys -y "$f" >/dev/null || exit 1
+        done ); then
+        echo "Failed to re-key every *.sops.yaml under $CLUSTER_DIR/secrets -- refusing to remove the" >&2
+        echo "reference key, which is still the only thing that can decrypt them. Nothing was deleted." >&2
+        exit 1
+    fi
+    log "re-keyed $SOPS_FILE_COUNT encrypted secret(s) to this instance's own age keys"
     rm -f "$CLUSTER_DIR/secrets/PUBLISHED-NOT-SECRET-reference.agekey"
 elif [ -n "$OP_AGE_PUB" ] || [ -n "$ESCROW_AGE_PUB" ]; then
     echo "OP_AGE_PUB and ESCROW_AGE_PUB must both be set to re-key, or neither -- got only one." >&2
     exit 1
 fi
+
+# ---------------------------------------------------------------------------
+log "secrets/README.md -- instance-accurate: what was actually produced, and its re-key state"
+# Written from what the copy above actually produced (CAP_SECRET_DIRS is
+# discovered, not hardcoded) rather than restating upstream's own
+# clusters/example/secrets/README.md, which describes a directory this
+# repository does not contain and whose paths would all be wrong here.
+#
+# Deliberately built from QUOTED heredocs plus one @INSTANCE@ substitution,
+# unlike the unquoted heredocs elsewhere in this script: the re-keying
+# procedure below is a shell snippet the operator copies verbatim, thick with
+# `$(...)`, "$f" and backticks that must survive into the generated file
+# untouched. Escaping each one by hand is precisely how generated
+# documentation silently ends up wrong.
+cat > "$CLUSTER_DIR/secrets/README.md" <<'EOF'
+# clusters/@INSTANCE@/secrets/
+
+SOPS-encrypted secrets for this instance, decrypted by Flux at reconcile time using the
+`sops-age` Secret that `bootstrap/install.sh` seeds into `flux-system`. Encryption rules live in
+`clusters/@INSTANCE@/.sops.yaml`.
+
+**Read that file's own comments before running `sops` by hand.** In short: `sops` discovers
+`.sops.yaml` by walking up from your *current working directory*, not from the file you point it
+at, so always `cd` into this directory (or a descendant) first and pass a bare filename, never a
+path. Run it from somewhere else and it can silently encrypt to the wrong recipients with no
+error at all.
+
+Generated by `bootstrap/generate-topology-b.sh`; this file describes what that generator actually
+produced here. The upstream SCRAP repository's own `clusters/example/secrets/README.md` carries
+the background this summarises -- what the published reference keypair is and why it exists, the
+restic credential's contents, and the escrow rules for `RESTIC_PASSWORD`.
+
+## What is here
+
+- `restic-credentials.sops.yaml` -- read unconditionally by `platform/backup/`; every install has
+  it, enabled or not. It is the only entry in this directory's own `kustomization.yaml`.
+- One subdirectory per credential-bearing capability, each carrying its own `kustomization.yaml`
+  and ciphertext, and applied **only** once you enable that capability:
+EOF
+for d in $CAP_SECRET_DIRS; do
+    printf '  - `%s/`' "$d"
+    for f in "$CLUSTER_DIR/secrets/$d"/*.sops.yaml; do
+        # `if`, not `[ -e "$f" ] && printf ...`: under `set -e` a failing
+        # AND-list is itself a failed command, so the short-circuit form
+        # aborts the whole generator the first time a secret directory
+        # contains no ciphertext and the glob stays unexpanded.
+        if [ -e "$f" ]; then
+            printf ' -- `%s`' "$(basename "$f")"
+        fi
+    done
+    printf '\n'
+done >> "$CLUSTER_DIR/secrets/README.md"
+cat >> "$CLUSTER_DIR/secrets/README.md" <<'EOF'
+
+What applies one of those directories is the matching capability's own
+`cluster-secrets-kustomization.yaml`, which lives in the pinned upstream under
+`capabilities/<name>/`. Copy it into `clusters/@INSTANCE@/capabilities/` to enable that
+capability, and **edit its `spec.path`**: it ships hardcoded as
+`./clusters/example/secrets/<name>` and has to point at `./clusters/@INSTANCE@/secrets/<name>`,
+this instance's own path. Renaming the copied *file* is not enough and does not change
+`spec.path`.
+
+## Re-keying state
+
+EOF
+if [ "$REKEYED" -eq 1 ]; then
+    cat >> "$CLUSTER_DIR/secrets/README.md" <<'EOF'
+**Re-keyed.** Every `*.sops.yaml` above -- the restic credential and each per-capability file --
+was re-encrypted at generation time to the operational and escrow age public keys supplied via
+`OP_AGE_PUB`/`ESCROW_AGE_PUB`, and the published reference key was then removed from this
+repository. Nothing published anywhere can decrypt these files.
+
+The *values* inside them are still upstream's placeholders. Replace them before this instance
+holds anything real: `cd` into this directory and run `sops <file>` -- it re-encrypts to your own
+recipients on save. See each capability's own README in the upstream repository for which keys it
+reads and what they must contain.
+EOF
+else
+    cat >> "$CLUSTER_DIR/secrets/README.md" <<'EOF'
+**NOT re-keyed -- demo only.** Every `*.sops.yaml` above is still encrypted to the published,
+non-secret reference keypair whose private half is sitting right here in
+`PUBLISHED-NOT-SECRET-reference.agekey`. Anyone who can read this repository can decrypt all of
+them. Fine for a local demo; **not fine for anything real.**
+
+Before this repository holds any real secret, re-key **every** file -- not just the restic one:
+
+```sh
+age-keygen -o /etc/scrap/age/operational.agekey   # keep private, on this host only
+age-keygen -o /etc/scrap/age/escrow.agekey        # keep private, off this host
+
+OP_PUB=$(age-keygen -y /etc/scrap/age/operational.agekey)
+ESCROW_PUB=$(age-keygen -y /etc/scrap/age/escrow.agekey)
+
+# Edit clusters/@INSTANCE@/.sops.yaml: replace the reference "age:" value with
+#   age: <OP_PUB>,<ESCROW_PUB>
+
+cd clusters/@INSTANCE@/secrets   # not optional -- see the CWD warning above
+find . -name '*.sops.yaml' -print | sed 's#^\./##' | while IFS= read -r f; do
+    SOPS_AGE_KEY_FILE=PUBLISHED-NOT-SECRET-reference.agekey sops updatekeys -y "$f"
+done
+rm PUBLISHED-NOT-SECRET-reference.agekey
+cd -
+```
+
+`find`, not a `*.sops.yaml` glob: a flat glob matches only the restic credential directly in this
+directory and silently misses every per-capability file above, one level deeper. Re-key some of
+them, delete the reference key, and this instance is permanently locked out of the rest -- Flux
+fails with `age: no identity matched` the first time it tries to decrypt one, and nothing
+connects that error back to this step.
+
+Then replace the placeholder *values* too (`sops <file>`, from this directory -- it re-encrypts to
+your new recipients on save). `RESTIC_PASSWORD` in particular is one of the platform's
+fatal-if-lost secrets: escrow it separately from the age keys.
+EOF
+fi
+sed -i "s|@INSTANCE@|$INSTANCE_NAME|g" "$CLUSTER_DIR/secrets/README.md"
 
 # ---------------------------------------------------------------------------
 log "clusters/$INSTANCE_NAME/kustomization.yaml -- explicit resource list (never auto-flatten secrets/)"
@@ -319,9 +503,9 @@ EOF
 
 # ---------------------------------------------------------------------------
 log "README.md -- what this repository is and how to bootstrap it"
-REKEY_NOTE="**Secrets are re-keyed:** \`clusters/$INSTANCE_NAME/secrets/restic-credentials.sops.yaml\` was re-encrypted to the operational/escrow age keys supplied at generation time. The published reference key was removed."
+REKEY_NOTE="**Secrets are re-keyed:** every \`*.sops.yaml\` under \`clusters/$INSTANCE_NAME/secrets/\` -- the restic credential and one per credential-bearing capability -- was re-encrypted to the operational/escrow age keys supplied at generation time. The published reference key was removed. The values inside them are still placeholders: see \`clusters/$INSTANCE_NAME/secrets/README.md\`."
 if [ "$REKEYED" -eq 0 ]; then
-    REKEY_NOTE="**Secrets are NOT yet re-keyed.** \`clusters/$INSTANCE_NAME/secrets/restic-credentials.sops.yaml\` is still encrypted to the published, non-secret reference keypair (\`clusters/$INSTANCE_NAME/secrets/PUBLISHED-NOT-SECRET-reference.agekey\`) -- fine for a local demo, **not fine for anything real**. Before this repository holds any real secret, follow the same manual re-keying procedure the upstream SCRAP repository documents at \`clusters/example/secrets/README.md\` (\"If you are setting up a real instance by hand\")."
+    REKEY_NOTE="**Secrets are NOT yet re-keyed.** Every \`*.sops.yaml\` under \`clusters/$INSTANCE_NAME/secrets/\` is still encrypted to the published, non-secret reference keypair (\`clusters/$INSTANCE_NAME/secrets/PUBLISHED-NOT-SECRET-reference.agekey\`) -- fine for a local demo, **not fine for anything real**. Before this repository holds any real secret, re-key **all** of them -- not just the restic one -- following the procedure in \`clusters/$INSTANCE_NAME/secrets/README.md\`."
 fi
 if [ -n "$UPSTREAM_TAG" ]; then
     PIN_LINE="- Pinned tag: \`$UPSTREAM_TAG\`"

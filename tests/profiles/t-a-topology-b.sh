@@ -6,6 +6,16 @@
 # from its own repository -- the actual structural claim Topology B makes,
 # not just that some bootstrap succeeds.
 #
+# Phase 3 additionally asserts the generated repository's SECRETS contract
+# (every per-capability secret directory present; every shipped ciphertext
+# re-keyed to this instance and no longer readable with the published
+# reference key; generated documentation matching what was actually
+# produced). Those checks live here, not in a live phase, because no phase
+# below enables a credential-bearing capability -- so a live-only test would
+# never touch those files at all, which is exactly how the two BLOCKERs they
+# now cover (PLAT-167 review E5 and E4's generator twin) survived a fully
+# green profile.
+#
 # Same expectations as tests/profiles/t-a-minimal.sh: a normal user,
 # passwordless sudo, a genuinely fresh host, never run this whole script
 # under `sudo` itself. A SEPARATE from-zero bootstrap from every other
@@ -184,6 +194,107 @@ if [ "$STRUCT_OK" -eq 1 ]; then
     ok T-A-topology-b/sourceref-swapped "every platform-tier Kustomization points at scrap-platform; the instance-specific platform-secrets.yaml correctly stays on flux-system"
 fi
 
+# 2c-2f. The generated repository's SECRETS contract -- cheap, decisive, and
+# deliberately checked here rather than only via the live bootstrap below,
+# because the live phases enable no credential-bearing capability and so
+# would never touch these files at all. Closes two reviewed BLOCKERs from the
+# PLAT-167 external-adoption review (docs/reviews/):
+#
+#   E5 -- the generator copied exactly three files out of secrets/
+#   (kustomization.yaml, restic-credentials.sops.yaml, the reference key)
+#   while the capabilities/README.md it generates told the operator that a
+#   capability's credentials Kustomization "targets clusters/<name>/secrets/,
+#   part of this repository". The per-capability subdirectories that claim
+#   names were never created: enabling any credential-bearing capability gave
+#   a Flux path-not-found against a directory the operator had no documented
+#   way to reconstruct.
+#
+#   E4's generator twin -- the re-key step named ONE file. Harmless while
+#   only that one file shipped; fixing E5 makes it actively dangerous, since
+#   seven more ciphertexts now ride along and the reference key that is their
+#   only remaining decryptor is deleted moments later.
+GEN_SECRETS="$GEN_DIR/clusters/$INSTANCE_NAME/secrets"
+REF_SECRETS="$REPO_ROOT/clusters/example/secrets"
+REF_KEY="$REF_SECRETS/PUBLISHED-NOT-SECRET-reference.agekey"
+
+# 2c. Every per-capability secret directory the reference instance ships
+# exists in the generated repository. Compared against the reference set
+# rather than a hardcoded list, so a capability added upstream later is
+# covered here automatically instead of silently escaping this check.
+REF_SECRET_DIRS=$(find "$REF_SECRETS" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+GEN_SECRET_DIRS=$(find "$GEN_SECRETS" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort)
+if [ -z "$REF_SECRET_DIRS" ]; then
+    fail T-A-topology-b/secret-dirs-copied "clusters/example/secrets/ ships no per-capability subdirectories at all, so this check would pass vacuously -- the fixture is wrong, not the generator"
+elif [ "$REF_SECRET_DIRS" = "$GEN_SECRET_DIRS" ]; then
+    ok T-A-topology-b/secret-dirs-copied "every per-capability secret directory the reference instance ships was copied into the generated repository ($(echo "$REF_SECRET_DIRS" | tr '\n' ' '))"
+else
+    fail T-A-topology-b/secret-dirs-copied "generated secrets/ subdirectories do not match the reference set -- expected [$(echo "$REF_SECRET_DIRS" | tr '\n' ' ')], got [$(echo "$GEN_SECRET_DIRS" | tr '\n' ' ')]"
+fi
+
+# 2d. Re-keying, asserted in BOTH directions -- only the pair is decisive. A
+# file that decrypts with this instance's own operational key proves the
+# re-key ran; a file that no longer decrypts with the PUBLISHED reference key
+# proves it ran on THIS file rather than on some other one. The old
+# single-file bug passes the first check for restic-credentials and fails the
+# second for all seven capability files, which is exactly the signal wanted.
+REKEY_OK=1
+CHECKED=0
+for f in $( cd "$GEN_SECRETS" && find . -name '*.sops.yaml' -print | sed 's#^\./##' | sort ); do
+    CHECKED=$((CHECKED + 1))
+    if ! ( cd "$GEN_SECRETS" && SOPS_AGE_KEY_FILE="$AGE_KEY_DIR/operational.agekey" \
+            sops -d "$f" >/dev/null 2>&1 ); then
+        fail T-A-topology-b/secrets-rekeyed "$f does not decrypt with this instance's own operational age key -- it was never re-keyed, and the only key that could still read it has been deleted"
+        REKEY_OK=0
+    fi
+    if ( cd "$GEN_SECRETS" && SOPS_AGE_KEY_FILE="$REF_KEY" sops -d "$f" >/dev/null 2>&1 ); then
+        fail T-A-topology-b/secrets-rekeyed "$f STILL decrypts with the PUBLISHED reference key -- anyone who can read the upstream repository can read this instance's secrets"
+        REKEY_OK=0
+    fi
+done
+if [ "$CHECKED" -eq 0 ]; then
+    fail T-A-topology-b/secrets-rekeyed "the generated repository contains no *.sops.yaml at all, so this check would pass vacuously"
+elif [ "$REKEY_OK" -eq 1 ]; then
+    ok T-A-topology-b/secrets-rekeyed "all $CHECKED shipped *.sops.yaml decrypt with this instance's own operational key, and none of them still decrypts with the published reference key"
+fi
+
+# 2e. The reference private key must be gone once re-keying happened --
+# leaving it behind republishes every secret it can still open.
+if [ -e "$GEN_SECRETS/PUBLISHED-NOT-SECRET-reference.agekey" ]; then
+    fail T-A-topology-b/reference-key-removed "the published reference key is still present in the generated repository after re-keying"
+else
+    ok T-A-topology-b/reference-key-removed "the published reference key was removed from the generated repository after re-keying"
+fi
+
+# 2f. Generated documentation agrees with generated filesystem state: the
+# secrets README is the instance-specific one this generator writes (not
+# upstream's own clusters/example/ copy, whose every path would be wrong
+# here), and it names each directory actually produced.
+BT='`'
+DOC_OK=1
+GEN_SECRETS_README="$GEN_SECRETS/README.md"
+if [ ! -f "$GEN_SECRETS_README" ]; then
+    fail T-A-topology-b/secrets-doc-matches "the generated repository has no clusters/$INSTANCE_NAME/secrets/README.md describing what it shipped"
+    DOC_OK=0
+else
+    if ! grep -q "clusters/$INSTANCE_NAME/secrets/" "$GEN_SECRETS_README"; then
+        fail T-A-topology-b/secrets-doc-matches "the generated secrets/README.md never mentions clusters/$INSTANCE_NAME/secrets/ -- it is not instance-specific"
+        DOC_OK=0
+    fi
+    for d in $GEN_SECRET_DIRS; do
+        if ! grep -q "${BT}${d}/${BT}" "$GEN_SECRETS_README"; then
+            fail T-A-topology-b/secrets-doc-matches "secrets/$d/ was generated but the generated secrets/README.md never lists it"
+            DOC_OK=0
+        fi
+    done
+fi
+if ! grep -q "clusters/$INSTANCE_NAME/secrets/README.md" "$GEN_DIR/README.md"; then
+    fail T-A-topology-b/secrets-doc-matches "the generated top-level README never points at clusters/$INSTANCE_NAME/secrets/README.md, where the re-keying state is actually documented"
+    DOC_OK=0
+fi
+if [ "$DOC_OK" -eq 1 ]; then
+    ok T-A-topology-b/secrets-doc-matches "the generated secrets/README.md is instance-specific, lists every secret directory actually produced, and is referenced from the top-level README"
+fi
+
 # ---------------------------------------------------------------------------
 log "T-A-topology-b: Phase 4/7: commit 2 on main -- the generated repo becomes flux-system's tip"
 WORKDIR2=$(mktemp -d)
@@ -338,5 +449,6 @@ if [ "$status" -ne 0 ]; then
     exit 1
 fi
 echo "T-A-topology-b PASSED -- a generated Topology B operator repository genuinely bootstraps and"
-echo "reconciles from a separately pinned scrap-platform source, the pin itself fails visibly when"
-echo "wrong, and recovers cleanly when corrected."
+echo "reconciles from a separately pinned scrap-platform source, ships every per-capability secret"
+echo "directory re-keyed to its own instance keys, the pin itself fails visibly when wrong, and"
+echo "recovers cleanly when corrected."
