@@ -128,7 +128,7 @@ pod through TLS termination and routing — the whole core platform, working end
   in use, insufficient disk, wrong clock) and re-run. Nothing was installed yet.
 - **Install failed partway through:** re-running `bootstrap/install.sh` is expected to be safe; it's
   built to resume rather than corrupt a partial state. If it isn't behaving that way, that's a real
-  bug worth reporting.
+  bug worth [reporting](../README.md#reporting-problems).
 - **Everything reports `Ready` but the `curl` check fails:** check `kubectl get pods -A` for
   anything not `Running` — there is no SCRAP-specific inspection tool; ordinary `kubectl`, `flux get
   kustomizations`, and each component's own logs are the whole story, on purpose (see
@@ -137,6 +137,8 @@ pod through TLS termination and routing — the whole core platform, working end
   a successful install — see [`platform/observability/README.md`](../platform/observability/README.md)
   or [Choosing your capabilities](choosing-capabilities.md) for the alert-delivery capability's
   current status.
+- **None of the above fits:** see the README's [Reporting problems](../README.md#reporting-problems)
+  section for where to file it.
 
 ## Where to go next
 

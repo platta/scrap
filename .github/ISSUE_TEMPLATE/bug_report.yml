@@ -1,0 +1,111 @@
+name: Bug report
+description: Something is broken — a script errors, a documented step doesn't do what it says, a capability fails to reconcile.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The more of the fields below you can fill in,
+        the faster this is actionable — none are a strict requirement, but "unknown" is a valid
+        answer for anything you genuinely can't determine.
+
+        Nothing here is broken but something's missing instead? Use this same template and say so
+        in the description — mark it as an enhancement rather than a defect.
+
+  - type: input
+    id: version
+    attributes:
+      label: SCRAP version/ref
+      description: Output of `git describe --tags` (or the tag/branch/commit SHA you installed from).
+      placeholder: v0.1.0-rc.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: topology
+    attributes:
+      label: Topology
+      description: See docs/choosing-capabilities.md if you're not sure which you're running.
+      options:
+        - "Topology A (single clone, installed in place)"
+        - "Topology B (separate operator repository)"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: input
+    id: capabilities
+    attributes:
+      label: Enabled capabilities
+      description: Everything present under `clusters/<your-instance>/capabilities/` (e.g. grafana, identity, offsite-backup).
+      placeholder: grafana, alert-delivery
+    validations:
+      required: false
+
+  - type: input
+    id: host
+    attributes:
+      label: Host OS and architecture
+      placeholder: Debian 13, x86-64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: What failed
+      options:
+        - Preflight check
+        - Install step (bootstrap/install.sh)
+        - Flux reconcile
+        - A specific capability
+        - Recovery/restore
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: The exact commands you ran, in order.
+      render: sh
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: The full error output — don't trim it. Redact secrets/hostnames you don't want public.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs / evidence
+      description: |
+        As applicable: `flux get kustomizations -A`, relevant `kubectl get`/`describe`/`logs`
+        output, the preflight/postflight report.
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: classification
+    attributes:
+      label: Your best guess — installation, environment, or SCRAP defect?
+      description: >-
+        You don't need to be right; your first guess is useful signal even (especially) when
+        it turns out wrong — see docs/getting-started.md §6.
+    validations:
+      required: false
