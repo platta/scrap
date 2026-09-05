@@ -29,15 +29,35 @@ to continue on a real failure — but knowing the floor up front saves you a was
 ## 2. Clone the repository
 
 ```sh
-git clone https://github.com/<your-fork-or-upstream>/scrap.git
+git clone https://github.com/platta/scrap.git
 cd scrap
+git checkout v0.1.0-rc.1
 ```
+
+**Which version to install.** `v0.1.0-rc.1` is the current release — a pre-release candidate,
+[published 2026-08-28](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.1). Checking it out,
+as above, gives you exactly the adjudicated candidate its
+[release notes](releases/v0.1.0-rc.1.md) describe, including the honest boundary of what it does
+and doesn't yet prove. That's the recommended starting point.
+
+**Which branches are supported.** A plain `git clone` with no checkout leaves you on `main`, so
+it's worth knowing what the branches mean:
+
+- **Tagged releases** (`v0.1.0-rc.1`, and any later tag) — supported, and what an adopter should
+  install. Each one has release notes stating exactly what it proves.
+- **`main`** — acceptable, and what you get by default. It is the release-quality line: it
+  advances only through independently-adjudicated fixes, never ordinary feature work, so it is a
+  superset of the newest tag rather than a moving development branch. It carries no release notes
+  of its own, so you won't know precisely which version you're running.
+- **`develop`** — do **not** install. It is the day-to-day integration branch for ordinary
+  post-release work. It makes no stability or evidence claims, and nothing in this documentation
+  is scoped to it.
 
 Running SCRAP does not require you to keep working out of this clone forever — see
 [Choosing your capabilities](choosing-capabilities.md#one-more-option-a-separate-operator-repository)
-if you'd rather maintain a small separate repository pinned to a released SCRAP version. For a
-first install, working directly in this clone is the simplest path and what this repository's own
-tests exercise.
+if you'd rather maintain a small separate repository pinned to a released SCRAP version (pin it to
+`v0.1.0-rc.1`). For a first install, working directly in this clone is the simplest path and what
+this repository's own tests exercise.
 
 ## 3. Make your minimum configuration choices
 

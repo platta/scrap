@@ -73,6 +73,17 @@ contain or when a requirement may remain unproven.
 - It does not add Renovate-style automated version-bump PRs — already tracked separately, and
   deliberately left open, in `docs/release-readiness.md`'s DEFERRED table.
 
+**Addendum (2026-09-05):** the first bullet above is preserved as written but is now historical.
+`v0.1.0-rc.1` was independently adjudicated and tagged on 2026-08-28 at commit
+`b5eeb2987b9139b5272da37c4c38b045aad6350b`, and
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) published the corresponding
+[GitHub pre-release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.1) from `CHANGELOG.md`.
+Read that bullet as a statement about PLAT-87's own scope at the time this record was written — the
+tag was not that ticket's to create — not as a claim that the tag is still outstanding. Nothing
+else in this record changes: the scheme and procedure above remain the standing process for every
+subsequent tag. See [`../releases/v0.1.0-rc.1.md`](../releases/v0.1.0-rc.1.md) for that candidate's
+own current status.
+
 ## Consistent with
 
 `0011-release-candidate-policy.md` and `0012-rc-implementation-envelope.md` (both extended, not
