@@ -1,15 +1,23 @@
 # Release readiness — the RC1 claim boundary
 
-**What this document is for:** so that anyone inspecting this repository before a release
-candidate is packaged can tell, at a glance and from primary evidence, what is **PROVEN NOW**,
-what is **INTENDED FOR v1 BUT NOT YET PROVEN**, and what is **DEFERRED / OPTIONAL / POST-v1** —
-without having to reconstruct that boundary from commit history or memory. See
-`docs/decisions/0011-release-candidate-policy.md` for the policy that makes "intended but not yet
-proven" a legitimate state for a release candidate to ship in, provided it's stated here, not
-implied elsewhere as settled — and `docs/decisions/0012-rc-implementation-envelope.md` for the
-boundary of that allowance: it covers behavior that is *implemented but unproven*, never behavior
-that is still *unimplemented*. Rows below that are existence gaps (no manifests/code, not merely
-no proof) therefore block `rc.1` itself, and are marked so.
+**What this document is for:** so that anyone inspecting this repository can tell, at a glance and
+from primary evidence, what is **PROVEN NOW**, what is **INTENDED FOR v1 BUT NOT YET PROVEN**, and
+what is **DEFERRED / OPTIONAL / POST-v1** — without having to reconstruct that boundary from commit
+history or memory. `v0.1.0-rc.1` was tagged on 2026-08-28
+([release notes](releases/v0.1.0-rc.1.md)); this document is not superseded by that tag — it stays
+live, and remains the authoritative snapshot each release-notes artifact summarizes at its own
+point in time. See `docs/decisions/0011-release-candidate-policy.md` for the policy that makes
+"intended but not yet proven" a legitimate state for a release candidate to ship in, provided it's
+stated here, not implied elsewhere as settled — and
+`docs/decisions/0012-rc-implementation-envelope.md` for the boundary of that allowance: it covers
+behavior that is *implemented but unproven*, never behavior that is still *unimplemented*.
+
+Existence gaps (no manifests/code, not merely no proof) are not deferrable and block a candidate
+outright. **There are none open today:** per `0012`, all six surfaces it made mandatory before
+`rc.1` are implemented — which is why no row below is marked as one. Whether a remaining gap blocked
+`rc.1` specifically is recorded per-candidate in
+[`docs/releases/v0.1.0-rc.1.md`](releases/v0.1.0-rc.1.md)'s own table, not here; this document
+tracks evidence level, and the tables below answer "blocks final v1?" only.
 
 This is a status snapshot, not a frozen document — update it as milestones close gaps. It records
 *evidence level*, never a promise about when something will be finished.
@@ -34,7 +42,7 @@ Each of these is backed by a live, automated, CI-gated acceptance profile — no
 | Off-site (S3-compatible) backup: **artifact placement only** — a real remote write (independently confirmed via the destination's own listing), an independent read via a separate client using the intended recovery credentials, ADR-0010 host-isolation unaffected by destination, and a genuine, bounded, visible failure on bad credentials | `tests/profiles/t-a-offsite-backup.sh` |
 | Alert delivery: a real `AlertmanagerConfig` webhook receiver genuinely delivers a real, live-fired alert to an ephemeral HTTP receiver, with a passing negative control (zero deliveries before the alert fires) — see `capabilities/alert-delivery/README.md` for the honest limit (a real third-party provider's own API acceptance is operator-verified, not CI) | `tests/profiles/t-a-alert-heartbeat.sh` |
 | Heartbeat: a real, conditional dead-man's-switch push — reaches an ephemeral HTTP receiver while Alertmanager is healthy, and a live negative control (Alertmanager scaled to zero) proves the push is genuinely withheld, not merely documented — see `capabilities/heartbeat/README.md` for the honest limit (a real provider's own missed-ping alarm/notification is operator-verified, not CI) | `tests/profiles/t-a-alert-heartbeat.sh` |
-| Bootstrap reliability fixes found through repeated live execution (timeouts, HOME/sudo poisoning, dependency ordering, SOPS CWD discovery, cleanup scoping) | commit history, `bootstrap/install.sh` |
+| Bootstrap reliability fixes found through repeated live execution (timeouts, HOME/sudo poisoning, dependency ordering, SOPS CWD discovery, cleanup scoping) | Every acceptance profile in `tests/profiles/` installs from zero via `bootstrap/install.sh`, so these fixes are continuously re-exercised rather than asserted; commit history and `bootstrap/install.sh` record how each was originally found |
 | Dyndns: a real RFC2136 `UPDATE` against an ephemeral authoritative nameserver this project stands up itself genuinely repoints a hostname's `A` record, confirmed by an independent `dig` query, not inferred from the `CronJob`'s own exit status — with a passing negative control (a deliberately wrong TSIG credential fails visibly and leaves the record unchanged) and an unchanged-IP path that sends no update at all — see `capabilities/dyndns/README.md` for the honest limit (a real commercial provider's own dynamic-update compatibility, and public DNS propagation, are outside anything CI can own or needs to) | `tests/profiles/t-a-dyndns.sh` |
 | Public ingress: `capabilities/public-ingress/verify-live.sh`'s own decisive check — comparing the certificate actually served at a target against the platform's real wildcard certificate by SHA-256 fingerprint — is proven both ways: it genuinely passes against this cluster's real Gateway, and genuinely fails against a real but deliberately different, ephemeral TLS endpoint this project stands up itself — see `capabilities/public-ingress/README.md` for the honest limit (live public reachability of a real install, which depends on a real router/public IP/public DNS, is a permanent operator-run evidence boundary, not part of this gap) | `tests/profiles/t-a-public-ingress.sh` |
 | UPS: a real host-level NUT install (`bootstrap/host/install-nut.sh`) genuinely runs `upsmon`'s own `SHUTDOWNCMD` against a real, live-induced on-battery/low-battery state from NUT's own `dummy-ups` driver, with a passing negative control (the sentinel does not exist against a healthy simulated UPS); the in-cluster exporter genuinely reads that same real state through Prometheus's own query API and genuinely fails visibly (`nut_up=0`) on a deliberately wrong `UPS_NAME` (a wrong password alone does not fail this way — a real finding, see `capabilities/ups/README.md`'s "Configuration errors fail visibly"); `bootstrap/host/install-k3s.sh` explicitly arms kubelet's Graceful Node Shutdown (both default to inactive upstream) and a matching `systemd-logind` `InhibitDelayMaxSec`, verified live as a genuinely-held shutdown/delay inhibitor lock, not merely configured on paper — see `capabilities/ups/README.md` for the two honest limits that remain (physical UPS hardware's own behavior under a real mains outage, and a representative workload's own termination timing during an actual poweroff — both permanent operator-run evidence boundaries, not part of this gap) | `tests/profiles/t-a-ups.sh` |
@@ -50,7 +58,7 @@ Each row names the exact claim a release candidate **must not make** until the c
 | **R4 — site-loss recovery** | Depends on R3 being proven first | Yes |
 | **arm64 is a tested platform target at the same evidence level as x86-64** | T-D (arm64 minimal, nightly) — not yet implemented. The *minimum requirement description* names arm64 as an accepted architecture (and `bootstrap/preflight/check-arch.sh` genuinely permits it), but no CI run has ever exercised it. | Yes |
 | **T-C (Connected profile, nightly)** | Not yet implemented. Heartbeat and alert delivery now both exist and are proven at the level `tests/profiles/t-a-alert-heartbeat.sh` establishes (see PROVEN NOW, above) — T-C's remaining, unimplemented value is the *nightly* integration with real DNS-01 issuance alongside them, not the heartbeat/alert-delivery components themselves | No — qualification infrastructure, not product surface; may be built during the RC cycle (`docs/decisions/0012`) |
-| **T-F (upgrade testing)** | Cannot exist before a first release exists to upgrade *from* — `rc.1` is the precondition for T-F, not something T-F blocks (`docs/decisions/0011`) | Yes, once a prior release exists |
+| **T-F (upgrade testing)** | Not yet implemented. Its precondition — a first release to upgrade *from* — was satisfied when `v0.1.0-rc.1` was tagged on 2026-08-28, so T-F is now buildable and simply hasn't been built; it never blocked `rc.1` itself (`docs/decisions/0011`). Until it runs, **no upgrade claim of any kind is warranted** — to, from, or between any SCRAP versions. | Yes, once a prior release exists |
 | **Real public certificate issuance against a real domain** | `tests/profiles/t-a-public-tls.sh` proves issuer-independence and a genuine ACME network interaction (reaching the `Order` stage); reaching the DNS-01 solver and an actual signed certificate require a real public domain and are deliberately left to `capabilities/public-tls/verify-live.sh`, operator-run, not CI-executed. This is a permanent evidence-boundary, not a temporary gap — see that script's own header. | No — by design, not a gap to close |
 | **A real install is actually reachable from the public internet** | `tests/profiles/t-a-public-ingress.sh` proves `capabilities/public-ingress/verify-live.sh`'s own certificate-identity oracle is sound; genuine end-to-end reachability requires a real router, a real public IP, and real public DNS, and is deliberately left to that same script, run by the operator against their own install, not CI-executed. This is a permanent evidence-boundary, not a temporary gap — see `docs/decisions/0014-public-ingress-edge-authority.md` and that script's own header. | No — by design, not a gap to close |
 | **Self-service identity recovery / passkey support** | The shipped configuration specifically proves it exposes **no** unauthenticated recovery path at all (`tests/profiles/t-b-standard.sh`'s `identity-adversarial-recovery` check) — self-service recovery is not configured, by design. Passkey/WebAuthn support was explored, untested, only in a private, non-SCRAP reference deployment; SCRAP's own Blueprint neither provisions nor tests it. Any documentation implying otherwise is wrong and should be corrected on sight. | No — this is a design choice (operator-mediated recovery), not a missing feature; but claiming otherwise is a documentation defect regardless |
@@ -75,8 +83,14 @@ own scoping — are now implemented: see
 for the versioning scheme and procedure, [`CHANGELOG.md`](../CHANGELOG.md) and
 [`docs/releases/`](releases/) for the release-notes artifacts, and
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) for the tag-triggered publish
-workflow. This is machinery only — it does not itself constitute cutting, approving, or claiming
-`v0.1.0-rc.1`; see `docs/releases/v0.1.0-rc.1.md` for that candidate's own current status.
+workflow.
+
+That machinery has since been exercised for real: `v0.1.0-rc.1` was independently adjudicated and
+tagged on 2026-08-28 at commit `b5eeb2987b9139b5272da37c4c38b045aad6350b`, and the workflow
+published the corresponding
+[GitHub pre-release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.1) from `CHANGELOG.md`.
+See [`docs/releases/v0.1.0-rc.1.md`](releases/v0.1.0-rc.1.md) for that candidate's full notes and
+for how to install it.
 
 ## Deliberately unresolved ambiguities
 
