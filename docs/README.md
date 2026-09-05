@@ -56,6 +56,8 @@ proven/unproven/deferred snapshot behind the "Implemented?" column below.
   repository is classified by.
 - [`runbooks/`](runbooks/) — operational and disaster-recovery procedures. Sparse today; grows
   alongside `tests/dr/`.
+- [`reviews/`](reviews/) — point-in-time review artifacts (adoption readiness, audits), each
+  pinned to the exact commits it evaluated.
 - [`engineering-evidence.md`](engineering-evidence.md) — how SCRAP knows its claims are true:
   structural checks vs. live acceptance profiles, what T-A..T-F and R0–R5 mean, why negative
   controls and exact-SHA release gates exist.
