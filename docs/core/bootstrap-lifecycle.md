@@ -1,10 +1,11 @@
 # Bootstrap lifecycle
 
 **CORE.** Implemented (`bootstrap/`) — this is the documented sequence the implementation follows,
-exercised end-to-end (steps 1–7) by every `tests/profiles/` from-zero run, every push/PR; see
-`docs/release-readiness.md`. One honest exception, in step 7 below: `bootstrap/postflight.sh`
-itself does not verify a restore — see the note under step 7 for what actually discharges that
-line of the frozen spec, and where.
+exercised end-to-end (steps 1–7) by every `tests/profiles/` from-zero run, on every push to
+`main`/`develop` and every pull request (a fork or feature-branch push with no open PR triggers
+nothing — see each workflow's own `on:` block); see `docs/release-readiness.md`. One honest
+exception, in step 7 below: `bootstrap/postflight.sh` itself does not verify a restore — see the
+note under step 7 for what actually discharges that line of the frozen spec, and where.
 
 ## Minimum / offline path
 
@@ -16,6 +17,15 @@ line of the frozen spec, and where.
    recipients from the very first commit. **Verify escrow before continuing** — demonstrate the
    escrow copy is readable from somewhere that isn't this host, not merely that it was written
    somewhere.
+
+   **Deliberate deviation from the frozen wording, found implementing `bootstrap/install.sh`:**
+   the script cannot itself reach into wherever the operator copied the escrow key to confirm it's
+   readable there — it asks the operator to retype the escrow key's own fingerprint (its public
+   key's last 8 characters) after confirming they've copied it off-host, an attestation rather
+   than a readability demonstration; a non-interactive run instead requires
+   `SCRAP_ESCROW_CONFIRMED=1`, set only if escrow has genuinely already been verified out of band.
+   Step 7's own honest-limit note below documents the same class of gap between frozen wording and
+   what a script can actually check from inside the host being bootstrapped.
 4. **Git** — initialize the source of truth. A local bare repository is sufficient for the
    minimum profile; external Git hosting is what buys host-loss recovery of the source of truth
    itself (`capabilities/`-adjacent, documented in `docs/supported/`).
@@ -35,7 +45,8 @@ line of the frozen spec, and where.
    requirement is still discharged, just not by this script: `tests/profiles/t-a-minimal.sh`
    destructively deletes real data (application-level delete *and* the on-disk file, so the
    destroy step can't be a no-op) and restores it via restic, verified through the original
-   application pod by the exact value that was destroyed — every push/PR, not merely attempted.
+   application pod by the exact value that was destroyed — on that same push/PR trigger, not
+   merely attempted.
    The same procedure is documented for a real operator's first backed-up application in
    `docs/runbooks/README.md`. `bootstrap/install.sh` also discards `postflight.sh`'s own exit
    status (`|| true`, `bootstrap/install.sh:402`) by design — the postflight report is meant to

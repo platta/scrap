@@ -38,15 +38,18 @@ contain or when a requirement may remain unproven.
   adopt SemVer's `1.0.0` stability guarantee is out of scope here and would need its own record if
   ever proposed.
 - **A tag is created only after independent exact-candidate approval of a specific commit SHA on
-  `main`** — the Adjudication Protocol this project's own workflow already follows for Jira issues.
-  No workflow, script, or bot in this repository creates or pushes a tag; every tag is a deliberate,
-  human-authorized act against an already-approved commit.
+  `main`** — this project's own maintainer uses an internal Jira-based Adjudication Protocol for
+  that approval; a fork adopting a different review process should substitute its own equivalent
+  gate here, since nothing about the tag/changelog/workflow mechanics below depends on Jira
+  specifically. No workflow, script, or bot in this repository creates or pushes a tag; every tag
+  is a deliberate, human-authorized act against an already-approved commit.
 
 ## The procedure
 
 1. An adjudicator approves an exact candidate SHA on `main` (a separate step from — and later than
-   — any single issue's own PR merge; see `docs/release-readiness.md`'s evidence boundary for what
-   "approved" requires).
+   — any single issue's own PR merge; see `docs/release-readiness.md` — its PROVEN NOW / INTENDED
+   FOR v1 BUT NOT YET PROVEN / DEFERRED tables are what "approved" requires be true — for the
+   current claim boundary).
 2. Whoever the adjudicator authorizes tags and pushes it:
    `git tag -a v0.1.0-rc.1 <approved-sha> -m "v0.1.0-rc.1"` then `git push origin v0.1.0-rc.1`
    (equivalently, through GitHub's own "create tag" UI against that SHA).

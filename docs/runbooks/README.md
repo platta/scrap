@@ -70,7 +70,7 @@ first, restore/reload the database alone, confirm it's healthy on its own (a dir
 not through the app), *then* scale the application tier back up.
 
 Executed exactly this way three times, against three different applications on the `detest`
-scratch cluster:
+scratch cluster (a disposable single-node scratch instance used for live validation):
 
 - **2026-08-16, a bare canary file on a throwaway PVC:** a value written as
   `canary-value-<timestamp>-<random>`, backed up, deleted, confirmed gone via `kubectl exec ...

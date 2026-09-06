@@ -53,11 +53,16 @@ in [`tests/profiles/README.md`](../tests/profiles/README.md); this is the plain-
 | **T-C — Connected** | nightly (not yet implemented) | The *nightly, integrated* run of public DNS-01 issuance against a real zone alongside off-site backup, alert delivery, and heartbeat over time. The components themselves are already proven individually above; this is the remaining long-running integration layer, not a product gap. |
 | **T-D — arm64** | nightly (not yet implemented) | T-A's exact checks, on arm64 hardware instead of x86-64. |
 | **T-E — Host-loss rehearsal** | pre-release (not yet implemented) | Take a genuinely blank machine, hand it nothing but the artifacts the recovery model says survive, and prove it becomes a working platform again. This is the big one — see R3 below. |
-| **T-F — Upgrade** | pre-release (not yet implemented) | Install the previous release, upgrade to the current one, prove data survives and rollback works. Can't exist until a first release exists to upgrade *from*. |
+| **T-F — Upgrade** | pre-release (not yet implemented) | Install the previous release, upgrade to the current one, prove data survives and rollback works. Its precondition — a first release to upgrade *from* — was satisfied when `v0.1.0-rc.1` was tagged; T-F is now buildable and simply hasn't been built yet. |
 
 "Not yet implemented" here means exactly that: no such test runs today, and no claim in this
 repository should imply otherwise. See `docs/release-readiness.md` for which of these are currently
-green.
+green. "Every push/PR" means every push to `main`/`develop` and every pull request from any
+branch — a fork or feature-branch push with no open PR triggers nothing (see each workflow's own
+`on:` block). The **pre-release** trigger tier for T-E/T-F does not mean a pre-release can't ship
+without them: `v0.1.0-rc.1` deliberately did, per
+`docs/decisions/0011-release-candidate-policy.md`, which interprets that tier as running during the
+candidate-qualification window between `rc.1` and final v1, not before `rc.1` itself.
 
 ## The recovery classes: R0 through R5
 

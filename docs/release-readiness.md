@@ -28,7 +28,7 @@ Each of these is backed by a live, automated, CI-gated acceptance profile — no
 
 | Claim | Evidence |
 |---|---|
-| Core platform (CRDs, cert-manager + private CA, ingress, storage, observability core, backup engine) installs from zero and reconciles | `tests/profiles/t-a-minimal.sh`, every push/PR |
+| Core platform (CRDs, cert-manager + private CA, ingress, storage, observability core, backup engine) installs from zero and reconciles | `tests/profiles/t-a-minimal.sh`, every push to `main`/`develop` and every pull request |
 | T1 (delete `apps/`, platform remains useful) and T2 (adding an app touches only `apps/` + one enabling file) | `tests/assertions/`, every PR |
 | P1, P4, P5, P6 application patterns work, including a genuinely destructive restore of P5 | `tests/profiles/t-a-minimal.sh` |
 | R1 (application-data loss) recovery, including for a real multi-tier stateful application (Authentik + PostgreSQL) | `tests/dr/authentik-postgres-restore.sh`, nightly |

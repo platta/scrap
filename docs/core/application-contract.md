@@ -28,6 +28,12 @@ consumes nothing but deployment is a complete, valid SCRAP application.
 | External LAN backend | none | A selectorless `Service` + `EndpointSlice` | — |
 | Workload trust of the platform CA | `components/ca-trust/` | One line in `kustomization.yaml` | Which CA, or whether one is even needed (no-op on the ACME path) |
 
+**P4 caveat:** the only shipped P4 example, `apps/examples/p4-raw-tcp/`, predates
+[`0017`](../decisions/0017-p4-port-reservation-ownership.md) and still declares its port in
+`platform/ingress/reserved-ports.yaml`, not in its own `reserved-ports.yaml` — deliberately left
+unmigrated; see that record for why. Copy the row above, not that example, for a new P4
+application.
+
 ## The two things CI actually checks
 
 1. A pull request that touches `apps/` may not also touch `platform/` or `capabilities/` — T2,

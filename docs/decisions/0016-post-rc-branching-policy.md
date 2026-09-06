@@ -69,10 +69,12 @@ no evidence it needs — SCRAP cuts one candidate at a time from `main` directly
   permissions) that this record deliberately leaves to its own decision rather than bundling in
   silently.
 - **Dispatcher/agent default-base-branch configuration** that lives outside this repository (for
-  example, an Omnigent Project's own "base ref" setting for worktree creation) is not something
-  this repository's docs can change. This record establishes the contract those external systems
-  should be configured to honor — ordinary work to `develop`, RC remediation to `main` — but
-  updating any such external configuration is outside this repository's scope and is called out
+  example, this project's own maintainer uses a third-party AI-agent dispatcher, Omnigent, whose
+  per-Project "base ref" setting controls what branch it checks a worktree out from — named here
+  only as a concrete instance of the general case, harmless to ignore if you don't use one) is not
+  something this repository's docs can change. This record establishes the contract those external
+  systems should be configured to honor — ordinary work to `develop`, RC remediation to `main` —
+  but updating any such external configuration is outside this repository's scope and is called out
   separately, not silently assumed to already be correct.
 
 ## What changed to support this
