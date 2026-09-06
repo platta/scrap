@@ -134,8 +134,8 @@ reschedules.
 as-is. No Longhorn, no NFS, no distributed storage, on purpose — a single-node platform doesn't
 need replication to survive a pod crash, and building one in would add real operational weight for
 a guarantee SCRAP gets a better way: **tested backup and restore**, not replicated disks. This is a
-deliberate, defended non-decision, not an oversight — see
-[`decisions/`](decisions/) for the reasoning.
+deliberate, defended non-decision, not an oversight — the reasoning above is the reasoning; it has
+never needed its own `decisions/` record.
 
 **Contract to the next layer:** a `PersistentVolumeClaim` an application can mount, and — this
 matters — that the backup layer can also mount directly, so backup never has to reach around

@@ -7,8 +7,10 @@ today — see the Status column, and its own directory README, for exactly what'
 remains an honest evidence boundary. Two are enabled by an operator-run procedure rather than an
 ordinary Kustomization-copy, as noted below. `docs/release-readiness.md` is the authoritative
 current snapshot; this table is kept in sync with it. None of these capabilities are required.
-Several are on by default in the documented `standard` profile
-(`clusters/example/capabilities/`); all are off by default in the `minimal` profile.
+`clusters/example/capabilities/` — checked in empty — **is** the `minimal` profile; several
+capabilities are on by default in the documented `standard` profile instead (see
+`docs/core/configuration-model.md#profiles` for what each profile actually adds; there is no
+`clusters/example-standard/` directory to point at).
 
 **Enabling a capability is copying its Flux `Kustomization` file(s) into
 `clusters/<name>/capabilities/`. Disabling it is deleting them.** One file for a capability with no
@@ -23,7 +25,11 @@ workload ever runs privileged or holds host power authority; and `public-ingress
 operator-edge configuration end to end — enabled by performing its documented router/DNS
 procedure, disabled by removing the forwards, deliberately shipping no manifest at all — decided
 in `docs/decisions/0014-public-ingress-edge-authority.md`, which also outlaws inert placeholder
-manifests generally.
+manifests generally. `offsite-backup/` also ships no Kustomization, but for a third, unrelated
+reason with no decision record needed — it needs no new in-cluster resource at all, so there's
+nothing capability-owned to copy in the first place; see
+`docs/core/configuration-model.md#capability-selection` and that directory's own "Enabling this
+capability" for the two-edit mechanics.
 
 ## The one rule that applies to every directory here
 

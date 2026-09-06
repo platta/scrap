@@ -39,9 +39,10 @@ Gateway API's `HTTPRoute` filter `extensionRef` can only reference an object in 
 namespace** as the `HTTPRoute` itself -- there's no namespace field on it at all, unlike
 `backendRefs`. This component's `Middleware` therefore ships with no `metadata.namespace` of its
 own; your `kustomization.yaml`'s top-level `namespace:` transformer is what places it (and
-everything else in your build) in the right namespace. Every `apps/examples/` app so far hardcodes
-`namespace:` per-resource instead of using this transformer -- a P3 example needs to add it, since
-this is the first component that actually requires it.
+everything else in your build) in the right namespace. Every other `apps/examples/` app hardcodes
+`namespace:` per-resource instead of using this transformer; `apps/examples/p3-forward-auth/` is
+the exception -- this is the first component that actually requires it, and its `kustomization.yaml`
+uses the transformer for exactly that reason.
 
 ## Mechanism, no SCRAP invention
 

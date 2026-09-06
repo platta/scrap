@@ -111,8 +111,10 @@ rejected here: that check has never been modified since it was first written, pr
 its unconditional diff rule *is* what makes T2 a proof rather than a convention. Deciding whether
 an exception is warranted -- and if so, how narrowly to scope it so it can't become a general
 escape hatch -- is a genuine, independently-scoped architectural question this record does not
-decide unilaterally. It's recorded as a `FOLLOW-UP` on PLAT-115 for adjudication. Until that's
-resolved, the example stays on its original, still-fully-valid central-file declaration; nothing
+decide unilaterally, stated here in full rather than only in a tracker. It's tracked as a
+`FOLLOW-UP` on PLAT-115 for whoever adjudicates it next -- that ticket is a routing reference, not
+the record of the question itself. Until that's resolved, the example stays on its original,
+still-fully-valid central-file declaration; nothing
 about the new mechanism requires migrating it for the mechanism itself to work for every new P4
 app going forward.
 

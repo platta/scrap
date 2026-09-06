@@ -3,9 +3,11 @@
 **Architectural classification: FULLY SUPPORTED. Current implementation status: IMPLEMENTED,
 LIVE-TESTED** — see `docs/release-readiness.md` and `tests/profiles/t-b-standard.sh`'s own
 `T-B/logs-*` checks. This capability is also part of the frozen `T-B` acceptance definition
-(identity + Grafana + logs) — that gap is now closed: `tests/profiles/t-b-standard.sh` proves a
-real log record enters the shipped path and is retrievable, through Grafana's own configured data
-source, not just that components report Ready.
+(identity + Grafana + logs — a CI trigger tier, distinct from and not equal to the documented
+`standard` profile of grafana + logs + alert-delivery, `docs/core/configuration-model.md#profiles`)
+— that gap is now closed: `tests/profiles/t-b-standard.sh` proves a real log record enters the
+shipped path and is retrievable, through Grafana's own configured data source, not just that
+components report Ready.
 
 Depends on `platform/observability/` only (the `monitoring` namespace it creates unconditionally),
 exactly as originally designed — never on `capabilities/grafana/`. Grafana integration is wired

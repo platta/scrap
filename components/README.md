@@ -10,7 +10,7 @@ itself, consistent with the transparency principle in `docs/understanding-scrap.
 |---|---|---|
 | [`backup/`](backup/) | The label + CronJob shape that opts a PVC into `platform/backup/`'s engine | `platform/backup/` |
 | [`forward-auth/`](forward-auth/) | One `HTTPRoute` filter wiring an app to the gateway forward-auth endpoint | `capabilities/identity/`, when enabled |
-| [`metrics/`](metrics/) | The pod label + port-name convention the core `PodMonitor` scrapes | `platform/observability/` |
+| [`metrics/`](metrics/) | **Not yet implemented** — will add the pod label + port-name convention the core `PodMonitor` scrapes | `platform/observability/` |
 | [`ca-trust/`](ca-trust/) | Injects the platform's private CA into a workload's own trust store, for apps making TLS calls *to* SCRAP endpoints | `platform/cert-manager/`, private-CA path only |
 
 None of these are required. An application that needs none of them is still a complete, valid

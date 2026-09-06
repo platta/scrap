@@ -23,7 +23,8 @@ measured a *reference* Authentik deployment (server, worker, PostgreSQL, Redis �
 ~1.1 GB) against Authelia. This directory's actual implementation is lighter: current Authentik
 (`ghcr.io/goauthentik/server:2026.5.6`, confirmed by inspecting this chart's real
 `Chart.yaml` dependencies) has **no Redis dependency at all**. Measured live via `kubectl top` on
-the `detest` scratch cluster, three pods only: ~150 Mi (PostgreSQL) + ~430 Mi (server) + ~265 Mi
+the `detest` scratch cluster (a disposable single-node scratch instance used for live validation),
+three pods only: ~150 Mi (PostgreSQL) + ~430 Mi (server) + ~265 Mi
 (worker) ≈ **850 Mi** at idle. Still real money — identity remains optional and gates a higher
 hardware tier (`docs/supported/hardware-tiers.md`) — just not as much as originally measured.
 
@@ -50,8 +51,8 @@ Application, and the outpost assignment that makes forward-auth (P3) actually fu
 
 - **Native OIDC** (pattern P2): an OIDC issuer URL and a per-application client Secret.
   `components/ca-trust/` (its own milestone, landed right after this one) solves the private-CA
-  workload-trust problem this needs — see that directory's README. Not yet wired into an
-  `apps/examples/` demo; that's the next piece of work.
+  workload-trust problem this needs — see that directory's README. **Implemented and
+  live-verified**: `apps/examples/p2-native-oidc/` — see "P2 and P3, live end to end" below.
 - **Forward-auth** (pattern P3): a shared gateway-level auth endpoint, consumed via
   `components/forward-auth/` — one filter reference on an `HTTPRoute`, nothing more. **Implemented
   and live-verified** (see below) — no CA-trust dependency, since the `Middleware` calls
