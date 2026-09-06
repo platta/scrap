@@ -28,10 +28,9 @@ copied alongside identity's own two. See `apps/examples/README.md` and
 
 ## `catalog/`
 
-**Empty by design today** (see `apps/catalog/README.md`) — intended, when populated, to hold a
-small number of real, boring, well-behaved applications as end-to-end proof that the patterns
-compose in practice, not as SCRAP's product. **Fully optional**; deleting this directory entirely
-must leave a complete platform (T1), and CI checks exactly that.
+A small number of real, boring, well-behaved applications, included as end-to-end proof that the
+patterns compose in practice — not as SCRAP's product. **Fully optional**; deleting this directory
+entirely must leave a complete platform (T1), and CI checks exactly that.
 
 For a broader set of real-application integration examples beyond what ships here, see the planned,
 separate `scrap-patterns` companion repository (`docs/decisions/`) — deliberately not part of this
