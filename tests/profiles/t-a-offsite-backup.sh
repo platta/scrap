@@ -20,7 +20,8 @@
 # script stands up itself on the same runner -- the actual S3 wire
 # protocol, not a mock or a SCRAP-specific stand-in. A human can run
 # this identically on their own scratch VM, given `minio`/`mc` on PATH
-# (or let Phase 1 below fetch them):
+# (or let Phase 1 below build them from source -- needs a `go` toolchain
+# on PATH, or passwordless sudo to apt-install one):
 #   sh tests/profiles/t-a-offsite-backup.sh
 set -eu
 
@@ -52,6 +53,23 @@ MINIO_BUCKET="scrap-offsite-test"
 # anywhere, so it needs no entry of its own there.
 MINIO_PORT=19000
 
+# REAL UPSTREAM CHANGE, PLAT-269: dl.min.io's pre-built binaries are
+# permanently retired -- confirmed live, HTTP 410 on both the server and
+# client paths this script used to fetch. This isn't a URL rename to
+# chase: both minio/minio and minio/mc on GitHub are now archived
+# ("THIS REPOSITORY IS NO LONGER MAINTAINED"), and upstream's own
+# top-of-README notice states the community edition "is now distributed
+# as source code only" -- the legacy dl.min.io binaries "will not
+# receive updates" (confirmed live against minio/minio's README at
+# commit 9e49d5e, tag RELEASE.2025-10-15T17-29-55Z). Upstream's own
+# documented replacement is `go install <module>@<RELEASE-tag>`, used
+# below. Pinned to exact, immutable release tags -- never @latest -- so
+# this file's own git history is the single durable record of exactly
+# which MinIO this profile exercises; bump these deliberately, not
+# silently.
+MINIO_RELEASE_TAG=RELEASE.2025-10-15T17-29-55Z
+MC_RELEASE_TAG=RELEASE.2025-08-13T08-35-41Z
+
 # ---------------------------------------------------------------------------
 log "T-A-offsite-backup: Phase 0/5: environment prerequisites"
 install_prereqs
@@ -60,18 +78,58 @@ install_prereqs
 log "T-A-offsite-backup: Phase 1/5: an ephemeral, real S3-compatible target (MinIO)"
 # Real MinIO server + client binaries, not a mock -- genuinely exercises
 # restic's own S3 backend code path and the real S3 wire protocol.
-# Bounded downloads (--max-time), matching install_prereqs()'s own
-# reliability discipline -- no arbitrary hang if dl.min.io is slow.
+#
+# Built from pinned upstream source (see MINIO_RELEASE_TAG/MC_RELEASE_TAG
+# above), not downloaded as a pre-built blob. Go's own module system
+# authenticates every fetched source module against the public checksum
+# transparency log (GOSUMDB, on by default) before any of it is
+# compiled, so a corrupted or substituted upstream response fails the
+# build loudly and explicitly -- the exact failure discipline this
+# profile's original dl.min.io bug lacked (an HTTP "410" error body
+# silently executed as a shell script). Bounded with `timeout`, matching
+# install_prereqs()'s own reliability discipline -- no arbitrary hang if
+# the module proxy is slow. Built as this unprivileged user, then
+# installed to /usr/local/bin with sudo only for that final step --
+# same privilege-minimization already used for restic below (PLAT-93's
+# own investigation explains why).
+if ! command -v go >/dev/null 2>&1; then
+    apt_install golang-go
+fi
 if ! command -v minio >/dev/null 2>&1; then
-    sudo curl -sSL --connect-timeout 15 --max-time 120 \
-        https://dl.min.io/server/minio/release/linux-amd64/minio -o /usr/local/bin/minio
-    sudo chmod +x /usr/local/bin/minio
+    MINIO_GOBIN=$(mktemp -d)
+    if ! timeout 600 env GOBIN="$MINIO_GOBIN" go install "github.com/minio/minio@${MINIO_RELEASE_TAG}"; then
+        echo "FAIL  T-A-offsite-backup: could not build minio ${MINIO_RELEASE_TAG} from source within 600s -- see the go error above" >&2
+        exit 1
+    fi
+    chmod +x "$MINIO_GOBIN/minio"
+    sudo mv "$MINIO_GOBIN/minio" /usr/local/bin/minio
+    rm -rf "$MINIO_GOBIN"
 fi
 if ! command -v mc >/dev/null 2>&1; then
-    sudo curl -sSL --connect-timeout 15 --max-time 120 \
-        https://dl.min.io/client/mc/release/linux-amd64/mc -o /usr/local/bin/mc
-    sudo chmod +x /usr/local/bin/mc
+    MC_GOBIN=$(mktemp -d)
+    if ! timeout 600 env GOBIN="$MC_GOBIN" go install "github.com/minio/mc@${MC_RELEASE_TAG}"; then
+        echo "FAIL  T-A-offsite-backup: could not build mc ${MC_RELEASE_TAG} from source within 600s -- see the go error above" >&2
+        exit 1
+    fi
+    chmod +x "$MC_GOBIN/mc"
+    sudo mv "$MC_GOBIN/mc" /usr/local/bin/mc
+    rm -rf "$MC_GOBIN"
 fi
+# Explicit post-install verification -- catches a wrong/corrupt/partial
+# binary right here, at fetch/build time, rather than as a confusing
+# failure once MinIO is expected to already be listening below.
+if ! minio_version_output=$(minio --version 2>&1); then
+    echo "FAIL  T-A-offsite-backup: 'minio --version' failed after install -- see output below" >&2
+    echo "$minio_version_output" >&2
+    exit 1
+fi
+echo "minio installed: $(echo "$minio_version_output" | head -n1)"
+if ! mc_version_output=$(mc --version 2>&1); then
+    echo "FAIL  T-A-offsite-backup: 'mc --version' failed after install -- see output below" >&2
+    echo "$mc_version_output" >&2
+    exit 1
+fi
+echo "mc installed: $(echo "$mc_version_output" | head -n1)"
 
 MINIO_DATA_DIR=$(mktemp -d)
 MINIO_ADDR="http://127.0.0.1:${MINIO_PORT}"
