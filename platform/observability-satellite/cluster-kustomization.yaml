@@ -17,17 +17,18 @@
 #
 # REAL BUG, found live via this profile's own CI run: the standalone
 # version has never needed postBuild.substituteFrom (platform/observability/
-# helmrelease.yaml carries no ${VAR} of its own), so it was never on this
-# Kustomization at all -- confirmed by inspecting the real, checked-in
-# clusters/example/platform-observability.yaml. Copying that exact shape
-# for satellite mode, whose own values-patch.yaml genuinely does carry
-# ${INSTANCE_NAME}/${SATELLITE_REMOTE_WRITE_URL}, applied those tokens to
-# the live cluster completely unsubstituted -- confirmed directly from
-# the real error: "Prometheus... is invalid: spec.remoteWrite[0].url:
-# Invalid value: \"${SATELLITE_REMOTE_WRITE_URL}\"". Every OTHER
-# Kustomization in this repository whose own manifests use ${VAR} (e.g.
-# clusters/example/platform-backup.yaml) already carries this block; it
-# was simply never needed here before satellite mode existed.
+# helmrelease.yaml carries no substitution token of its own), so it was
+# never on this Kustomization at all -- confirmed by inspecting the real,
+# checked-in clusters/example/platform-observability.yaml. Copying that
+# exact shape for satellite mode, whose own values-patch.yaml genuinely
+# does carry INSTANCE_NAME/SATELLITE_REMOTE_WRITE_URL tokens, applied
+# them to the live cluster completely unsubstituted -- confirmed directly
+# from the real error: "Prometheus... is invalid: spec.remoteWrite[0].url:
+# Invalid value" (the literal, unresolved token string). Every OTHER
+# Kustomization in this repository whose own manifests use an
+# instance-config token (e.g. clusters/example/platform-backup.yaml)
+# already carries this block; it was simply never needed here before
+# satellite mode existed.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:

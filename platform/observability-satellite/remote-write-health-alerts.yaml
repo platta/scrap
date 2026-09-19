@@ -41,14 +41,22 @@ spec:
         # destination -- covers both a broken network path (F3) and the
         # destination itself being down (F4); the satellite cannot and
         # does not claim to tell those two apart (ADR-0018).
+        # REAL FINDING, from this profile's own first live-firing run: with
+        # the pinned chart's default ~60s scrape/evaluation interval, a
+        # 300s (5m) threshold plus this rule's own `for: 3m` confirmation
+        # is an 8-minute minimum with ZERO margin for reconcile/jitter
+        # before the alert can even begin evaluating true -- observed
+        # live: it genuinely never reached firing within an 8-minute wait.
+        # 120s leaves real margin while still requiring several
+        # consecutive missed scrape/send cycles, not a single blip.
         - alert: SatelliteRemoteWriteStale
           expr: |
             (
               max_over_time(prometheus_remote_storage_highest_timestamp_in_seconds[5m])
               - ignoring(remote_name, url) group_right()
               max_over_time(prometheus_remote_storage_queue_highest_sent_timestamp_seconds[5m])
-            ) > 300
+            ) > 120
           for: 3m
           labels: { severity: critical }
           annotations:
-            summary: "this satellite's remote-write to the configured destination is more than 5m behind -- the telemetry path or the destination itself may be down"
+            summary: "this satellite's remote-write to the configured destination is more than 2m behind -- the telemetry path or the destination itself may be down"

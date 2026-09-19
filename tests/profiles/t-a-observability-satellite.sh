@@ -170,6 +170,27 @@ else
     fail T-A-observability-satellite/baseline-standalone "expected empty spec.remoteWrite before enabling satellite, got: $baseline_rw"
 fi
 
+# NEGATIVE CONTROL: zero requests reached the receiver before satellite
+# topology is even enabled -- proves the earlier readiness probe (a bare
+# GET, not a remote-write POST) didn't itself satisfy the positive check
+# below.
+#
+# REAL BUG, found live via this profile's own CI run: this check
+# originally ran at the START of Phase 4, AFTER Phase 3's own flux
+# reconcile calls -- genuine remote-write delivery turned out to be fast
+# enough (a real series had already arrived by the time Phase 4 began)
+# that the control observed a false "already nonzero" and failed on
+# what is actually a POSITIVE result arriving early. Moved here, before
+# Phase 3 does anything at all, which is the only point "zero" is an
+# honest claim about this profile's own actions rather than a race
+# against them.
+before_samples=$(receiver_value 'prometheus_build_info')
+if [ -z "$before_samples" ]; then
+    ok T-A-observability-satellite/receiver-negative-control "the ephemeral receiver genuinely has zero samples before satellite topology is enabled"
+else
+    fail T-A-observability-satellite/receiver-negative-control "expected no samples at the receiver yet, found prometheus_build_info=$before_samples"
+fi
+
 NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)
 REMOTE_WRITE_URL="http://${NODE_IP}:${RECEIVER_PORT}/api/v1/write"
 
@@ -301,16 +322,6 @@ else
     fail T-A-observability-satellite/values-delta-applied "expected retention=6h storage=1Gi, got retention='$retention' storage='$storage'"
 fi
 
-# NEGATIVE CONTROL: zero requests reached the receiver until this point --
-# proves the earlier readiness probe (a bare GET, not a remote-write POST)
-# didn't itself satisfy the positive check below.
-before_samples=$(receiver_value 'prometheus_build_info')
-if [ -z "$before_samples" ]; then
-    ok T-A-observability-satellite/receiver-negative-control "the ephemeral receiver genuinely has zero samples before remote-write has had a chance to deliver"
-else
-    fail T-A-observability-satellite/receiver-negative-control "expected no samples at the receiver yet, found prometheus_build_info=$before_samples"
-fi
-
 # POSITIVE, independently observed: the receiver's OWN query API shows a
 # real series, tagged with this instance's real external label -- not
 # inferred from the satellite's own reported queue state.
@@ -428,11 +439,19 @@ spec:
           command: ["false"]
 EOF
 
+# REAL FINDING, from this profile's own first live run: with an 8-minute
+# wait and the rule's original 300s threshold, SatelliteRemoteWriteStale
+# never reached firing at all -- the threshold alone needed a 5-minute
+# gap before its own for:3m confirmation could even start, an 8-minute
+# minimum with no margin. The rule's threshold was lowered to 120s
+# (see remote-write-health-alerts.yaml's own comment); this wait is
+# extended to match with real margin, not just enough for the new
+# theoretical minimum.
 path_outage_result=""
 local_alert_result=""
-echo "      waiting up to 8 minutes for SatelliteRemoteWriteStale AND the local BackupJobFailed rule to both fire..."
+echo "      waiting up to 15 minutes for SatelliteRemoteWriteStale AND the local BackupJobFailed rule to both fire..."
 i=0
-while [ "$i" -lt 96 ]; do
+while [ "$i" -lt 180 ]; do
     if [ -z "$path_outage_result" ] && alertmanager_firing SatelliteRemoteWriteStale | grep -q '"state":"active"'; then
         path_outage_result=ok
     fi
@@ -448,7 +467,7 @@ kc delete job -n scrap-backup "$FAIL_JOB" --ignore-not-found >/dev/null 2>&1 || 
 if [ "$path_outage_result" = ok ]; then
     ok T-A-observability-satellite/path-outage-fires-visibly "killing the remote-write destination outright made SatelliteRemoteWriteStale genuinely fire (F3/F4 -- indistinguishable from the satellite's own perspective, per ADR-0018)"
 else
-    fail T-A-observability-satellite/path-outage-fires-visibly "SatelliteRemoteWriteStale never reached firing state within 8 minutes after the receiver was killed"
+    fail T-A-observability-satellite/path-outage-fires-visibly "SatelliteRemoteWriteStale never reached firing state within 15 minutes after the receiver was killed"
 fi
 if [ "$local_alert_result" = ok ]; then
     ok T-A-observability-satellite/local-alerting-unaffected "a real, live-fired baseline alert (BackupJobFailed) still reached the LOCAL Alertmanager while remote-write was genuinely broken -- the alerting invariant is topology-invariant, not merely documented"
