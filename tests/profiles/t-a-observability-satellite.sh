@@ -216,13 +216,32 @@ stringData:
   SATELLITE_REMOTE_WRITE_PASSWORD: "${SAT_PASS}"
 EOF
 
+# REAL BUG, found live via this profile's own first CI run: sops -e (a
+# genuinely NEW file, unlike every other capability's edit-a-placeholder
+# path) needs .sops.yaml's creation_rules to know which recipients to
+# encrypt to -- and matches path_regex against the path relative to
+# WHERE sops is invoked FROM, not the target file's absolute path. `cd`
+# one level too deep (into secrets/observability-satellite/ itself, the
+# same directory the file lives in) makes the argument a bare filename
+# with no literal "secrets/" in it at all, so
+# clusters/example/.sops.yaml's `path_regex: secrets/.*\.sops\.ya?ml$`
+# never matches ("error loading config: no matching creation rules
+# found") even though the SAME regex would match the full relative path
+# from one level up. Fixed by cd-ing into secrets/ (matching every other
+# live secret edit in this repository) and passing the subdirectory as
+# part of the path, exactly like heartbeat/offsite-backup's own `sops
+# --set path/to/thing.sops.yaml` calls already do -- those happen to
+# work either way since `--set` re-encrypts to the recipients already
+# embedded in an EXISTING file's own metadata, never touching
+# creation_rules at all; `-e` on a brand-new file has no such metadata
+# yet and genuinely depends on this.
 EDIT_SCRIPT=$(mktemp)
 cat > "$EDIT_SCRIPT" <<EOF
 set -eu
-cd '$LIVE_CLUSTER_DIR/secrets/observability-satellite'
+cd '$LIVE_CLUSTER_DIR/secrets'
 export SOPS_AGE_KEY_FILE='/etc/scrap/age/operational.agekey'
-sops -e observability-satellite-credentials.yaml > observability-satellite-credentials.sops.yaml
-rm -f observability-satellite-credentials.yaml
+sops -e observability-satellite/observability-satellite-credentials.yaml > observability-satellite/observability-satellite-credentials.sops.yaml
+rm -f observability-satellite/observability-satellite-credentials.yaml
 EOF
 if ! sudo sh "$EDIT_SCRIPT"; then
     echo "FAIL  T-A-observability-satellite: could not create the satellite credential secret"

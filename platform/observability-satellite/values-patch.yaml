@@ -20,7 +20,8 @@
 # provider" section). ${INSTANCE_NAME} and ${SATELLITE_REMOTE_WRITE_URL}
 # are instance-config tokens (clusters/<name>/instance-config.yaml),
 # resolved by Flux's postBuild.substituteFrom before this manifest is
-# applied -- same mechanism as every other ${VAR} in this repository.
+# applied -- same substitution mechanism every other instance-config
+# token in this repository already uses.
 # basicAuth's username/password come from the observability-satellite
 # credential Secret (see cluster-secrets-kustomization.yaml and
 # README.md's "Enabling this topology") -- credential material, never an
