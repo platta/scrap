@@ -1,0 +1,54 @@
+# The F3 telemetry-path-health rule ADR-0018 requires ("a new baseline rule
+# on the satellite alerting on sustained remote-write failure/lag") --
+# satellite-only, deliberately NOT part of platform/observability-config/'s
+# topology-invariant baseline-alerts.yaml (standalone and hub have no
+# remote-write to lose). Evaluated locally, delivered through the SAME
+# local Alertmanager as every other baseline alert -- the alerting
+# invariant's mechanism is unchanged by topology (ADR-0018).
+#
+# Metric names are Prometheus's own documented, stable remote-write client
+# instrumentation (storage/remote package; unchanged across Prometheus
+# major versions for years), not this project's invention -- exactly the
+# "confirmed against a live endpoint, not assumed" discipline
+# platform/observability-config/baseline-alerts.yaml's own header states
+# for kube_job_status_failed: this PR's own CI acceptance profile
+# (tests/profiles/t-a-observability-satellite.sh) queries these same
+# metrics live, against the real pinned Prometheus version, as its own
+# postcondition -- the live confirmation this repository's discipline
+# requires, executed by CI rather than asserted here in prose.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: satellite-remote-write-health
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: satellite.remote-write
+      rules:
+        # Destination actively rejecting samples (bad credentials, auth
+        # failure, malformed request) -- fails fast and visibly, the
+        # required negative control for a bad remote-write credential.
+        - alert: SatelliteRemoteWriteFailing
+          expr: |
+            rate(prometheus_remote_storage_samples_failed_total[5m]) > 0
+          for: 3m
+          labels: { severity: critical }
+          annotations:
+            summary: "this satellite's remote-write to {{ $labels.remote_name }}/{{ $labels.url }} is genuinely failing (samples rejected, not merely delayed)"
+        # Samples are queued/available locally but not reaching the
+        # destination -- covers both a broken network path (F3) and the
+        # destination itself being down (F4); the satellite cannot and
+        # does not claim to tell those two apart (ADR-0018).
+        - alert: SatelliteRemoteWriteStale
+          expr: |
+            (
+              max_over_time(prometheus_remote_storage_highest_timestamp_in_seconds[5m])
+              - ignoring(remote_name, url) group_right()
+              max_over_time(prometheus_remote_storage_queue_highest_sent_timestamp_seconds[5m])
+            ) > 300
+          for: 3m
+          labels: { severity: critical }
+          annotations:
+            summary: "this satellite's remote-write to the configured destination is more than 5m behind -- the telemetry path or the destination itself may be down"

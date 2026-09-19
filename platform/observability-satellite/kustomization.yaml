@@ -1,0 +1,26 @@
+# The satellite CORE observability topology (docs/decisions/0018-observability-topology.md):
+# a Kustomize OVERLAY of platform/observability/, never a fork of it -- the
+# base HelmRelease is included unchanged via `resources:` and only the
+# values that genuinely differ (retention, storage size, remote-write) are
+# patched in. platform/observability-config/ -- the golden-path PodMonitor
+# and baseline PrometheusRule -- is applied by ITS OWN, separate Kustomization
+# exactly as in standalone (clusters/<name>/platform-observability-config.yaml
+# is unchanged by topology selection) and stays byte-for-byte
+# topology-invariant, per ADR-0018's own configuration-model constraint.
+#
+# What's genuinely new here, and satellite-only: remote-write-health-alerts.yaml
+# (the F3 telemetry-path-health baseline rule -- meaningless in standalone,
+# which has no remote-write to lose).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../observability
+  - remote-write-health-alerts.yaml
+patches:
+  - path: values-patch.yaml
+    target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: kube-prometheus-stack
+      namespace: monitoring

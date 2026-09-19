@@ -1,0 +1,34 @@
+# Enabling satellite topology REPLACES the content of your existing
+# clusters/<name>/platform-observability.yaml -- it does not add a new
+# file. Unlike an optional capability (an ADDITION under
+# clusters/<name>/capabilities/), CORE observability topology is a
+# CHOICE among mutually exclusive modes: exactly one Kustomization may
+# ever own the "monitoring" namespace's HelmRelease. Copy this file's
+# CONTENT over your existing clusters/<name>/platform-observability.yaml
+# (same filename, same Kustomization name -- every dependent
+# Kustomization that already dependsOn "platform-observability" by name,
+# e.g. platform-observability-config, keeps working unchanged). Revert
+# to standalone by restoring the original file content (spec.path back to
+# ./platform/observability).
+#
+# Everything else about this Kustomization -- name, dependsOn,
+# sourceRef -- is byte-identical to the standalone version; only
+# spec.path differs. Topology B-compatible unchanged: swapping
+# sourceRef.name (docs/decisions/0009-repository-topology.md) still works
+# identically regardless of which path this points at.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-observability
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./platform/observability-satellite
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-crds
+  wait: true
+  timeout: 10m0s

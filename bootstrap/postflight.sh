@@ -133,3 +133,62 @@ else
     echo "you until a real receiver (SMTP, ntfy, webhook) is configured. See"
     echo "capabilities/alert-delivery/README.md and docs/supported/README.md."
 fi
+echo
+
+# --- satellite observability (docs/decisions/0018-observability-topology.md) ---
+# Detected from LIVE cluster state (the Prometheus CR's own spec.remoteWrite),
+# never from a config file this script would otherwise have to guess is
+# still accurate -- same "prove it, don't infer it from config existing"
+# discipline as the backup check above.
+remote_write_targets=$(kubectl get prometheus -n monitoring kube-prometheus-stack-prometheus \
+    -o jsonpath='{.spec.remoteWrite[*].url}' 2>/dev/null || true)
+if [ -n "$remote_write_targets" ]; then
+    echo "--- satellite observability ---"
+    echo "Satellite topology selected -- remote-write destination(s): $remote_write_targets"
+
+    # Curled from the HOST, not via kubectl exec into the Prometheus
+    # container (whose minimal image may not carry curl/wget) -- a k3s
+    # single-node host can reach its own cluster's Service ClusterIPs
+    # directly, the same routable-from-the-host property every other
+    # in-cluster-only check in this repository already relies on.
+    # prometheus-operated, not kube-prometheus-stack-prometheus -- the
+    # latter is the Prometheus Operator CUSTOM RESOURCE's own name (used
+    # above and by capabilities/heartbeat/'s Alertmanager equivalent), a
+    # separate thing from the headless SERVICE the operator generates,
+    # which capabilities/grafana/helmrelease.yaml's own datasource URL and
+    # tests/profiles/t-a-ups.sh's own port-forward already name correctly.
+    prom_svc_ip=$(kubectl get svc -n monitoring prometheus-operated \
+        -o jsonpath='{.spec.clusterIP}' 2>/dev/null || true)
+    if [ -n "$prom_svc_ip" ]; then
+        prom_metrics=$(curl -sf --max-time 5 "http://${prom_svc_ip}:9090/metrics" 2>/dev/null || true)
+        highest_sent=$(echo "$prom_metrics" | awk '/^prometheus_remote_storage_queue_highest_sent_timestamp_seconds/ {print $NF; exit}')
+        failed_total=$(echo "$prom_metrics" | awk '/^prometheus_remote_storage_samples_failed_total/ {sum+=$NF} END {print sum+0}')
+        now=$(date +%s)
+        if [ -n "$highest_sent" ] && \
+            [ "$(awk -v h="$highest_sent" -v n="$now" 'BEGIN{print (h>0 && n-h<600)?1:0}')" = "1" ]; then
+            ok_age=$(awk -v h="$highest_sent" -v n="$now" 'BEGIN{printf "%.0f", n-h}')
+            echo "ok    remote-write is genuinely delivering: highest successfully-sent sample was $ok_age s ago (failed samples so far: ${failed_total:-0})"
+        else
+            echo "WARN  remote-write does not yet show a recent successful send (failed samples so far: ${failed_total:-0}) --"
+            echo "      this is expected immediately after bootstrap; re-run this script in a few minutes."
+        fi
+    else
+        echo "WARN  Prometheus Service not found yet -- cannot confirm remote-write is genuinely delivering"
+    fi
+
+    if kubectl get prometheusrule -n monitoring satellite-remote-write-health >/dev/null 2>&1; then
+        echo "ok    the telemetry-path-health rule (F3: SatelliteRemoteWriteFailing/Stale) is loaded"
+    else
+        echo "FAIL  satellite-remote-write-health PrometheusRule not found -- the F3 telemetry-path"
+        echo "      failure/lag alert (docs/decisions/0018) will never fire on this instance"
+    fi
+
+    if kubectl get cronjob -n monitoring scrap-heartbeat >/dev/null 2>&1; then
+        echo "ok    F2 posture: capabilities/heartbeat/ is enabled -- this node's own death is covered"
+    else
+        echo "STATED PLAINLY, NOT HIDDEN: F2 posture -- no heartbeat capability and no hub configured."
+        echo "      If this node/k3s dies entirely, NOTHING will notice -- every local alert, delivered"
+        echo "      or not, dies with it. See capabilities/heartbeat/README.md (strongly recommended in"
+        echo "      satellite mode) and docs/decisions/0018-observability-topology.md's F2 row."
+    fi
+fi

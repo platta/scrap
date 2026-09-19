@@ -1,0 +1,69 @@
+# Values-level delta patch onto platform/observability/helmrelease.yaml's
+# HelmRelease, selected explicitly via kustomization.yaml's own
+# `patches[].target` (not a JSON6902 path patch), so the rest of the base
+# HelmRelease's spec.values (Grafana disabled, the kube* control-plane
+# scrapers disabled, cluster-wide selectors, resource requests/limits) is
+# untouched -- only the keys below are added or overridden.
+#
+# retention: ADR-0018's own "a small multiple of the longest rule lookback
+# window (currently 15m -- PodCrashLooping's increase(...[15m]))" -- 6h is
+# generous headroom over that floor while still buying the disk savings the
+# ADR states (8Gi -> ~1Gi), never claimed as the literal minimum possible.
+#
+# storageSpec: only the requested size differs from base; storageClassName
+# and accessModes are inherited unchanged via the base HelmRelease's own
+# values (CRD values merge as a plain JSON merge -- an omitted sibling key
+# is preserved, never reset to a schema default).
+#
+# externalLabels + remoteWrite: the satellite transport contract itself
+# (docs/decisions/0018-observability-topology.md's "Topology is not
+# provider" section). ${INSTANCE_NAME} and ${SATELLITE_REMOTE_WRITE_URL}
+# are instance-config tokens (clusters/<name>/instance-config.yaml),
+# resolved by Flux's postBuild.substituteFrom before this manifest is
+# applied -- same mechanism as every other ${VAR} in this repository.
+# basicAuth's username/password come from the observability-satellite
+# credential Secret (see cluster-secrets-kustomization.yaml and
+# README.md's "Enabling this topology") -- credential material, never an
+# instance-config scalar.
+#
+# The external label is named scrap_instance, deliberately NOT instance --
+# Prometheus's external_labels mechanism does not override a label that
+# already exists on a series, and "instance" is already Prometheus's own,
+# near-universal scrape-time label (the scraped target's address) on
+# almost every series a satellite has -- naming the external label
+# "instance" too would silently never apply to any of them, defeating the
+# entire point of tagging shipped series with this satellite's identity.
+#
+# Deliberately carries no apiVersion/kind/metadata of its own -- the
+# owning kustomization.yaml's `patches[].target` selects the real
+# HelmRelease explicitly, so this file is purely the values delta.
+# Giving this file its own `kind: HelmRelease` would make
+# tests/assertions/check_helm_strict.py's repo-wide scan mistake it for a
+# second, INCOMPLETE standalone HelmRelease (missing spec.chart) and fail
+# CI on a real HelmRelease it was never meant to be -- found while writing
+# this file, fixed by not making that identity ambiguous in the first
+# place, not by teaching that shared checker about every possible
+# patch-only fragment.
+spec:
+  values:
+    prometheus:
+      prometheusSpec:
+        retention: 6h
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              resources:
+                requests:
+                  storage: 1Gi
+        externalLabels:
+          scrap_instance: "${INSTANCE_NAME}"
+        remoteWrite:
+          - name: satellite
+            url: "${SATELLITE_REMOTE_WRITE_URL}"
+            basicAuth:
+              username:
+                name: observability-satellite-credentials
+                key: SATELLITE_REMOTE_WRITE_USERNAME
+              password:
+                name: observability-satellite-credentials
+                key: SATELLITE_REMOTE_WRITE_PASSWORD
