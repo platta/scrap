@@ -18,9 +18,3 @@ resources:
   - remote-write-health-alerts.yaml
 patches:
   - path: values-patch.yaml
-    target:
-      group: helm.toolkit.fluxcd.io
-      version: v2
-      kind: HelmRelease
-      name: kube-prometheus-stack
-      namespace: monitoring

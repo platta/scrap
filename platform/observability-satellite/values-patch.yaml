@@ -1,9 +1,23 @@
 # Values-level delta patch onto platform/observability/helmrelease.yaml's
-# HelmRelease, selected explicitly via kustomization.yaml's own
-# `patches[].target` (not a JSON6902 path patch), so the rest of the base
-# HelmRelease's spec.values (Grafana disabled, the kube* control-plane
-# scrapers disabled, cluster-wide selectors, resource requests/limits) is
-# untouched -- only the keys below are added or overridden.
+# HelmRelease, matched by apiVersion/kind/metadata identity (Kustomize's
+# implicit resource-ID patch target), not a JSON6902 path patch, so the
+# rest of the base HelmRelease's spec.values (Grafana disabled, the
+# kube* control-plane scrapers disabled, cluster-wide selectors, resource
+# requests/limits) is untouched -- only the keys below are added or
+# overridden.
+#
+# REAL BUG, found live via this profile's own CI run: an earlier version
+# of this file deliberately omitted apiVersion/kind, relying purely on
+# kustomization.yaml's own `patches[].target` for selection, specifically
+# to dodge a check_helm_strict.py false-positive (see that script's own
+# comment below). That is NOT valid input to kustomize's builtin
+# PatchTransformer -- `kustomize build failed: trouble configuring
+# builtin PatchTransformer with config` on the live Kustomization's own
+# events, confirmed directly, not assumed. A strategic-merge patch file
+# genuinely needs its own apiVersion/kind (kustomize uses them to resolve
+# merge-key/list-merge behavior from the target's schema), `target:`
+# or not. Restored here; the check_helm_strict.py false-positive is fixed
+# at its actual source instead (see that file's own comment).
 #
 # retention: ADR-0018's own "a small multiple of the longest rule lookback
 # window (currently 15m -- PodCrashLooping's increase(...[15m]))" -- 6h is
@@ -35,16 +49,11 @@
 # "instance" too would silently never apply to any of them, defeating the
 # entire point of tagging shipped series with this satellite's identity.
 #
-# Deliberately carries no apiVersion/kind/metadata of its own -- the
-# owning kustomization.yaml's `patches[].target` selects the real
-# HelmRelease explicitly, so this file is purely the values delta.
-# Giving this file its own `kind: HelmRelease` would make
-# tests/assertions/check_helm_strict.py's repo-wide scan mistake it for a
-# second, INCOMPLETE standalone HelmRelease (missing spec.chart) and fail
-# CI on a real HelmRelease it was never meant to be -- found while writing
-# this file, fixed by not making that identity ambiguous in the first
-# place, not by teaching that shared checker about every possible
-# patch-only fragment.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
 spec:
   values:
     prometheus:

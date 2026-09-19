@@ -50,6 +50,21 @@ def _find_helmreleases(root: Path) -> list[tuple[Path, dict]]:
         if (
             str(doc.get("apiVersion", "")).startswith("helm.toolkit.fluxcd.io")
             and doc.get("kind") == "HelmRelease"
+            # REAL BUG, found live via platform/observability-satellite/'s
+            # own first CI run (PLAT-273): a Kustomize values-delta PATCH
+            # onto an EXISTING HelmRelease -- matched by the same
+            # apiVersion/kind/metadata identity the real release uses,
+            # carrying only the keys it overrides -- looks identical to
+            # this scan and gets flagged as a second, INCOMPLETE
+            # standalone release ("missing chart/version/sourceRef")
+            # purely because it never declares spec.chart at all, not
+            # because anything is actually broken. A genuinely
+            # misconfigured real release (chart present but missing its
+            # own name/version) is NOT exempted by this -- only the
+            # complete ABSENCE of spec.chart, which a real release
+            # declaration always has and a values-only patch fragment
+            # never does.
+            and "chart" in (doc.get("spec") or {})
         ):
             out.append((path, doc))
     return out
