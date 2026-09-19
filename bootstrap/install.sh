@@ -45,6 +45,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 REPO_BRANCH="${REPO_BRANCH:-main}"
 CLUSTER_PATH="${CLUSTER_PATH:-./clusters/example}"
+# Exported (not just a local var, as before PLAT-273) so that
+# bootstrap/preflight/check-satellite-remote-write.sh -- the one preflight
+# check that is genuinely instance-aware -- can tell which clusters/<name>/
+# this install will actually use before the cluster itself exists to ask.
+# No other preflight check reads it; harmless to every one of them.
+export CLUSTER_PATH
 FLUX_VERSION="${FLUX_VERSION:-v2.9.4}"
 AGE_KEY_DIR="${AGE_KEY_DIR:-/etc/scrap/age}"
 

@@ -8,7 +8,7 @@ set -u
 cd "$(dirname "$0")"
 
 status=0
-for check in check-prerequisites.sh check-arch.sh check-cgroups.sh check-disk.sh check-clock.sh check-ports.sh check-resolver.sh; do
+for check in check-prerequisites.sh check-arch.sh check-cgroups.sh check-disk.sh check-clock.sh check-ports.sh check-resolver.sh check-satellite-remote-write.sh; do
     sh "./$check" || status=1
     echo
 done
