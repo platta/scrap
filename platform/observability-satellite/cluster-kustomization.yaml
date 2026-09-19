@@ -11,11 +11,23 @@
 # to standalone by restoring the original file content (spec.path back to
 # ./platform/observability).
 #
-# Everything else about this Kustomization -- name, dependsOn,
-# sourceRef -- is byte-identical to the standalone version; only
-# spec.path differs. Topology B-compatible unchanged: swapping
-# sourceRef.name (docs/decisions/0009-repository-topology.md) still works
-# identically regardless of which path this points at.
+# Everything else about this Kustomization's identity -- name, dependsOn,
+# sourceRef -- is unchanged from the standalone version; spec.path differs,
+# and postBuild.substituteFrom is newly added.
+#
+# REAL BUG, found live via this profile's own CI run: the standalone
+# version has never needed postBuild.substituteFrom (platform/observability/
+# helmrelease.yaml carries no ${VAR} of its own), so it was never on this
+# Kustomization at all -- confirmed by inspecting the real, checked-in
+# clusters/example/platform-observability.yaml. Copying that exact shape
+# for satellite mode, whose own values-patch.yaml genuinely does carry
+# ${INSTANCE_NAME}/${SATELLITE_REMOTE_WRITE_URL}, applied those tokens to
+# the live cluster completely unsubstituted -- confirmed directly from
+# the real error: "Prometheus... is invalid: spec.remoteWrite[0].url:
+# Invalid value: \"${SATELLITE_REMOTE_WRITE_URL}\"". Every OTHER
+# Kustomization in this repository whose own manifests use ${VAR} (e.g.
+# clusters/example/platform-backup.yaml) already carries this block; it
+# was simply never needed here before satellite mode existed.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -30,5 +42,9 @@ spec:
     name: flux-system
   dependsOn:
     - name: platform-crds
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
   wait: true
   timeout: 10m0s
