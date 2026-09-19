@@ -61,7 +61,15 @@ kind: Kustomization
 resources:
   - observability-satellite-credentials.sops.yaml
 EOF
-cat > clusters/<name>/secrets/observability-satellite/observability-satellite-credentials.yaml <<'EOF'
+# Written directly under its FINAL name (still plaintext at this point) --
+# `sops -e plaintext.yaml > plaintext.sops.yaml` never actually shows sops
+# the output filename (shell redirection is invisible to the sops
+# process), so clusters/<name>/.sops.yaml's own creation_rules
+# (`path_regex: secrets/.*\.sops\.ya?ml$`) would be matched against the
+# INPUT path instead, which doesn't end in ".sops.yaml" and never
+# matches ("no matching creation rules found"). Naming it correctly up
+# front and encrypting in place (`-i`) avoids this.
+cat > clusters/<name>/secrets/observability-satellite/observability-satellite-credentials.sops.yaml <<'EOF'
 apiVersion: v1
 kind: Secret
 metadata:
@@ -71,17 +79,8 @@ stringData:
   SATELLITE_REMOTE_WRITE_USERNAME: "changeme"
   SATELLITE_REMOTE_WRITE_PASSWORD: "changeme"
 EOF
-# cd into secrets/ (NOT the observability-satellite/ subdirectory itself)
-# before running sops -e -- clusters/<name>/.sops.yaml's own creation_rules
-# match against the path relative to where sops is invoked FROM, and its
-# `path_regex: secrets/.*\.sops\.ya?ml$` needs the literal "secrets/"
-# prefix an sops invocation from one directory deeper would lose. A
-# brand-new file needs this; editing an existing one with `sops --set`
-# does not (it re-encrypts to whatever recipients are already embedded
-# in the file, from any directory).
 cd clusters/<name>/secrets
-sops -e observability-satellite/observability-satellite-credentials.yaml > observability-satellite/observability-satellite-credentials.sops.yaml
-rm observability-satellite/observability-satellite-credentials.yaml
+sops -e -i observability-satellite/observability-satellite-credentials.sops.yaml
 ```
 
 Finally, set `SATELLITE_REMOTE_WRITE_URL` in `clusters/<name>/instance-config.yaml` to your

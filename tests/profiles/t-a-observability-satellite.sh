@@ -205,7 +205,9 @@ kind: Kustomization
 resources:
   - observability-satellite-credentials.sops.yaml
 EOF
-cat > "$LIVE_CLUSTER_DIR/secrets/observability-satellite/observability-satellite-credentials.yaml" <<EOF
+# Written directly under its FINAL name (still plaintext at this point) --
+# see the REAL BUG comment below for why.
+cat > "$LIVE_CLUSTER_DIR/secrets/observability-satellite/observability-satellite-credentials.sops.yaml" <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -216,32 +218,26 @@ stringData:
   SATELLITE_REMOTE_WRITE_PASSWORD: "${SAT_PASS}"
 EOF
 
-# REAL BUG, found live via this profile's own first CI run: sops -e (a
-# genuinely NEW file, unlike every other capability's edit-a-placeholder
-# path) needs .sops.yaml's creation_rules to know which recipients to
-# encrypt to -- and matches path_regex against the path relative to
-# WHERE sops is invoked FROM, not the target file's absolute path. `cd`
-# one level too deep (into secrets/observability-satellite/ itself, the
-# same directory the file lives in) makes the argument a bare filename
-# with no literal "secrets/" in it at all, so
-# clusters/example/.sops.yaml's `path_regex: secrets/.*\.sops\.ya?ml$`
-# never matches ("error loading config: no matching creation rules
-# found") even though the SAME regex would match the full relative path
-# from one level up. Fixed by cd-ing into secrets/ (matching every other
-# live secret edit in this repository) and passing the subdirectory as
-# part of the path, exactly like heartbeat/offsite-backup's own `sops
-# --set path/to/thing.sops.yaml` calls already do -- those happen to
-# work either way since `--set` re-encrypts to the recipients already
-# embedded in an EXISTING file's own metadata, never touching
-# creation_rules at all; `-e` on a brand-new file has no such metadata
-# yet and genuinely depends on this.
+# REAL BUG (second attempt at this fix; the first, cd-depth-based theory
+# was wrong -- .sops.yaml's own header comment says the match is against
+# the path relative to ITS OWN directory, not the caller's cwd, so cd
+# depth was never the actual cause). `sops -e plaintext.yaml >
+# plaintext.sops.yaml` never gives sops the OUTPUT filename at all -- shell
+# redirection happens in the shell, invisible to the sops process, which
+# only ever sees the INPUT argument "plaintext.yaml" for its own
+# creation_rules matching. That path does not end in ".sops.yaml", so
+# `path_regex: secrets/.*\.sops\.ya?ml$` genuinely never matches --
+# "no matching creation rules found" was correct, not spurious: sops was
+# telling the truth about the (wrong) path it was actually asked to
+# match. Fixed by giving the plaintext file its FINAL name up front and
+# encrypting it in place (`-i`) instead of redirecting -- sops then sees
+# and matches against the real, correct, already-".sops.yaml" path.
 EDIT_SCRIPT=$(mktemp)
 cat > "$EDIT_SCRIPT" <<EOF
 set -eu
 cd '$LIVE_CLUSTER_DIR/secrets'
 export SOPS_AGE_KEY_FILE='/etc/scrap/age/operational.agekey'
-sops -e observability-satellite/observability-satellite-credentials.yaml > observability-satellite/observability-satellite-credentials.sops.yaml
-rm -f observability-satellite/observability-satellite-credentials.yaml
+sops -e -i observability-satellite/observability-satellite-credentials.sops.yaml
 EOF
 if ! sudo sh "$EDIT_SCRIPT"; then
     echo "FAIL  T-A-observability-satellite: could not create the satellite credential secret"
