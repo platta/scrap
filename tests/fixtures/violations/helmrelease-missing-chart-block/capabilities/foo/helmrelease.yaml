@@ -1,0 +1,16 @@
+# VIOLATION: a real, standalone HelmRelease whose entire spec.chart block
+# is missing (not merely an incomplete chart -- name/version dropped),
+# and which is NOT referenced by any Kustomization's patches[].path.
+# check_helm_strict.py must still catch this: it is not a Kustomize
+# values-delta patch fragment, so the patch-aware exemption in
+# _find_helmreleases() must not swallow it. See that script's own comment
+# on the PLAT-273 revision (a shape-based exemption on "no spec.chart"
+# alone would have silently skipped exactly this document).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: foo
+  namespace: foo
+spec:
+  values:
+    replicaCount: 1
