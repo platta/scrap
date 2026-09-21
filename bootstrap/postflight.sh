@@ -176,6 +176,13 @@ if [ -n "$remote_write_targets" ]; then
         echo "WARN  Prometheus Service not found yet -- cannot confirm remote-write is genuinely delivering"
     fi
 
+    if kubectl get prometheusrule -n monitoring golden-path-baseline >/dev/null 2>&1; then
+        echo "ok    local baseline alert rules (golden-path-baseline) are loaded"
+    else
+        echo "FAIL  golden-path-baseline PrometheusRule not found -- satellite mode's local baseline"
+        echo "      alerting (docs/decisions/0018's local-rules invariant) is not evaluating on this instance"
+    fi
+
     if kubectl get prometheusrule -n monitoring satellite-remote-write-health >/dev/null 2>&1; then
         echo "ok    the telemetry-path-health rule (F3: SatelliteRemoteWriteFailing/Stale) is loaded"
     else
