@@ -1,0 +1,11 @@
+# Mirrors platform/observability-satellite/kustomization.yaml's real
+# shape: a values-delta patch onto an existing HelmRelease, matched by
+# apiVersion/kind/metadata identity, referenced here via patches[].path.
+# check_helm_strict.py must treat values-patch.yaml as a patch fragment,
+# never an incomplete standalone release, purely because this file names
+# it here -- not because of anything the patch document itself contains.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
+patches:
+  - path: values-patch.yaml
