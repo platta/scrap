@@ -118,10 +118,28 @@ if ! timeout 150 apt-get $APT_OPTS update -q; then
     echo "apt-get update did not complete within 150s -- likely a stalled mirror or network issue"
     exit 1
 fi
-if ! timeout 150 apt-get $APT_OPTS install -y -q nut; then
+apt-get $APT_OPTS install -y -q nut &
+DIAG_APT_PID=$!
+sleep 100
+echo "=== TEMP DIAGNOSTIC: mid-install state at T+100s ==="
+systemctl list-jobs 2>&1 || true
+systemctl --failed 2>&1 || true
+ps axo pid,ppid,stat,etime,cmd 2>&1 || true
+systemctl status nut-udev-settle.service 2>&1 || true
+systemctl status nut-driver-enumerator-daemon.service 2>&1 || true
+systemctl status nut-driver-enumerator.path 2>&1 || true
+echo "=== END TEMP DIAGNOSTIC ==="
+i=0
+while kill -0 "$DIAG_APT_PID" 2>/dev/null && [ "$i" -lt 50 ]; do
+    sleep 1
+    i=$((i + 1))
+done
+if kill -0 "$DIAG_APT_PID" 2>/dev/null; then
     echo "apt-get install nut did not complete within 150s -- likely a stalled mirror or network issue"
+    kill -9 "$DIAG_APT_PID" 2>/dev/null || true
     exit 1
 fi
+wait "$DIAG_APT_PID"
 
 echo "Writing /etc/nut/nut.conf (MODE=netserver -- this host serves upsd to the LAN, not just itself)..."
 cat >/etc/nut/nut.conf <<EOF
