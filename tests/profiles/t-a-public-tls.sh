@@ -35,9 +35,8 @@ install_prereqs
 log "T-A-public-tls: Phase 1/4: bootstrap/install.sh -- the real, unmodified installer"
 # Identical invocation to T-A/T-B/the DR rehearsal -- see any of their own
 # comments at this exact call for the HOME=/root investigation.
-export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A-public-tls: bootstrap/install.sh exited non-zero -- see the"
     echo "      'Step N/7' marker above for which layer of the documented bootstrap"
