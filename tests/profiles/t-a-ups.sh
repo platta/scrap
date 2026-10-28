@@ -112,9 +112,8 @@ sudo rm -f "$SENTINEL"
 
 # ---------------------------------------------------------------------------
 log "T-A-ups: Phase 2/7: bootstrap/install.sh -- the real, unmodified installer"
-export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A-ups: bootstrap/install.sh exited non-zero -- see the 'Step N/7'"
     echo "      marker above for which layer of the documented bootstrap sequence failed."
@@ -228,7 +227,7 @@ NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -
 
 # ---------------------------------------------------------------------------
 log "T-A-ups: Phase 3/7: host half -- bootstrap/host/install-nut.sh, for real, against dummy-ups"
-if ! sudo -E env \
+if ! sudo env \
     NUT_UPS_NAME="$CORRECT_UPS_NAME" \
     NUT_DRIVER=dummy-ups \
     NUT_PORT="$DUMMY_DEV" \
@@ -570,7 +569,7 @@ kill "$PF_PID" 2>/dev/null || true
 # ---------------------------------------------------------------------------
 log "T-A-ups: Phase 7/7: revert both halves cleanly"
 
-sudo -E sh bootstrap/host/uninstall-nut.sh || true
+sudo sh bootstrap/host/uninstall-nut.sh || true
 sudo rm -f "$DUMMY_DEV" "$SENTINEL"
 
 LIVEDIR2=$(mktemp -d)

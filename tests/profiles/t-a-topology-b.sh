@@ -309,9 +309,8 @@ rm -rf "$WORKDIR2" "$GEN_DIR"
 
 # ---------------------------------------------------------------------------
 log "T-A-topology-b: Phase 5/7: bootstrap/install.sh -- the real, unmodified installer, against the generated repo"
-export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root AGE_KEY_DIR="$AGE_KEY_DIR" FLUX_PRIVATE_KEY_FILE="$DEPLOY_KEY" \
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 AGE_KEY_DIR="$AGE_KEY_DIR" FLUX_PRIVATE_KEY_FILE="$DEPLOY_KEY" \
     REPO_URL="$BARE_URL" CLUSTER_PATH="./clusters/$INSTANCE_NAME" sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A-topology-b: bootstrap/install.sh exited non-zero -- see the 'Step N/7'"

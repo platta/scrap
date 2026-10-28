@@ -533,7 +533,7 @@ $PIN_LINE
 2. On the target host, run the upstream SCRAP repository's own installer against THIS
    repository's URL and this instance's path:
    \`\`\`sh
-   REPO_URL=<this-repository's-URL> CLUSTER_PATH=./clusters/$INSTANCE_NAME sudo -E sh bootstrap/install.sh
+   sudo env REPO_URL=<this-repository's-URL> CLUSTER_PATH=./clusters/$INSTANCE_NAME sh bootstrap/install.sh
    \`\`\`
 3. Edit \`clusters/$INSTANCE_NAME/instance-config.yaml\` with your own values before (or after --
    Flux re-reconciles either way) your first real bootstrap. Every value ships as a documented

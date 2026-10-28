@@ -32,22 +32,21 @@ jobs:
       - name: Diagnostics (on failure) -- cluster-wide and host NUT state
         if: failure()
         run: |
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
           echo "--- flux get kustomizations -A ---"
-          sudo -E flux get kustomizations -A || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations -A || true
           echo "--- kubectl get pods -A -o wide ---"
-          sudo -E kubectl get pods -A -o wide || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A -o wide || true
           echo "--- scrap-ups-exporter Deployment ---"
-          sudo -E kubectl describe deployment -n monitoring scrap-ups-exporter || true
-          sudo -E kubectl logs -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter --tail=100 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl describe deployment -n monitoring scrap-ups-exporter || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n monitoring -l app.kubernetes.io/name=scrap-ups-exporter --tail=100 || true
           echo "--- ups-credentials Secret: key NAMES only, never values ---"
-          sudo -E kubectl get secret -n monitoring ups-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get secret -n monitoring ups-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
           echo "--- host NUT state ---"
           sudo systemctl status nut-server nut-monitor --no-pager || true
           sudo journalctl -u nut-server -u nut-monitor --no-pager | tail -200 || true
           sudo upsc ups@localhost 2>&1 || true
           cat /etc/nut/scrap-ups-test.dev 2>/dev/null || true
           echo "--- most recent cluster events ---"
-          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
           echo "--- k3s service log tail ---"
           sudo journalctl -u k3s --no-pager | tail -150 || true
