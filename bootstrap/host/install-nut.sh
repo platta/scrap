@@ -118,28 +118,44 @@ if ! timeout 150 apt-get $APT_OPTS update -q; then
     echo "apt-get update did not complete within 150s -- likely a stalled mirror or network issue"
     exit 1
 fi
-apt-get $APT_OPTS install -y -q nut &
-DIAG_APT_PID=$!
-sleep 100
-echo "=== TEMP DIAGNOSTIC: mid-install state at T+100s ==="
-systemctl list-jobs 2>&1 || true
-systemctl --failed 2>&1 || true
-ps axo pid,ppid,stat,etime,cmd 2>&1 || true
-systemctl status nut-udev-settle.service 2>&1 || true
-systemctl status nut-driver-enumerator-daemon.service 2>&1 || true
-systemctl status nut-driver-enumerator.path 2>&1 || true
-echo "=== END TEMP DIAGNOSTIC ==="
-i=0
-while kill -0 "$DIAG_APT_PID" 2>/dev/null && [ "$i" -lt 50 ]; do
-    sleep 1
-    i=$((i + 1))
-done
-if kill -0 "$DIAG_APT_PID" 2>/dev/null; then
+# REAL BUG, found live via a dedicated diagnostic CI run against this
+# exact runner image: `ps` showed nut-server's own postinst trigger --
+# `deb-systemd-invoke start nut-driver-enumerator.path
+# nut-driver-enumerator.service nut-driver.target nut-server.service
+# nut-udev-settle.service ...` -- starting /usr/libexec/nut-driver-enumerator.sh
+# immediately on install, with no ups.conf written yet (we write it
+# below, only after this package install succeeds). That script loops
+# calling `systemctl restart nut-server`, which fails instantly every
+# time (no UPS configured) until systemd's own restart-rate-limit kicks
+# in ("Start request repeated too quickly") -- at which point
+# nut-server.service's start job (waiting on nut-driver.target, which
+# waits on nut-driver-enumerator.service) and nut-driver-enumerator.sh's
+# own in-progress `systemctl restart nut-server` call (waiting on that
+# same ordering chain) deadlock each other, with nothing left to break
+# the cycle. The previous unbounded `timeout 150` here just turned that
+# deadlock into "apt-get install nut did not complete within 150s".
+#
+# policy-rc.d is the standard Debian/Ubuntu mechanism for exactly this
+# class of problem: deb-systemd-invoke (confirmed directly in that `ps`
+# output) consults it before starting ANY unit during package
+# configuration, and `exit 101` makes it skip the start silently --
+# the same "disabled or a static unit, not starting it" skip already
+# visible for several of this same package's units. It has no effect on
+# the `systemctl enable --now` calls below: those call systemctl
+# directly, which never consults policy-rc.d, so NUT still starts for
+# real once ups.conf (etc.) actually exist.
+cat >/usr/sbin/policy-rc.d <<'EOF'
+#!/bin/sh
+exit 101
+EOF
+chmod 755 /usr/sbin/policy-rc.d
+install_status=0
+timeout 150 apt-get $APT_OPTS install -y -q nut || install_status=$?
+rm -f /usr/sbin/policy-rc.d
+if [ "$install_status" -ne 0 ]; then
     echo "apt-get install nut did not complete within 150s -- likely a stalled mirror or network issue"
-    kill -9 "$DIAG_APT_PID" 2>/dev/null || true
     exit 1
 fi
-wait "$DIAG_APT_PID"
 
 echo "Writing /etc/nut/nut.conf (MODE=netserver -- this host serves upsd to the LAN, not just itself)..."
 cat >/etc/nut/nut.conf <<EOF
