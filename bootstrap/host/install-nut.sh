@@ -144,16 +144,41 @@ fi
 # the `systemctl enable --now` calls below: those call systemctl
 # directly, which never consults policy-rc.d, so NUT still starts for
 # real once ups.conf (etc.) actually exist.
-cat >/usr/sbin/policy-rc.d <<'EOF'
+#
+# A policy-rc.d the host already has is moved aside and put back, never
+# overwritten or deleted -- it is the operator's own package-service
+# policy, not ours to change. The trap makes that restore (or the removal
+# of our temporary one) happen even if apt-get is interrupted: a leftover
+# `exit 101` would silently stop every later package install/upgrade on
+# this host from starting or restarting its services.
+POLICY_RC=/usr/sbin/policy-rc.d
+POLICY_RC_SAVED=
+if [ -e "$POLICY_RC" ]; then
+    POLICY_RC_SAVED=$(mktemp "$POLICY_RC.scrap-saved.XXXXXX")
+    mv "$POLICY_RC" "$POLICY_RC_SAVED"
+fi
+restore_policy_rc() {
+    rm -f "$POLICY_RC"
+    if [ -n "$POLICY_RC_SAVED" ] && [ -e "$POLICY_RC_SAVED" ]; then
+        mv "$POLICY_RC_SAVED" "$POLICY_RC"
+    fi
+}
+trap restore_policy_rc EXIT
+trap 'exit 130' INT TERM
+cat >"$POLICY_RC" <<'EOF'
 #!/bin/sh
 exit 101
 EOF
-chmod 755 /usr/sbin/policy-rc.d
+chmod 755 "$POLICY_RC"
 install_status=0
 timeout 150 apt-get $APT_OPTS install -y -q nut || install_status=$?
-rm -f /usr/sbin/policy-rc.d
-if [ "$install_status" -ne 0 ]; then
+restore_policy_rc
+trap - EXIT INT TERM
+if [ "$install_status" -eq 124 ]; then
     echo "apt-get install nut did not complete within 150s -- likely a stalled mirror or network issue"
+    exit 1
+elif [ "$install_status" -ne 0 ]; then
+    echo "apt-get install nut failed (exit $install_status) -- see apt's own output above"
     exit 1
 fi
 
