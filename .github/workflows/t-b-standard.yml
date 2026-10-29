@@ -26,19 +26,18 @@ jobs:
       - name: Diagnostics (on failure) -- cluster-wide state
         if: failure()
         run: |
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
           echo "--- flux get kustomizations -A ---"
-          sudo -E flux get kustomizations -A || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations -A || true
           echo "--- kubectl get pods -A -o wide ---"
-          sudo -E kubectl get pods -A -o wide || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A -o wide || true
           echo "--- authentik server log tail ---"
-          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=server --tail=200 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n authentik -l app.kubernetes.io/component=server --tail=200 || true
           echo "--- authentik worker log tail ---"
-          sudo -E kubectl logs -n authentik -l app.kubernetes.io/component=worker --tail=200 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n authentik -l app.kubernetes.io/component=worker --tail=200 || true
           echo "--- grafana log tail ---"
-          sudo -E kubectl logs -n monitoring -l app.kubernetes.io/name=grafana --tail=200 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n monitoring -l app.kubernetes.io/name=grafana --tail=200 || true
           echo "--- most recent cluster events ---"
-          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
           echo "--- k3s service status ---"
           sudo systemctl status k3s --no-pager || true
           echo "--- k3s service log tail ---"

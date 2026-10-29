@@ -118,8 +118,67 @@ if ! timeout 150 apt-get $APT_OPTS update -q; then
     echo "apt-get update did not complete within 150s -- likely a stalled mirror or network issue"
     exit 1
 fi
-if ! timeout 150 apt-get $APT_OPTS install -y -q nut; then
+# REAL BUG, found live via a dedicated diagnostic CI run against this
+# exact runner image: `ps` showed nut-server's own postinst trigger --
+# `deb-systemd-invoke start nut-driver-enumerator.path
+# nut-driver-enumerator.service nut-driver.target nut-server.service
+# nut-udev-settle.service ...` -- starting /usr/libexec/nut-driver-enumerator.sh
+# immediately on install, with no ups.conf written yet (we write it
+# below, only after this package install succeeds). That script loops
+# calling `systemctl restart nut-server`, which fails instantly every
+# time (no UPS configured) until systemd's own restart-rate-limit kicks
+# in ("Start request repeated too quickly") -- at which point
+# nut-server.service's start job (waiting on nut-driver.target, which
+# waits on nut-driver-enumerator.service) and nut-driver-enumerator.sh's
+# own in-progress `systemctl restart nut-server` call (waiting on that
+# same ordering chain) deadlock each other, with nothing left to break
+# the cycle. The previous unbounded `timeout 150` here just turned that
+# deadlock into "apt-get install nut did not complete within 150s".
+#
+# policy-rc.d is the standard Debian/Ubuntu mechanism for exactly this
+# class of problem: deb-systemd-invoke (confirmed directly in that `ps`
+# output) consults it before starting ANY unit during package
+# configuration, and `exit 101` makes it skip the start silently --
+# the same "disabled or a static unit, not starting it" skip already
+# visible for several of this same package's units. It has no effect on
+# the `systemctl enable --now` calls below: those call systemctl
+# directly, which never consults policy-rc.d, so NUT still starts for
+# real once ups.conf (etc.) actually exist.
+#
+# A policy-rc.d the host already has is moved aside and put back, never
+# overwritten or deleted -- it is the operator's own package-service
+# policy, not ours to change. The trap makes that restore (or the removal
+# of our temporary one) happen even if apt-get is interrupted: a leftover
+# `exit 101` would silently stop every later package install/upgrade on
+# this host from starting or restarting its services.
+POLICY_RC=/usr/sbin/policy-rc.d
+POLICY_RC_SAVED=
+if [ -e "$POLICY_RC" ]; then
+    POLICY_RC_SAVED=$(mktemp "$POLICY_RC.scrap-saved.XXXXXX")
+    mv "$POLICY_RC" "$POLICY_RC_SAVED"
+fi
+restore_policy_rc() {
+    rm -f "$POLICY_RC"
+    if [ -n "$POLICY_RC_SAVED" ] && [ -e "$POLICY_RC_SAVED" ]; then
+        mv "$POLICY_RC_SAVED" "$POLICY_RC"
+    fi
+}
+trap restore_policy_rc EXIT
+trap 'exit 130' INT TERM
+cat >"$POLICY_RC" <<'EOF'
+#!/bin/sh
+exit 101
+EOF
+chmod 755 "$POLICY_RC"
+install_status=0
+timeout 150 apt-get $APT_OPTS install -y -q nut || install_status=$?
+restore_policy_rc
+trap - EXIT INT TERM
+if [ "$install_status" -eq 124 ]; then
     echo "apt-get install nut did not complete within 150s -- likely a stalled mirror or network issue"
+    exit 1
+elif [ "$install_status" -ne 0 ]; then
+    echo "apt-get install nut failed (exit $install_status) -- see apt's own output above"
     exit 1
 fi
 

@@ -123,9 +123,8 @@ backupjobfailed_hits() { grep '^POST /webhook' "$RECEIVER_LOG" 2>/dev/null | gre
 log "T-A-alert-heartbeat: Phase 2/5: bootstrap/install.sh -- the real, unmodified installer"
 # Identical invocation to every other live profile -- see any of their
 # own comments at this exact call for the HOME=/root investigation.
-export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A-alert-heartbeat: bootstrap/install.sh exited non-zero -- see the"
     echo "      'Step N/7' marker above for which layer of the documented bootstrap"

@@ -162,9 +162,8 @@ log "T-A-offsite-backup: Phase 2/5: bootstrap/install.sh -- the real, unmodified
 # Identical invocation to T-A/T-B/T-A-public-tls/the DR rehearsal -- see
 # any of their own comments at this exact call for the HOME=/root
 # investigation.
-export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A-offsite-backup: bootstrap/install.sh exited non-zero -- see the"
     echo "      'Step N/7' marker above for which layer of the documented bootstrap"

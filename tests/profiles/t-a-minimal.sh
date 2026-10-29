@@ -90,8 +90,13 @@ log "T-A: Phase 2/4: bootstrap/install.sh -- the real, unmodified installer"
 # instance-config edit above, which install.sh's own "cp -a $REPO_ROOT/."
 # step (see bootstrap/install.sh Step 5/7) carries straight into what gets
 # committed and reconciled, the same as any real operator's own edit
-# would.
-export SCRAP_ESCROW_CONFIRMED=1
+# would. Passed to the real `env` command below rather than exported and
+# carried via `sudo -E`: some runner images' sudo policy silently ignores
+# `-E` ("preserving the entire environment is not supported, '-E' is
+# ignored") while still exiting 0, which previously made this exact
+# confirmation vanish before install.sh ever saw it and failed the whole
+# run non-deterministically depending on which runner image a given CI
+# run happened to land on.
 cd "$REPO_ROOT"
 # REAL BUG, root-caused via the §T-A-destructive-restore investigation
 # (see tests/profiles/lib.sh's kc() for the earlier chapters -- this is
@@ -100,14 +105,13 @@ cd "$REPO_ROOT"
 # wasn't: the same "kuberc: ... permission denied" showed up even for
 # the plain, unprivileged "runner" user reading its OWN
 # /home/runner/.kube/kuberc -- meaning the problem isn't which user
-# kc() itself runs as at all. install.sh runs under `sudo -E` too, which
-# preserves HOME=/home/runner while the process is root; install.sh's
+# kc() itself runs as at all. install.sh runs as root under sudo too; its
 # own internal kubectl calls (unrelated to this script's kc(), and
 # rightly so -- it's the real, unmodified installer) then run as root
-# with that same borrowed HOME, and something in that combination
-# leaves /home/runner/.kube/ behind in a state the later, genuinely
-# unprivileged "runner" user can't read -- root-owned, most likely.
-# Overriding HOME to /root for JUST this one invocation (not this
+# with whatever HOME that invocation gives them, and something in that
+# combination leaves /home/runner/.kube/ behind in a state the later,
+# genuinely unprivileged "runner" user can't read -- root-owned, most
+# likely. Overriding HOME to /root for JUST this one invocation (not this
 # script's own environment -- kc()'s later unprivileged calls still
 # need HOME=/home/runner, their own real home) keeps every
 # root-privileged operation in the ENTIRE bootstrap (not just this
@@ -116,7 +120,7 @@ cd "$REPO_ROOT"
 # is never touched by anything except the genuinely-unprivileged
 # runner user from here on. This changes only how this test-harness
 # script invokes the real installer, never the installer itself.
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A: bootstrap/install.sh exited non-zero -- see the 'Step N/7' marker"
     echo "      above for which layer of the documented bootstrap sequence failed."

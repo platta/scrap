@@ -88,7 +88,7 @@ every field is commented with what it's for and what a safe value looks like.
 ## 4. Install
 
 ```sh
-sudo CLUSTER_PATH=./clusters/<your-instance-name> sh bootstrap/install.sh
+sudo env CLUSTER_PATH=./clusters/<your-instance-name> sh bootstrap/install.sh
 ```
 
 This runs, in order: a preflight check (fails loudly and touches nothing if your host isn't ready),
