@@ -123,9 +123,8 @@ echo "echo endpoint up (pid $ECHO_PID) on port $ECHO_PORT"
 
 # ---------------------------------------------------------------------------
 log "T-A-dyndns: Phase 2/6: bootstrap/install.sh -- the real, unmodified installer"
-export SCRAP_ESCROW_CONFIRMED=1
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  T-A-dyndns: bootstrap/install.sh exited non-zero -- see the 'Step N/7'"
     echo "      marker above for which layer of the documented bootstrap sequence failed."

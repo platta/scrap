@@ -33,20 +33,19 @@ jobs:
       - name: Diagnostics (on failure) -- cluster-wide state
         if: failure()
         run: |
-          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
           echo "--- flux get kustomizations -A ---"
-          sudo -E flux get kustomizations -A || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml flux get kustomizations -A || true
           echo "--- kubectl get pods -A -o wide ---"
-          sudo -E kubectl get pods -A -o wide || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A -o wide || true
           echo "--- scrap-backup CronJobs, full describe ---"
-          sudo -E kubectl describe cronjob -n scrap-backup || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl describe cronjob -n scrap-backup || true
           echo "--- scrap-backup Jobs ---"
-          sudo -E kubectl get jobs -n scrap-backup -o wide || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get jobs -n scrap-backup -o wide || true
           echo "--- restic-credentials Secret: key NAMES only, never values ---"
-          sudo -E kubectl get secret -n scrap-backup restic-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get secret -n scrap-backup restic-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
           echo "--- MinIO log tail ---"
           tail -n 200 /tmp/t-a-offsite-minio.log 2>/dev/null || true
           echo "--- most recent cluster events ---"
-          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
           echo "--- k3s service log tail ---"
           sudo journalctl -u k3s --no-pager | tail -150 || true

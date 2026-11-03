@@ -25,7 +25,7 @@ Produces a Topology B consumer repository — see `docs/decisions/0009-repositor
 Flux/Kustomize/SOPS repository containing only `clusters/<name>/` and `apps/` (no copy of
 `platform/`, `capabilities/`, or `components/`), wired to a separately, independently pinned
 `scrap-platform` `GitRepository`. Host the result anywhere, then bootstrap against it exactly like
-any other repository: `REPO_URL=<hosted-URL> CLUSTER_PATH=./clusters/<name> sudo -E sh
+any other repository: `sudo env REPO_URL=<hosted-URL> CLUSTER_PATH=./clusters/<name> sh
 bootstrap/install.sh`. See the script's own header comment for its full configuration surface, and
 `tests/profiles/t-a-topology-b.sh` for the live acceptance profile proving a generated repository
 actually bootstraps and reconciles this way.

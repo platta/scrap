@@ -73,10 +73,15 @@ NODE_IP=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -
 log "DR/authentik-postgres: Phase 2/5: bootstrap/install.sh -- the real, unmodified installer"
 # Identical invocation to T-A/T-B, including the HOME=/root fix -- see
 # either script's own comment at this exact call for the investigation
-# that found it necessary.
-export SCRAP_ESCROW_CONFIRMED=1
+# that found it necessary. SCRAP_ESCROW_CONFIRMED is passed to the real
+# `env` command rather than exported and carried via `sudo -E`: some
+# runner images' sudo policy silently ignores `-E` ("preserving the
+# entire environment is not supported, '-E' is ignored") while still
+# exiting 0, which previously made this exact confirmation vanish before
+# install.sh ever saw it and fail the whole run non-deterministically
+# depending on which runner image a given CI run happened to land on.
 cd "$REPO_ROOT"
-if ! sudo -E env HOME=/root sh bootstrap/install.sh; then
+if ! sudo env HOME=/root SCRAP_ESCROW_CONFIRMED=1 sh bootstrap/install.sh; then
     echo
     echo "FAIL  DR/authentik-postgres: bootstrap/install.sh exited non-zero -- see the"
     echo "      'Step N/7' marker above for which layer of the documented bootstrap"

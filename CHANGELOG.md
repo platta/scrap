@@ -11,8 +11,67 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 ## [Unreleased]
 
 No new release/candidate entry has been assembled here yet. Changes may have landed since the
-`v0.1.0-rc.1` content below was assembled; see this repository's commit history for what they
+`v0.1.0-rc.2` content below was assembled; see this repository's commit history for what they
 were and whether they warrant a new entry.
+
+## [v0.1.0-rc.2] — hotfix: UPS installer deadlock, sudo env-propagation
+
+**DRAFT — not yet merged into `main`, adjudicated, or tagged.** This entry describes PR #34
+(`port-sudo-E-fix-to-main`), currently open; see
+[`docs/releases/v0.1.0-rc.2.md`](https://github.com/platta/scrap/blob/main/docs/releases/v0.1.0-rc.2.md)
+(also a draft) for the full write-up, including why this warrants a new tag rather than landing
+silently on `main`. Per `docs/decisions/0015-versioning-and-release-process.md`, the tag itself —
+and the exact commit SHA it points at — is created only after independent adjudication; nothing
+here is final until that happens.
+
+Carries forward everything in `v0.1.0-rc.1` below unchanged — no capability's PROVEN NOW /
+INTENDED FOR v1 BUT NOT YET PROVEN / DEFERRED status moved. This is a defect-fix candidate, not a
+new capability candidate.
+
+### Fixed
+
+- **UPS capability, host installer (`bootstrap/host/install-nut.sh`, `docs/decisions/0013`):** the
+  `nut` package install could deadlock before `ups.conf` exists — its own postinst starts
+  `nut-driver-enumerator.service`, which loops calling `systemctl restart nut-server`; that fails
+  instantly with no UPS configured yet, until systemd's restart-rate-limit trips, at which point
+  the enumerator's in-flight restart call and `nut-server.service`'s own ordering-queued start
+  deadlock each other. Root-caused live via a dedicated diagnostic CI run (not inferred from
+  symptoms alone); fixed with a temporary, trap-guarded `policy-rc.d` scoped to just that install
+  step. Reproduced 2/2 times before the fix, passed on every run after — this is a real,
+  likely host-independent defect in the installer's own ordering (install the package, _then_
+  write its config), not merely a CI-environment quirk, even though CI is where it surfaced.
+- **Same file:** no longer overwrites or deletes a `policy-rc.d` the host already had — previously
+  clobbered and removed unconditionally, silently changing the operator's own package-service
+  policy for the duration of this script's run (and permanently, if interrupted — see below).
+- **Same file:** an interrupted run (Ctrl-C, or any failure between writing the temporary
+  `policy-rc.d` and removing it) could no longer leave it behind — the removal/restore is now
+  under an `EXIT` trap.
+- **Documentation:** the installer command shown in `v0.1.0-rc.1`'s own release notes,
+  `docs/getting-started.md`, `bootstrap/README.md`, and the Topology B generator's own generated
+  operator README all used `sudo VAR=value sh bootstrap/install.sh` or `sudo -E sh
+  bootstrap/install.sh` — both depend on a sudoers `SETENV` policy that silently drops the
+  variable (no error, no warning the operator would see as a problem) when absent. Standardized
+  everywhere on `sudo env VAR=value sh bootstrap/install.sh`, which doesn't depend on that policy
+  at all. This is a real, if narrow, correctness fix for any operator following these docs on a
+  hardened-sudoers host — not specific to CI.
+
+### Internal (CI/test-harness only — no effect on an installed SCRAP instance)
+
+- Every acceptance-profile test script and `bootstrap/install.sh` invocation under `sudo` relied
+  on `sudo -E` to carry `SCRAP_ESCROW_CONFIRMED` (and, for Topology B, several other variables)
+  across the privilege boundary. GitHub's `ubuntu-latest` runner label began migrating to Ubuntu
+  26.04 on 2026-10-28, whose sudo policy silently ignores `-E` (warns, then proceeds without it),
+  which broke the nightly DR (disaster-recovery) workflow and would have broken every acceptance
+  profile the next time each one happened to land on the new image. Fixed the same way as the
+  documentation above: pass needed variables directly to `env` instead of relying on `sudo -E`.
+  Also fixed the same `KUBECONFIG`-via-`sudo -E` pattern in all ten workflows' on-failure
+  diagnostics steps, which were silently producing useless "connection refused" output under the
+  same mechanism.
+- `T-A-offsite-backup` (PLAT-269, originally `develop`-only via PR #31, 2026-09-18): ported in
+  alongside the above — `tests/profiles/t-a-offsite-backup.sh` downloaded a precompiled MinIO
+  binary from `dl.min.io`, which started returning something other than a valid binary. Fixed by
+  building both MinIO server and client from pinned source instead. CI-only; included so this
+  candidate's own check suite goes fully green, not because it affects an installed instance.
 
 ## [v0.1.0-rc.1] — first release candidate
 
