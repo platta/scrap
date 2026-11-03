@@ -67,6 +67,11 @@ new capability candidate.
   Also fixed the same `KUBECONFIG`-via-`sudo -E` pattern in all ten workflows' on-failure
   diagnostics steps, which were silently producing useless "connection refused" output under the
   same mechanism.
+- `T-A-offsite-backup` (PLAT-269, originally `develop`-only via PR #31, 2026-09-18): ported in
+  alongside the above — `tests/profiles/t-a-offsite-backup.sh` downloaded a precompiled MinIO
+  binary from `dl.min.io`, which started returning something other than a valid binary. Fixed by
+  building both MinIO server and client from pinned source instead. CI-only; included so this
+  candidate's own check suite goes fully green, not because it affects an installed instance.
 
 ## [v0.1.0-rc.1] — first release candidate
 
