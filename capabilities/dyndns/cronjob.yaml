@@ -137,18 +137,40 @@ spec:
                   # scalar at all) -- escaped the same as every other
                   # shell-local/runtime-only name here, see this file's
                   # own comment above.
-                  nsupdate -y "hmac-sha256:$$DYNDNS_TSIG_KEY_NAME:$$DYNDNS_TSIG_SECRET" -v <<UPDATE
-                  server $$NS_HOST $$NS_PORT
-                  update delete $$DYNDNS_HOSTNAME A
-                  update add $$DYNDNS_HOSTNAME 300 A $$CURRENT_IP
-                  send
-                  UPDATE
-
                   # nsupdate is not reliably non-zero on every failure
                   # mode -- see this capability's own README,
                   # "Configuration errors fail visibly", for the real
                   # reason this job re-queries the nameserver itself
                   # rather than trusting nsupdate's own exit code alone.
+                  # REAL BUG, found live (T-A-dyndns CI, intermittent):
+                  # Alpine's bind-tools nsupdate/dig occasionally SIGSEGVs
+                  # during their own isc_app_ctxshutdown() cleanup (a
+                  # self-kill() unexpectedly returns EPERM) -- a known
+                  # class of bug in BIND's own utilities, not specific to
+                  # this cluster. Harmless for the dig calls above/below:
+                  # each is piped through `| tail -n1`, so a crashing
+                  # dig's exit status never reaches this script under
+                  # plain `set -e` (no pipefail) -- only the already-captured
+                  # stdout matters. nsupdate itself isn't piped, so without
+                  # capturing its exit status explicitly, `set -e` aborted
+                  # the whole script the instant it crashed, skipping the
+                  # independent confirmation query below entirely -- even
+                  # on runs where the real RFC2136 update had already been
+                  # accepted by the nameserver before the crash. Captured,
+                  # never trusted alone (per the paragraph above), so that
+                  # crash can no longer skip the one check that actually
+                  # decides success or failure.
+                  nsupdate_status=0
+                  nsupdate -y "hmac-sha256:$$DYNDNS_TSIG_KEY_NAME:$$DYNDNS_TSIG_SECRET" -v <<UPDATE || nsupdate_status=$$?
+                  server $$NS_HOST $$NS_PORT
+                  update delete $$DYNDNS_HOSTNAME A
+                  update add $$DYNDNS_HOSTNAME 300 A $$CURRENT_IP
+                  send
+                  UPDATE
+                  if [ "$$nsupdate_status" -ne 0 ]; then
+                      echo "nsupdate exited non-zero ($$nsupdate_status) -- not trusted alone, confirming via an independent query below"
+                  fi
+
                   sleep 1
                   CONFIRMED_IP=$(dig @"$$NS_HOST" -p "$$NS_PORT" +short +time=5 +tries=2 "$$DYNDNS_HOSTNAME" A | tail -n1)
                   if [ "$$CONFIRMED_IP" = "$$CURRENT_IP" ]; then
