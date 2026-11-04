@@ -11,8 +11,53 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 ## [Unreleased]
 
 No new release/candidate entry has been assembled here yet. Changes may have landed since the
-`v0.1.0-rc.2` tag (2026-11-03) was cut; see this repository's commit history for what they were
+`v0.1.0-rc.3` tag (2026-11-04) was cut; see this repository's commit history for what they were
 and whether they warrant a new entry.
+
+## [v0.1.0-rc.3] — hotfix: dyndns CronJob nsupdate-crash false failure
+
+This is the release-notes content for the `v0.1.0-rc.3` tag, created 2026-11-04 against commit
+[`5f01a2ca`](https://github.com/platta/scrap/commit/5f01a2cab575066ac1947fca5b44dea20a46b7dd)
+(the merge of [PR #38](https://github.com/platta/scrap/pull/38), `port-dyndns-fix-to-main`) after
+independent adjudication, per
+`docs/decisions/0015-versioning-and-release-process.md`. Published as a
+[GitHub pre-release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.3). Full write-up:
+[`docs/releases/v0.1.0-rc.3.md`](https://github.com/platta/scrap/blob/v0.1.0-rc.3/docs/releases/v0.1.0-rc.3.md).
+
+Carries forward everything in `v0.1.0-rc.2` and `v0.1.0-rc.1` below unchanged — no capability's
+PROVEN NOW / INTENDED FOR v1 BUT NOT YET PROVEN / DEFERRED status moved. This is a defect-fix
+candidate, not a new capability candidate.
+
+### Fixed
+
+- **Dynamic DNS capability, CronJob (`capabilities/dyndns/cronjob.yaml`, `docs/decisions/` dyndns
+  capability):** Alpine's `bind-tools` `nsupdate` intermittently SIGSEGVs during its own
+  `isc_app_ctxshutdown()` shutdown cleanup (a self-`kill()` call unexpectedly returns `EPERM`) —
+  a known class of bug in BIND's own utilities (see e.g. ArchLinux FS#30139), not specific to
+  this project's own infrastructure. The crash itself is mostly cosmetic — confirmed live, it
+  happens on both successful and failed runs, after the tool has already produced valid output —
+  but it was fatal specifically for the `nsupdate` invocation: unlike the script's `dig` calls
+  (already piped through `| tail -n1`, which masks a crashing upstream's exit code), `nsupdate`'s
+  call wasn't piped, so under `set -eu` a crash there aborted the whole script immediately,
+  skipping the script's own already-existing independent confirmation query — even on runs where
+  the real RFC2136 update had already been accepted by the nameserver before the crash. A real
+  operator's `scrap-dyndns` CronJob could therefore report a failed Job for an update that had, in
+  fact, genuinely succeeded. Fixed by capturing `nsupdate`'s exit status explicitly instead of
+  letting `set -e` act on it, matching this script's own already-documented design intent
+  ("nsupdate is not reliably non-zero on every failure mode ... this job re-queries the nameserver
+  itself rather than trusting nsupdate's own exit code alone") — the bug was that a crash skipped
+  reaching that re-query entirely, not that the design was wrong. Root-caused live with a
+  dedicated diagnostic CI run (not inferred from symptoms alone) and verified behaviorally with a
+  standalone positive/negative-control simulation of the exact crash pattern before landing.
+
+### CI evidence note
+
+Originally surfaced as an intermittent `T-A-dyndns` CI failure (4 of 5 runs failing when bundled
+in the ten-workflow concurrent burst a push to `main`/a PR triggers, 1 of 1 clean when run in
+isolation — a real, reproducible pattern, not a one-off). After the fix: clean on an isolated
+`workflow_dispatch` run, and clean on two separate pushes/PRs that each re-triggered the full
+ten-workflow burst (PR #37 against `develop`, PR #38 against `main`) — the exact conditions that
+previously failed 4/5 times.
 
 ## [v0.1.0-rc.2] — hotfix: UPS installer deadlock, sudo env-propagation
 
