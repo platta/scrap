@@ -11,18 +11,19 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 ## [Unreleased]
 
 No new release/candidate entry has been assembled here yet. Changes may have landed since the
-`v0.1.0-rc.2` content below was assembled; see this repository's commit history for what they
-were and whether they warrant a new entry.
+`v0.1.0-rc.2` tag (2026-11-03) was cut; see this repository's commit history for what they were
+and whether they warrant a new entry.
 
 ## [v0.1.0-rc.2] — hotfix: UPS installer deadlock, sudo env-propagation
 
-**DRAFT — not yet merged into `main`, adjudicated, or tagged.** This entry describes PR #34
-(`port-sudo-E-fix-to-main`), currently open; see
-[`docs/releases/v0.1.0-rc.2.md`](https://github.com/platta/scrap/blob/main/docs/releases/v0.1.0-rc.2.md)
-(also a draft) for the full write-up, including why this warrants a new tag rather than landing
-silently on `main`. Per `docs/decisions/0015-versioning-and-release-process.md`, the tag itself —
-and the exact commit SHA it points at — is created only after independent adjudication; nothing
-here is final until that happens.
+This is the release-notes content for the `v0.1.0-rc.2` tag, created 2026-11-03 against commit
+[`e298fc27`](https://github.com/platta/scrap/commit/e298fc2735333ab9b529a9a866a362db19ac7536)
+(the merge of [PR #34](https://github.com/platta/scrap/pull/34),
+`port-sudo-E-fix-to-main`) after independent adjudication, per
+`docs/decisions/0015-versioning-and-release-process.md`. Published as a
+[GitHub pre-release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.2). Full write-up,
+including why this warranted a new tag rather than landing silently on `main`:
+[`docs/releases/v0.1.0-rc.2.md`](https://github.com/platta/scrap/blob/v0.1.0-rc.2/docs/releases/v0.1.0-rc.2.md).
 
 Carries forward everything in `v0.1.0-rc.1` below unchanged — no capability's PROVEN NOW /
 INTENDED FOR v1 BUT NOT YET PROVEN / DEFERRED status moved. This is a defect-fix candidate, not a
@@ -72,6 +73,18 @@ new capability candidate.
   binary from `dl.min.io`, which started returning something other than a valid binary. Fixed by
   building both MinIO server and client from pinned source instead. CI-only; included so this
   candidate's own check suite goes fully green, not because it affects an installed instance.
+
+### CI evidence note
+
+The push-to-main suite for the exact candidate (`e298fc27`) completed 9/10 green on first
+attempt; `T-A-dyndns` failed twice in a row, with a different specific assertion failing each
+time (`update-applies` the first time, `rejects-wrong-credential` the second) — the signature of
+a genuine race, not a deterministic bug. `tests/profiles/t-a-dyndns.sh` is byte-identical to the
+version that had already passed cleanly on this same commit via the PR's own `pull_request`
+checks, and a third, isolated `workflow_dispatch` run of just this workflow (outside the
+ten-workflow concurrent burst every push to `main` triggers) passed cleanly on the first attempt.
+Classified as contention from that simultaneous burst, not a product regression — this PR touches
+nothing under `capabilities/dyndns/` or `tests/profiles/t-a-dyndns.sh`.
 
 ## [v0.1.0-rc.1] — first release candidate
 

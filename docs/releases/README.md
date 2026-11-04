@@ -11,12 +11,11 @@ was true at the time that candidate/release was assembled, not a moving target.
 
 | Release | Status | Exact commit | Notes |
 |---|---|---|---|
-| [v0.1.0-rc.2](v0.1.0-rc.2.md) | **DRAFT** — not yet merged, adjudicated, or tagged; [PR #34](https://github.com/platta/scrap/pull/34) | Pending | Defect-fix candidate (UPS installer deadlock, `sudo` env-propagation). Not installable yet — no tag exists. |
+| [v0.1.0-rc.2](v0.1.0-rc.2.md) | **Pre-release**, tagged 2026-11-03 — [GitHub Release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.2) | [`e298fc27`](https://github.com/platta/scrap/commit/e298fc2735333ab9b529a9a866a362db19ac7536) | Defect-fix candidate (UPS installer deadlock, `sudo` env-propagation). Get it with `git checkout v0.1.0-rc.2`; carries forward `v0.1.0-rc.1`'s evidence boundary unchanged. |
 | [v0.1.0-rc.1](v0.1.0-rc.1.md) | **Pre-release**, tagged 2026-08-28 — [GitHub Release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.1) | [`b5eeb298`](https://github.com/platta/scrap/commit/b5eeb2987b9139b5272da37c4c38b045aad6350b) | First public release candidate. Get it with `git checkout v0.1.0-rc.1`; read that document's evidence boundary before relying on it. |
 
-**Which of these should you install?** The newest *tagged* release above — currently
-`v0.1.0-rc.1`. `v0.1.0-rc.2` is a draft, not yet tagged; do not install from an unmerged branch.
-Tagged releases are the supported consumption point for adopters; see
+**Which of these should you install?** The newest tagged release above — currently
+`v0.1.0-rc.2`. Tagged releases are the supported consumption point for adopters; see
 [Getting started](../getting-started.md#2-clone-the-repository) for the clone-and-checkout
 commands and for which branches are, and are not, meant to be installed.
 
