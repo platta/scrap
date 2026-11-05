@@ -103,19 +103,17 @@ spec:
         # see identity-credentials.sops.yaml for both keys, same value.
         existingSecret: identity-credentials
       primary:
-        # TEMP DIAGNOSTIC, round 2 of 2 (isolating which mechanism):
-        # round 1 (seccomp Unconfined + appArmorProfile Unconfined
-        # together) resolved the crash loop 2/2 -- see that commit for
-        # the full background. This round tests seccomp ALONE (no
-        # appArmorProfile override at all) to find out whether seccomp's
-        # default "RuntimeDefault" profile is sufficient on its own to
-        # explain the fix, before committing to the broader change
-        # permanently.
-        podSecurityContext:
-          seccompProfile:
-            type: Unconfined
+        # TEMP DIAGNOSTIC, round 3 of 3 (isolating which mechanism):
+        # round 1 (seccomp + appArmorProfile together) resolved the crash
+        # loop 2/2; round 2 (seccomp ALONE) also resolved it 2/2 (one full
+        # DR destroy/quiesce/restore/reload cycle, one T-B run) -- see
+        # those commits for the full background. This round tests
+        # appArmorProfile ALONE (seccomp left at the chart's own default,
+        # "RuntimeDefault") to find out whether AppArmor is independently
+        # sufficient too, or whether seccomp is the one mechanism that
+        # actually matters here.
         containerSecurityContext:
-          seccompProfile:
+          appArmorProfile:
             type: Unconfined
         persistence:
           size: 2Gi
