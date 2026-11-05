@@ -103,6 +103,50 @@ spec:
         # see identity-credentials.sops.yaml for both keys, same value.
         existingSecret: identity-credentials
       primary:
+        # REAL BUG, root-caused live: authentik-postgresql-0 crash-loops
+        # reproducibly (observed 2026-11-04/05: DR workflow 3+ times,
+        # T-B once) with "FATAL: could not signal for checkpoint:
+        # Permission denied" -- a self/sibling-process kill() call
+        # (Postgres's checkpointer-signal IPC) returning EPERM. Each
+        # restart re-enters WAL recovery, hits the same denial, dies
+        # again -- a self-reinforcing loop that never resolves on its
+        # own. The identical symptom (a self-directed kill() returning
+        # EPERM) independently hit capabilities/dyndns/'s nsupdate/dig
+        # the same week, in an unrelated investigation -- the common
+        # thread across two otherwise-unconnected C codebases points at
+        # the underlying host/container-runtime default, not anything
+        # specific to Postgres or this chart.
+        #
+        # Confirmed with a real control, not assumed: 4 baseline
+        # attempts (2x T-B, 2x DR) on the exact same day, unmodified,
+        # failed 3/4 with the identical signature; the override below
+        # passed 6/6 across two independent test rounds (2x each of
+        # T-B and the DR workflow's full destroy/quiesce/restore/reload
+        # cycle). At a ~75% baseline failure rate, six straight
+        # successes by chance alone would be roughly 0.02% likely.
+        #
+        # Bitnami's postgresql chart defaults both pod- and
+        # container-level seccompProfile.type to "RuntimeDefault".
+        # Overriding it to "Unconfined" was isolated as independently
+        # sufficient (a separate appArmorProfile override was also
+        # independently sufficient on its own in testing, which is a
+        # genuinely surprising result this comment doesn't fully
+        # explain -- it suggests the mechanism may not be as simple as
+        # "seccomp's RuntimeDefault profile blocks this syscall",
+        # though the empirical fix is solid either way); seccomp is the
+        # narrower, more conventional single-field change of the two,
+        # so that's what ships here. Known tradeoff: Unconfined removes
+        # real sandboxing for a security-sensitive (identity/SSO)
+        # workload. A narrower custom profile that allows only the
+        # specific syscalls Postgres's checkpointer needs would be the
+        # more correct long-term fix; this is the pragmatic one that's
+        # actually been verified to work.
+        podSecurityContext:
+          seccompProfile:
+            type: Unconfined
+        containerSecurityContext:
+          seccompProfile:
+            type: Unconfined
         persistence:
           size: 2Gi
           # The backup contract, applied to a chart-generated PVC we don't
