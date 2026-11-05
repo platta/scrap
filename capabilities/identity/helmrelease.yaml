@@ -123,13 +123,12 @@ spec:
         # Confirmed with real controls under TWO different load
         # conditions, not assumed from one batch of runs:
         #   - Light load (an isolated T-B/DR pair via workflow_dispatch,
-        #     no other workflow running concurrently): unmodified fails
-        #     3/4; this override passes 6/6 across two independent test
-        #     rounds (2x each of T-B and the DR workflow's full
-        #     destroy/quiesce/restore/reload cycle). At a ~75% baseline
-        #     failure rate, six straight successes by chance alone would
-        #     be roughly 0.02% likely -- this is a real, substantial fix
-        #     for this condition.
+        #     confirmed nothing else running concurrently): unmodified
+        #     fails 3/4; this override passed 6 of the first 6 attempts
+        #     across three independent isolation rounds, then failed once
+        #     more on a 7th, separately-confirmed-isolated run with the
+        #     identical signature -- 6/7 overall, a large reduction from
+        #     baseline, not a complete elimination even under light load.
         #   - Heavy load (T-B/DR run alongside the other ~9 acceptance
         #     workflows a push/PR triggers simultaneously): unmodified
         #     fails 2/2 AND this override ALSO fails 2/2, identical
@@ -138,10 +137,12 @@ spec:
         #     reproduce the same crash regardless of this setting.
         # Together this points at two separate, overlapping causes with
         # the same symptom: a seccomp-related EPERM denial (which this
-        # override genuinely resolves, and which dominates under light
+        # override substantially, but not completely, reduces under light
         # load) and a distinct, load/resource-contention-driven failure
-        # mode (same error text, different trigger) that only appears
-        # under heavy concurrency and is NOT addressed here.
+        # mode (same error text, different trigger) that dominates under
+        # heavy concurrency and is NOT addressed here. Even the light-load
+        # case retains some real residual failure rate -- this is a
+        # meaningful improvement, not a guarantee.
         #
         # Practically: the real nightly DR schedule runs alone, never as
         # part of a concurrent burst -- the light-load condition this fix
