@@ -103,6 +103,35 @@ spec:
         # see identity-credentials.sops.yaml for both keys, same value.
         existingSecret: identity-credentials
       primary:
+        # TEMP DIAGNOSTIC, not a settled fix: investigating a reproducible
+        # crash loop (DR workflow 2026-11-04/05, T-B once on 2026-11-04) --
+        # authentik-postgresql-0's startup process dies with "FATAL: could
+        # not signal for checkpoint: Permission denied", a self/sibling-
+        # process kill() call returning EPERM. Each restart re-enters WAL
+        # recovery, hits the same denial, dies again -- a self-reinforcing
+        # loop. The identical symptom (a self-directed kill() returning
+        # EPERM) independently hit capabilities/dyndns/'s nsupdate/dig in
+        # an unrelated CI investigation the same week, which points at the
+        # underlying host/runtime rather than anything specific to Postgres
+        # or this chart. Bitnami's postgresql chart defaults both pod- and
+        # container-level seccompProfile.type to "RuntimeDefault"; this
+        # overrides both to "Unconfined" and adds an explicit
+        # appArmorProfile override (stable K8s API since 1.31; this
+        # cluster runs k3s 1.36.3), to test whether either LSM/seccomp
+        # layer is the actual blocker. If this resolves the crash loop, it
+        # confirms the mechanism but is NOT the intended permanent fix --
+        # Unconfined removes real sandboxing from a security-sensitive
+        # (identity/SSO) workload; a narrower profile that allows only the
+        # specific syscalls Postgres's checkpointer needs would be the
+        # correct follow-up.
+        podSecurityContext:
+          seccompProfile:
+            type: Unconfined
+        containerSecurityContext:
+          seccompProfile:
+            type: Unconfined
+          appArmorProfile:
+            type: Unconfined
         persistence:
           size: 2Gi
           # The backup contract, applied to a chart-generated PVC we don't
