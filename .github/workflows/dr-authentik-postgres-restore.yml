@@ -31,8 +31,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # TEMP diagnostic (PLAT heavy-load postgres investigation): poll for
+      # postgres's own host-visible process while the test runs, and snapshot
+      # its seccomp/AppArmor confinement plus cgroup CPU-throttle/memory-event
+      # counters every 2s. A crashed container's process is gone by the time
+      # an on-failure step runs, so this has to run concurrently with the
+      # test, not after it. Remove once the heavy-load investigation concludes.
+      - name: Start background postgres state watcher (TEMP diagnostic)
+        run: |
+          sudo rm -f /tmp/pg-watch.log
+          sudo bash -c '
+          while true; do
+            for pid in $(ps aux | grep "[p]ostgres" | awk "{print \$2}"); do
+              {
+                echo "=== $(date -u +%FT%TZ) pid=$pid ($(ps -o comm= -p $pid 2>/dev/null)) ==="
+                grep -i seccomp "/proc/$pid/status" 2>/dev/null
+                echo "apparmor: $(cat /proc/$pid/attr/current 2>/dev/null)"
+                cg=$(cut -d: -f3 "/proc/$pid/cgroup" 2>/dev/null | head -1)
+                if [ -n "$cg" ]; then
+                  echo "cgroup: $cg"
+                  echo "cpu.stat: $(cat /sys/fs/cgroup${cg}/cpu.stat 2>/dev/null | tr "\n" " ")"
+                  echo "memory.events: $(cat /sys/fs/cgroup${cg}/memory.events 2>/dev/null | tr "\n" " ")"
+                fi
+              } >> /tmp/pg-watch.log 2>&1
+            done
+            sleep 2
+          done
+          ' &
+          disown 2>/dev/null || true
+          echo "watcher started"
+
       - name: Run the DR rehearsal against this runner as a fresh host
         run: sh tests/dr/authentik-postgres-restore.sh
+
+      - name: Dump postgres state watcher log (TEMP diagnostic)
+        if: always()
+        run: |
+          echo "--- postgres seccomp/apparmor/cgroup snapshots over time ---"
+          sudo cat /tmp/pg-watch.log || true
 
       - name: Diagnostics (on failure) -- cluster-wide state
         if: failure()
@@ -53,3 +89,6 @@ jobs:
           sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
           echo "--- k3s service log tail ---"
           sudo journalctl -u k3s --no-pager | tail -150 || true
+          echo "--- node load snapshot (TEMP diagnostic) ---"
+          free -h || true
+          sudo top -bn1 | head -20 || true
