@@ -34,6 +34,10 @@ jobs:
           sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n authentik -l app.kubernetes.io/component=server --tail=200 || true
           echo "--- authentik worker log tail ---"
           sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n authentik -l app.kubernetes.io/component=worker --tail=200 || true
+          echo "--- postgres log tail (current container instance) ---"
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n authentik -l app.kubernetes.io/component=primary --tail=200 || true
+          echo "--- postgres log tail (previous/crashed container instance, if any) ---"
+          sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n authentik -l app.kubernetes.io/component=primary --tail=200 --previous || true
           echo "--- grafana log tail ---"
           sudo env KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl logs -n monitoring -l app.kubernetes.io/name=grafana --tail=200 || true
           echo "--- most recent cluster events ---"
