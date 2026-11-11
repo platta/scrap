@@ -54,6 +54,31 @@ if systemctl is-active --quiet k3s 2>/dev/null; then
     exit 1
 fi
 
+# TEMP diagnostic (PLAT heavy-load postgres investigation): Ubuntu 26.04
+# defaults kernel.apparmor_restrict_unprivileged_unconfined=1, which makes
+# runc stack any container's "unconfined" AppArmor label under containerd's
+# own default profile (cri-containerd.apparmor.d//&unconfined) instead of
+# leaving it genuinely unconfined. That default profile only grants
+# signal/ptrace between processes carrying the literal parent label, not
+# between two stacked peers -- so a container process signalling its own
+# sibling (e.g. postgres's checkpointer, or nsupdate/dig's self-kill at
+# shutdown) gets kill() -> EPERM. Tracked upstream at
+# containerd/containerd#14485; this is the documented host-level
+# workaround. Testing whether this is the real, complete fix for both the
+# postgres checkpoint-signal crash loop and the (already separately
+# worked around) dyndns nsupdate/dig false failure -- not yet adopted for
+# real, see this investigation's own findings before keeping it.
+if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined ]; then
+    echo "Setting kernel.apparmor_restrict_unprivileged_unconfined=0 (TEMP diagnostic -- see comment above)..."
+    mkdir -p /etc/sysctl.d
+    cat >/etc/sysctl.d/90-scrap-apparmor-unconfined-stacking.conf <<'EOF'
+kernel.apparmor_restrict_unprivileged_unconfined = 0
+EOF
+    sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0
+else
+    echo "kernel.apparmor_restrict_unprivileged_unconfined sysctl not present on this host/kernel -- skipping (nothing to disable)."
+fi
+
 # The upstream docs' own caution: Debian's `unattended-upgrades` package
 # ships a systemd-logind drop-in capping the delay any inhibitor lock can
 # hold shutdown for (InhibitDelayMaxSec) at a value that can be lower than
