@@ -103,77 +103,18 @@ spec:
         # see identity-credentials.sops.yaml for both keys, same value.
         existingSecret: identity-credentials
       primary:
-        # REAL BUG, root-caused live, fixed for the common case -- NOT a
-        # complete fix, see the load-dependence paragraph below before
-        # assuming this closes the issue end to end.
-        #
-        # authentik-postgresql-0 crash-loops reproducibly (observed
-        # 2026-11-04/05: DR workflow 3+ times, T-B once) with "FATAL:
-        # could not signal for checkpoint: Permission denied" -- a
-        # self/sibling-process kill() call (Postgres's checkpointer-signal
-        # IPC) returning EPERM. Each restart re-enters WAL recovery, hits
-        # the same denial, dies again -- a self-reinforcing loop that
-        # never resolves on its own. The identical symptom independently
-        # hit capabilities/dyndns/'s nsupdate/dig the same week, in an
-        # unrelated investigation -- the common thread across two
-        # otherwise-unconnected C codebases points at the underlying
-        # host/container-runtime default, not anything specific to
-        # Postgres or this chart.
-        #
-        # Confirmed with real controls under TWO different load
-        # conditions, not assumed from one batch of runs:
-        #   - Light load (an isolated T-B/DR pair via workflow_dispatch,
-        #     confirmed nothing else running concurrently): unmodified
-        #     fails 3/4; this override passed 6 of the first 6 attempts
-        #     across three independent isolation rounds, then failed once
-        #     more on a 7th, separately-confirmed-isolated run with the
-        #     identical signature -- 6/7 overall, a large reduction from
-        #     baseline, not a complete elimination even under light load.
-        #   - Heavy load (T-B/DR run alongside the other ~9 acceptance
-        #     workflows a push/PR triggers simultaneously): unmodified
-        #     fails 2/2 AND this override ALSO fails 2/2, identical
-        #     signature both times. The override provides no benefit
-        #     here -- heavy concurrent load is, on its own, sufficient to
-        #     reproduce the same crash regardless of this setting.
-        # Together this points at two separate, overlapping causes with
-        # the same symptom: a seccomp-related EPERM denial (which this
-        # override substantially, but not completely, reduces under light
-        # load) and a distinct, load/resource-contention-driven failure
-        # mode (same error text, different trigger) that dominates under
-        # heavy concurrency and is NOT addressed here. Even the light-load
-        # case retains some real residual failure rate -- this is a
-        # meaningful improvement, not a guarantee.
-        #
-        # Practically: the real nightly DR schedule runs alone, never as
-        # part of a concurrent burst -- the light-load condition this fix
-        # demonstrably helps. The heavy-load failure mode is a genuine,
-        # separate, open problem (most visible in PR-triggered CI, where
-        # many acceptance workflows run at once) that deserves its own
-        # investigation, not something this change was ever shown to
-        # solve.
-        #
-        # Mechanism: Bitnami's postgresql chart defaults both pod- and
-        # container-level seccompProfile.type to "RuntimeDefault".
-        # Overriding it to "Unconfined" was isolated as independently
-        # sufficient under light load (a separate appArmorProfile
-        # override was also independently sufficient on its own in
-        # testing, which is a genuinely surprising result this comment
-        # doesn't fully explain -- it suggests the mechanism may not be
-        # as simple as "seccomp's RuntimeDefault profile blocks this
-        # syscall"); seccomp is the narrower, more conventional
-        # single-field change of the two, so that's what ships here.
-        # Known tradeoff: Unconfined removes real sandboxing for a
-        # security-sensitive (identity/SSO) workload. A narrower custom
-        # profile that allows only the specific syscalls Postgres's
-        # checkpointer needs would be the more correct long-term fix;
-        # this is the pragmatic one that's actually been verified to
-        # help the common case.
-        podSecurityContext:
-          seccompProfile:
-            type: Unconfined
-        containerSecurityContext:
-          seccompProfile:
-            type: Unconfined
+        # TEMP diagnostic (PLAT heavy-load postgres investigation):
+        # seccompProfile override deliberately REMOVED here, on this
+        # diagnostic branch only, to isolate bootstrap/host/install-k3s.sh's
+        # new kernel.apparmor_restrict_unprivileged_unconfined=0 sysctl as
+        # the ONLY active variable -- testing whether that sysctl alone
+        # (the documented fix for containerd/containerd#14485) is a
+        # complete fix for the authentik-postgresql checkpoint-signal
+        # crash loop, without this seccomp workaround's help. Chart
+        # defaults (RuntimeDefault) apply for both pod- and
+        # container-level seccompProfile. Do NOT carry this removal
+        # forward into develop/main -- it exists only to get a clean
+        # read on this one test.
         persistence:
           size: 2Gi
           # The backup contract, applied to a chart-generated PVC we don't
