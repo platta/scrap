@@ -54,6 +54,46 @@ if systemctl is-active --quiet k3s 2>/dev/null; then
     exit 1
 fi
 
+# REAL BUG, root-caused live (supersedes the capabilities/identity/
+# seccompProfile workaround from PLAT's earlier postgres-crash-loop
+# investigation -- see that file's git history for the abandoned partial
+# fix, and this commit's own message for the evidence trail): Ubuntu
+# 26.04 defaults kernel.apparmor_restrict_unprivileged_unconfined=1. Under
+# that setting, when a container's AppArmor profile resolves to
+# "unconfined", runc stacks it under containerd's own default profile
+# instead of leaving it genuinely unconfined, so the process carries the
+# label "cri-containerd.apparmor.d//&unconfined" rather than plain
+# "cri-containerd.apparmor.d". That default profile only grants
+# signal/ptrace between processes carrying the exact literal parent
+# label -- it has no rule for two processes both stacked under
+# "//&unconfined" -- so a container process signalling its own sibling
+# (Postgres's checkpointer signalling its startup process at the end of
+# crash recovery; nsupdate/dig's self-kill() at shutdown, independently
+# worked around in capabilities/dyndns/'s cronjob.yaml the same week)
+# gets kill() -> EPERM. Tracked upstream at
+# containerd/containerd#14485 (fix merged there as PR #14487, not yet in
+# the containerd version this k3s pins); this sysctl is the documented
+# host-level workaround and, unlike a per-workload seccomp/AppArmor
+# override, fixes it for every container on the node, not one chart's
+# securityContext at a time. Confirmed empirically: 1/1 light-load and
+# 2/2 heavy-load clean passes on a from-scratch host with this sysctl set
+# and the seccompProfile workaround fully reverted -- heavy load is the
+# condition that defeated the seccomp workaround 2/2 with zero
+# exceptions, so this is a materially different (and complete, as far as
+# testing has shown) result, not a repeat of the same partial fix.
+if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined ]; then
+    echo "Setting kernel.apparmor_restrict_unprivileged_unconfined=0 (see this script's own comment above for why)..."
+    mkdir -p /etc/sysctl.d
+    cat >/etc/sysctl.d/90-scrap-apparmor-unconfined-stacking.conf <<'EOF'
+# Written by bootstrap/host/install-k3s.sh -- see that script's own
+# comment for why this exists (containerd/containerd#14485).
+kernel.apparmor_restrict_unprivileged_unconfined = 0
+EOF
+    sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0
+else
+    echo "kernel.apparmor_restrict_unprivileged_unconfined sysctl not present on this host/kernel -- skipping (nothing to disable)."
+fi
+
 # The upstream docs' own caution: Debian's `unattended-upgrades` package
 # ships a systemd-logind drop-in capping the delay any inhibitor lock can
 # hold shutdown for (InhibitDelayMaxSec) at a value that can be lower than
