@@ -35,7 +35,7 @@ git checkout v0.1.0-rc.3
 ```
 
 **Which version to install.** `v0.1.0-rc.3` is the current release — a pre-release candidate,
-[published 2026-11-04](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.3). It's a
+[published 2026-11-17](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.3). It's a
 defect-fix release on top of [`v0.1.0-rc.1`](releases/v0.1.0-rc.1.md) (published 2026-08-28);
 checking it out, as above, gives you exactly the adjudicated candidate its
 [release notes](releases/v0.1.0-rc.3.md) describe, including the honest boundary of what it does

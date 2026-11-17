@@ -11,12 +11,12 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 ## [Unreleased]
 
 No new release/candidate entry has been assembled here yet. Changes may have landed since the
-`v0.1.0-rc.3` tag (2026-11-04) was cut; see this repository's commit history for what they were
+`v0.1.0-rc.3` tag (2026-11-17) was cut; see this repository's commit history for what they were
 and whether they warrant a new entry.
 
 ## [v0.1.0-rc.3] — hotfix: dyndns CronJob nsupdate-crash false failure
 
-This is the release-notes content for the `v0.1.0-rc.3` tag, created 2026-11-04 against commit
+This is the release-notes content for the `v0.1.0-rc.3` tag, created 2026-11-17 against commit
 [`5f01a2ca`](https://github.com/platta/scrap/commit/5f01a2cab575066ac1947fca5b44dea20a46b7dd)
 (the merge of [PR #38](https://github.com/platta/scrap/pull/38), `port-dyndns-fix-to-main`) after
 independent adjudication, per
