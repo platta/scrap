@@ -11,8 +11,56 @@ live, authoritative evidence snapshot this file summarizes at each candidate/rel
 ## [Unreleased]
 
 No new release/candidate entry has been assembled here yet. Changes may have landed since the
-`v0.1.0-rc.3` tag (2026-11-17) was cut; see this repository's commit history for what they were
+`v0.1.0-rc.4` tag (2026-11-19) was cut; see this repository's commit history for what they were
 and whether they warrant a new entry.
+
+## [v0.1.0-rc.4] — hotfix: authentik-postgresql crash loop (AppArmor unconfined-stacking)
+
+This is the release-notes content for the `v0.1.0-rc.4` tag, created 2026-11-19 against commit
+[`176a373`](https://github.com/platta/scrap/commit/176a373c82ba95b8b2381ec1128ecdc9d0ddd17e)
+(the merge of [PR #44](https://github.com/platta/scrap/pull/44),
+`fix-authentik-postgres-apparmor-stacking-to-main`) after independent adjudication, per
+`docs/decisions/0015-versioning-and-release-process.md`. Published as a
+[GitHub pre-release](https://github.com/platta/scrap/releases/tag/v0.1.0-rc.4). Full write-up:
+[`docs/releases/v0.1.0-rc.4.md`](https://github.com/platta/scrap/blob/v0.1.0-rc.4/docs/releases/v0.1.0-rc.4.md).
+
+Carries forward everything in `v0.1.0-rc.3` and earlier below unchanged — no capability's
+PROVEN NOW / INTENDED FOR v1 BUT NOT YET PROVEN / DEFERRED status moved. This is a defect-fix
+candidate, not a new capability candidate.
+
+### Fixed
+
+- **Identity capability, `authentik-postgresql`'s host environment
+  (`bootstrap/host/install-k3s.sh`, `capabilities/identity/helmrelease.yaml`):**
+  `authentik-postgresql-0` crash-looped reproducibly with "FATAL: could not signal for checkpoint:
+  Permission denied" — a self/sibling-process `kill()` call (Postgres's checkpointer signalling
+  its own startup process at the end of crash recovery) returning `EPERM`. Root cause, confirmed
+  live: Ubuntu 26.04 defaults `kernel.apparmor_restrict_unprivileged_unconfined=1`, which makes
+  `runc` stack a container's "unconfined" AppArmor label under containerd's own default profile
+  (`cri-containerd.apparmor.d//&unconfined`) instead of leaving it genuinely unconfined — that
+  default profile only grants signal/ptrace between processes carrying the exact literal parent
+  label, not between two stacked peers, so a container process signalling its own sibling gets
+  denied regardless of seccomp. Tracked upstream at
+  [containerd/containerd#14485](https://github.com/containerd/containerd/issues/14485). Fixed by
+  disabling the sysctl at the host level in `bootstrap/host/install-k3s.sh`, which addresses it
+  for every container on the node rather than one chart's `securityContext` at a time. Likely the
+  same mechanism behind the `v0.1.0-rc.3` dyndns `nsupdate`/`dig` false-failure fix (not reverted
+  here — that fix is independently good defensive practice regardless of this root-cause fix).
+- An earlier, narrower `seccompProfile: Unconfined` workaround for this same symptom was developed
+  and merged to `develop` during the investigation but **never reached a tagged release** — it
+  substantially reduced (not eliminated) light-load failures but did nothing under heavy load.
+  Superseded by the real fix above and removed from `capabilities/identity/helmrelease.yaml`
+  before this candidate; no tagged release ever shipped with it.
+
+### CI evidence note
+
+Confirmed with real controls under both load conditions this investigation distinguished
+throughout: 1/1 clean light-load pass and 2/2 clean heavy-load passes on a throwaway diagnostic
+branch with the sysctl fix applied and the seccomp workaround fully reverted — heavy load is the
+exact condition that defeated the seccomp workaround 2/2 with zero exceptions, so this is a
+materially different result. A further heavy-load pass came from PR #43's own CI against
+`develop`, and a fifth from PR #44's own CI against `main` (10/10, with one unrelated `apt-get`
+mirror timeout that passed cleanly on rerun) — the exact candidate (`176a373`) this tag points at.
 
 ## [v0.1.0-rc.3] — hotfix: dyndns CronJob nsupdate-crash false failure
 
