@@ -120,6 +120,16 @@ data:
   # capability is enabled; harmless to leave as a placeholder otherwise.
   UPS_NAME: "ups"
 
+  # platform/observability-satellite/'s remote-write destination -- the
+  # full endpoint URL (e.g. https://hub.example.internal/api/v1/write).
+  # Only consumed if satellite topology is selected
+  # (docs/decisions/0018-observability-topology.md); harmless as a
+  # placeholder otherwise, same convention as every other optional key
+  # above. The credential itself (SATELLITE_REMOTE_WRITE_USERNAME/
+  # PASSWORD) is NOT here -- it's credential material under
+  # clusters/<name>/secrets/, see platform/observability-satellite/README.md.
+  SATELLITE_REMOTE_WRITE_URL: "https://observability.example.internal/api/v1/write"
+
   # apps/examples/p6-external-proxy/'s demonstration backend -- a NAS, a
   # router admin UI, a hypervisor console, anything real on your LAN with
   # no identity or TLS of its own. RFC 5737 documentation address below:

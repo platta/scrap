@@ -1,0 +1,51 @@
+# Enabling satellite topology REPLACES the content of your existing
+# clusters/<name>/platform-observability.yaml -- it does not add a new
+# file. Unlike an optional capability (an ADDITION under
+# clusters/<name>/capabilities/), CORE observability topology is a
+# CHOICE among mutually exclusive modes: exactly one Kustomization may
+# ever own the "monitoring" namespace's HelmRelease. Copy this file's
+# CONTENT over your existing clusters/<name>/platform-observability.yaml
+# (same filename, same Kustomization name -- every dependent
+# Kustomization that already dependsOn "platform-observability" by name,
+# e.g. platform-observability-config, keeps working unchanged). Revert
+# to standalone by restoring the original file content (spec.path back to
+# ./platform/observability).
+#
+# Everything else about this Kustomization's identity -- name, dependsOn,
+# sourceRef -- is unchanged from the standalone version; spec.path differs,
+# and postBuild.substituteFrom is newly added.
+#
+# REAL BUG, found live via this profile's own CI run: the standalone
+# version has never needed postBuild.substituteFrom (platform/observability/
+# helmrelease.yaml carries no substitution token of its own), so it was
+# never on this Kustomization at all -- confirmed by inspecting the real,
+# checked-in clusters/example/platform-observability.yaml. Copying that
+# exact shape for satellite mode, whose own values-patch.yaml genuinely
+# does carry INSTANCE_NAME/SATELLITE_REMOTE_WRITE_URL tokens, applied
+# them to the live cluster completely unsubstituted -- confirmed directly
+# from the real error: "Prometheus... is invalid: spec.remoteWrite[0].url:
+# Invalid value" (the literal, unresolved token string). Every OTHER
+# Kustomization in this repository whose own manifests use an
+# instance-config token (e.g. clusters/example/platform-backup.yaml)
+# already carries this block; it was simply never needed here before
+# satellite mode existed.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform-observability
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./platform/observability-satellite
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: platform-crds
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: instance-config
+  wait: true
+  timeout: 10m0s

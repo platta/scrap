@@ -55,6 +55,7 @@ FIXTURE_CASES = [
     ("dr-quiesce-ordering", check_dr_quiesce_ordering),
     ("capability-status-mismatch", check_capability_status_honesty),
     ("capability-status-missing-readme", check_capability_status_honesty),
+    ("helmrelease-missing-chart-block", check_helm_strict),
 ]
 
 # Every check with a real `run(root)` -- excludes check_app_addition_boundary,
@@ -124,6 +125,18 @@ if violations:
 report(
     len(violations) == 0,
     "an app's own reserved-ports.yaml authorizes its own port with no platform/ present",
+)
+
+print()
+print("=== check_helm_strict.py: a Kustomize values-delta patch onto an existing HelmRelease is not mistaken for an incomplete new release ===")
+valid_root = REPO_ROOT / "tests" / "fixtures" / "valid" / "helm-values-patch"
+violations = check_helm_strict.run(valid_root)
+if violations:
+    for v in violations:
+        print(f"      unexpected: {v}")
+report(
+    len(violations) == 0,
+    "a patches[]-referenced HelmRelease values-delta fragment is not flagged as an incomplete release",
 )
 
 print()

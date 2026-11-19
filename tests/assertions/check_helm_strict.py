@@ -44,12 +44,58 @@ import yaml
 from common import find_repo_root, iter_yaml_docs_repo, rel
 
 
+def _find_kustomize_patch_targets(root: Path) -> set[Path]:
+    """Every file resolved (absolute) that some `kustomize.config.k8s.io`
+    Kustomization's own `patches[].path` names. A document living in one of
+    these files is -- structurally, not by guesswork about its shape -- a
+    Kustomize patch fragment matched onto an existing resource, never a
+    standalone resource declaration in its own right.
+    """
+    targets: set[Path] = set()
+    for path, doc in iter_yaml_docs_repo(root):
+        if (
+            not str(doc.get("apiVersion", "")).startswith("kustomize.config.k8s.io")
+            or doc.get("kind") != "Kustomization"
+        ):
+            continue
+        for patch in doc.get("patches") or []:
+            patch_path = patch.get("path") if isinstance(patch, dict) else None
+            if patch_path:
+                targets.add((path.parent / patch_path).resolve())
+    return targets
+
+
 def _find_helmreleases(root: Path) -> list[tuple[Path, dict]]:
+    # REAL BUG, found live via platform/observability-satellite/'s own
+    # first CI run (PLAT-273): a Kustomize values-delta PATCH onto an
+    # EXISTING HelmRelease -- matched by the same apiVersion/kind/metadata
+    # identity the real release uses, carrying only the keys it overrides
+    # -- looks identical to this scan and gets flagged as a second,
+    # INCOMPLETE standalone release ("missing chart/version/sourceRef")
+    # purely because it never declares spec.chart at all, not because
+    # anything is actually broken.
+    #
+    # PLAT-273 revision: the first fix exempted ANY HelmRelease-shaped
+    # document missing spec.chart, by shape alone -- which also silently
+    # swallowed a genuinely incomplete standalone release that happens to
+    # have lost its whole spec.chart block (not just a missing name/
+    # version, which the shape-based version did still catch), and would
+    # equally swallow a valid future helm-controller v1 `chartRef`-style
+    # release (no `chart:` key by design). Fixed to be patch-AWARE
+    # instead: exempt a document only when the file it lives in is one a
+    # real Kustomization's `patches[].path` actually names -- the same
+    # structural signal kustomize itself uses to treat it as a patch
+    # fragment rather than a resource. See
+    # tests/fixtures/violations/helmrelease-missing-chart-block/ (must
+    # still be caught) and tests/fixtures/valid/helm-values-patch/ (must
+    # still be exempt) in tests/assertions/self_test.py.
+    patch_targets = _find_kustomize_patch_targets(root)
     out = []
     for path, doc in iter_yaml_docs_repo(root):
         if (
             str(doc.get("apiVersion", "")).startswith("helm.toolkit.fluxcd.io")
             and doc.get("kind") == "HelmRelease"
+            and path.resolve() not in patch_targets
         ):
             out.append((path, doc))
     return out

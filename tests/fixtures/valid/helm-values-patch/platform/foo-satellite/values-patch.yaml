@@ -1,0 +1,13 @@
+# A values-only delta patch onto an existing HelmRelease, matched by
+# apiVersion/kind/metadata identity -- deliberately carries no spec.chart,
+# the same shape platform/observability-satellite/values-patch.yaml uses.
+# Exempt from check_helm_strict.py only because kustomization.yaml in this
+# same directory names this file under patches[].path -- not by shape.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: foo
+  namespace: foo
+spec:
+  values:
+    replicaCount: 2

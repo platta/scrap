@@ -1,0 +1,55 @@
+name: T-A-observability-satellite (platform/observability-satellite/ live acceptance)
+
+# A separate from-zero bootstrap from T-A's own -- see
+# tests/profiles/t-a-observability-satellite.sh's own header for why. The
+# remote-write destination is a real, ephemeral, non-SCRAP Prometheus this
+# script stands up itself on this same runner -- no external account, no
+# paid infrastructure. Runs on every push/PR, the same trigger tier as
+# T-A, T-A-public-tls, T-A-offsite-backup, and T-A-alert-heartbeat.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  t-a-observability-satellite:
+    name: T-A-observability-satellite -- real remote-write delivery, bad-credential and path-outage negative controls
+    runs-on: ubuntu-latest
+    # A full bootstrap, two 8-minute-bounded negative-control waits (each
+    # gated on a real `for: 3m` rule plus config-reload propagation), and
+    # BackupJobFailed's own real `for: 5m` -- sized with the same margin
+    # discipline as T-A-alert-heartbeat.yml's own comment explains.
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run T-A-observability-satellite against this runner as a fresh host
+        run: sh tests/profiles/t-a-observability-satellite.sh
+
+      - name: Diagnostics (on failure) -- cluster-wide state
+        if: failure()
+        run: |
+          export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+          echo "--- flux get kustomizations -A ---"
+          sudo -E flux get kustomizations -A || true
+          echo "--- kubectl get pods -A -o wide ---"
+          sudo -E kubectl get pods -A -o wide || true
+          echo "--- Prometheus CR, full describe ---"
+          sudo -E kubectl describe prometheus -n monitoring kube-prometheus-stack-prometheus || true
+          echo "--- satellite-remote-write-health PrometheusRule ---"
+          sudo -E kubectl get prometheusrule -n monitoring satellite-remote-write-health -o yaml || true
+          echo "--- observability-satellite-credentials Secret: key NAMES only, never values ---"
+          sudo -E kubectl get secret -n monitoring observability-satellite-credentials -o json 2>/dev/null | jq -r '.data | keys[]' || true
+          echo "--- Alertmanager alerts ---"
+          sudo -E kubectl exec -n monitoring alertmanager-kube-prometheus-stack-alertmanager-0 -c alertmanager -- wget -qO- http://127.0.0.1:9093/api/v2/alerts 2>/dev/null || true
+          echo "--- ephemeral receiver log ---"
+          cat /tmp/t-a-observability-satellite-receiver.log 2>/dev/null || true
+          echo "--- port-forward logs ---"
+          cat /tmp/t-a-observability-satellite-pf-prom.log 2>/dev/null || true
+          cat /tmp/t-a-observability-satellite-pf-am.log 2>/dev/null || true
+          echo "--- most recent cluster events ---"
+          sudo -E kubectl get events -A --sort-by=.lastTimestamp | tail -150 || true
+          echo "--- k3s service log tail ---"
+          sudo journalctl -u k3s --no-pager | tail -150 || true
